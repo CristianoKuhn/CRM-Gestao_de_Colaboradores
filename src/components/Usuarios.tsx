@@ -56,7 +56,7 @@ export default function Usuarios({
   const [email, setEmail] = useState('');
   const [senhaHash, setSenhaHash] = useState('');
   const [perfil, setPerfil] = useState<Usuario['perfil']>('Lider');
-  const [setorId, setSetorId] = useState('');
+  const [setoresPermitidos, setSetoresPermitidos] = useState<string[]>([]);
   const [ativo, setAtivo] = useState(true);
 
   // Abrir modal para novo usuário
@@ -66,7 +66,7 @@ export default function Usuarios({
     setEmail('');
     setSenhaHash('');
     setPerfil('Lider');
-    setSetorId(setores[0]?.id || '');
+    setSetoresPermitidos([]);
     setAtivo(true);
     setIsModalOpen(true);
   };
@@ -78,7 +78,13 @@ export default function Usuarios({
     setEmail(usuario.email);
     setSenhaHash(usuario.senha_hash || '');
     setPerfil(usuario.perfil);
-    setSetorId(usuario.setor_id || (setores[0]?.id || ''));
+    setSetoresPermitidos(
+      usuario.setoresPermitidos?.length
+        ? usuario.setoresPermitidos
+        : usuario.setor_id
+          ? [usuario.setor_id]
+          : []
+    );
     setAtivo(usuario.ativo);
     setIsModalOpen(true);
   };
@@ -96,7 +102,8 @@ export default function Usuarios({
         email: email.trim().toLowerCase(),
         senha_hash: senhaHash.trim(),
         perfil,
-        setor_id: setorId,
+        setor_id: setoresPermitidos[0] || '',
+        setoresPermitidos,
         ativo,
         ultimo_login: editingUsuario?.ultimo_login || '',
       };
@@ -124,7 +131,12 @@ export default function Usuarios({
       usu.email.toLowerCase().includes(searchTerm.toLowerCase());
 
     const matchesPerfil = filterPerfil === '' || usu.perfil === filterPerfil;
-    const matchesSetor = filterSetor === '' || usu.setor_id === filterSetor;
+    const setoresDoUsuario = usu.setoresPermitidos?.length
+      ? usu.setoresPermitidos
+      : usu.setor_id
+        ? [usu.setor_id]
+        : [];
+    const matchesSetor = filterSetor === '' || setoresDoUsuario.includes(filterSetor);
     
     let matchesStatus = true;
     if (filterStatus === 'ativo') matchesStatus = usu.ativo;
@@ -295,7 +307,7 @@ export default function Usuarios({
                 <tr className="bg-slate-50 border-b border-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                   <th className="py-4 px-6">Usuário</th>
                   <th className="py-4 px-6">Perfil</th>
-                  <th className="py-4 px-6">Setor</th>
+                  <th className="py-4 px-6">Setores Permitidos</th>
                   <th className="py-4 px-6">Senha / Hash</th>
                   <th className="py-4 px-6">Situação</th>
                   <th className="py-4 px-6">Último Login</th>
@@ -304,7 +316,15 @@ export default function Usuarios({
               </thead>
               <tbody className="divide-y divide-slate-50 text-xs">
                 {filteredUsuarios.map((usu) => {
-                  const sectorName = setores.find((s) => s.id === usu.setor_id)?.nome || 'Não Vinculado';
+                  const setoresDoUsuario = usu.setoresPermitidos?.length
+                    ? usu.setoresPermitidos
+                    : usu.setor_id
+                      ? [usu.setor_id]
+                      : [];
+                  const sectorNames = setoresDoUsuario
+                    .map((id) => setores.find((s) => s.id === id)?.nome)
+                    .filter(Boolean)
+                    .join(', ') || 'Nenhum setor';
                   
                   // Iniciais do nome para avatar
                   const initials = usu.nome
@@ -344,9 +364,9 @@ export default function Usuarios({
                         </span>
                       </td>
 
-                      {/* Sector */}
+                      {/* Setores permitidos */}
                       <td className="py-4 px-6">
-                        <span className="text-slate-600 font-medium">{sectorName}</span>
+                        <span className="text-slate-600 font-medium">{sectorNames}</span>
                       </td>
 
                       {/* Pass / Hash code */}
@@ -494,23 +514,37 @@ export default function Usuarios({
                   </select>
                 </div>
 
-                {/* Sector assignment dropdown */}
-                <div>
+                {/* Setores autorizados */}
+                <div className="sm:col-span-2">
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">
-                    Setor Vinculado
+                    Setores Permitidos
                   </label>
-                  <select
-                    disabled={isSaving}
-                    value={setorId}
-                    onChange={(e) => setSetorId(e.target.value)}
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 focus:bg-white focus:ring-2 focus:ring-teal-500/15 focus:border-teal-500 outline-none rounded-2xl text-xs transition cursor-pointer disabled:opacity-50"
-                  >
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-40 overflow-y-auto p-3 bg-slate-50 border border-slate-200 rounded-2xl">
                     {setores.map((s) => (
-                      <option key={s.id} value={s.id}>
+                      <label key={s.id} className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          disabled={isSaving}
+                          checked={setoresPermitidos.includes(s.id)}
+                          onChange={(e) => {
+                            setSetoresPermitidos((atuais) =>
+                              e.target.checked
+                                ? [...atuais, s.id]
+                                : atuais.filter((id) => id !== s.id)
+                            );
+                          }}
+                          className="h-4 w-4 rounded border-slate-300 text-teal-500 focus:ring-teal-500 cursor-pointer disabled:opacity-50"
+                        />
                         {s.nome}
-                      </option>
+                      </label>
                     ))}
-                  </select>
+                    {setores.length === 0 && (
+                      <span className="text-[10px] text-slate-400">Cadastre ao menos um setor antes de criar o líder.</span>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-1.5">
+                    Líderes verão somente colaboradores dos setores marcados. Perfis administrativos mantêm visão total.
+                  </p>
                 </div>
 
                 {/* Ativo Checkbox toggle */}

@@ -1,0 +1,6 @@
+{
+  "name": "Gestão de Colaboradores",
+  "description": "Plataforma moderna de gestão de pessoas e liderança para acompanhamento, feedbacks, PDIs e histórico de colaboradores.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

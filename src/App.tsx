@@ -17,6 +17,7 @@ import {
   SupabaseConfig,
   GoogleScriptConfig,
   DataSourceProvider,
+  Usuario,
 } from './types';
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
@@ -25,14 +26,38 @@ import ColaboradorProfile from './components/ColaboradorProfile';
 import Tarefas from './components/Tarefas';
 import Analytics from './components/Analytics';
 import Config from './components/Config';
+import Usuarios from './components/Usuarios';
+import Login from './components/Login';
 import { Users2, X, PlusCircle } from 'lucide-react';
 
 export default function App() {
+  const [currentUser, setCurrentUser] = useState<Usuario | null>(null);
+
   // Inicializa o LocalStorage com os dados padrões (seed) se não existirem
   useEffect(() => {
     initializeStorage();
     loadAllData();
+    // Restaurar sessão de login
+    const savedUser = localStorage.getItem('gc_logged_in_user');
+    if (savedUser) {
+      try {
+        setCurrentUser(JSON.parse(savedUser));
+      } catch (e) {
+        console.error('Erro ao restaurar sessão de login:', e);
+      }
+    }
   }, []);
+
+  const handleLoginSuccess = (user: Usuario) => {
+    setCurrentUser(user);
+    localStorage.setItem('gc_logged_in_user', JSON.stringify(user));
+  };
+
+  const handleLogout = () => {
+    setCurrentUser(null);
+    localStorage.removeItem('gc_logged_in_user');
+    setActiveTab('dashboard');
+  };
 
   // Estados globais da aplicação
   const [activeTab, setActiveTab] = useState<string>('dashboard');
@@ -43,6 +68,7 @@ export default function App() {
   const [cargos, setCargos] = useState<Cargo[]>([]);
   const [lideres, setLideres] = useState<Lider[]>([]);
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
+  const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [supabaseConfig, setSupabaseConfig] = useState<SupabaseConfig>({
     supabaseUrl: '',
     supabaseAnonKey: '',
@@ -67,7 +93,7 @@ export default function App() {
   // Carregar dados de forma reativa do serviço ativo
   const loadAllData = async () => {
     try {
-      const [cols, timelineData, tarefasData, setoresData, cargosData, lideresData, empresasData] = await Promise.all([
+      const [cols, timelineData, tarefasData, setoresData, cargosData, lideresData, empresasData, usuariosData] = await Promise.all([
         DataService.getColaboradores(),
         DataService.getTimeline(),
         DataService.getTarefas(),
@@ -75,6 +101,7 @@ export default function App() {
         DataService.getCargos(),
         DataService.getLideres(),
         DataService.getEmpresas(),
+        DataService.getUsuarios(),
       ]);
 
       setColaboradores(cols);
@@ -84,6 +111,7 @@ export default function App() {
       setCargos(cargosData);
       setLideres(lideresData);
       setEmpresas(empresasData);
+      setUsuarios(usuariosData);
       
       setSupabaseConfig(StorageAPI.getSupabaseConfig());
       setGoogleScriptConfig(StorageAPI.getGoogleScriptConfig());
@@ -157,6 +185,17 @@ export default function App() {
     loadAllData();
   };
 
+  // Tratar salvamento e exclusão de Usuários
+  const handleSaveUsuario = async (user: Usuario) => {
+    await DataService.saveUsuario(user);
+    loadAllData();
+  };
+
+  const handleDeleteUsuario = async (id: string) => {
+    await DataService.deleteUsuario(id);
+    loadAllData();
+  };
+
   // Tratar salvar configuração do Supabase
   const handleSaveSupabaseConfig = (config: SupabaseConfig) => {
     StorageAPI.saveSupabaseConfig(config);
@@ -213,6 +252,10 @@ export default function App() {
   // Contadores dinâmicos para barra lateral
   const tarefasPendentesCount = tarefas.filter((t) => !t.concluida).length;
 
+  if (currentUser === null) {
+    return <Login onLoginSuccess={handleLoginSuccess} />;
+  }
+
   return (
     <div id="app-root-layout" className="flex h-screen bg-slate-50 overflow-hidden font-sans antialiased text-slate-800">
       {/* Lateral Menu Navigation Panel */}
@@ -226,6 +269,8 @@ export default function App() {
         onReset={handleResetDemoData}
         colaboradoresCount={colaboradores.length}
         tarefasPendentesCount={tarefasPendentesCount}
+        currentUser={currentUser}
+        onLogout={handleLogout}
       />
 
       {/* Main Content View Frame */}
@@ -240,11 +285,11 @@ export default function App() {
 
           <div className="flex items-center gap-4">
             <div className="text-right">
-              <span className="text-xs font-bold text-slate-900 block leading-tight">Cristiano Kuhn</span>
-              <span className="text-[10px] text-slate-400 font-bold block">cristianokuhn7@gmail.com</span>
+              <span className="text-xs font-bold text-slate-900 block leading-tight">{currentUser.nome}</span>
+              <span className="text-[10px] text-slate-400 font-bold block">{currentUser.email}</span>
             </div>
             <div className="h-9 w-9 rounded-full bg-slate-900 border border-slate-100 flex items-center justify-center font-bold text-xs text-teal-400 shadow-sm">
-              CK
+              {currentUser.nome.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
             </div>
           </div>
         </header>
@@ -260,6 +305,8 @@ export default function App() {
               onNavigateToList={handleNavigateFromDashboard}
               onSelectColaborador={handleSelectColaborador}
               onOpenNewRegistroModal={handleQuickFeedbackTrigger}
+              currentUser={currentUser}
+              onUpdateColaborador={handleUpdateColaborador}
             />
           )}
 
@@ -310,6 +357,15 @@ export default function App() {
               timeline={timeline}
               setores={setores}
               tarefas={tarefas}
+            />
+          )}
+
+          {activeTab === 'usuarios' && (
+            <Usuarios
+              usuarios={usuarios}
+              setores={setores}
+              onSaveUsuario={handleSaveUsuario}
+              onDeleteUsuario={handleDeleteUsuario}
             />
           )}
 

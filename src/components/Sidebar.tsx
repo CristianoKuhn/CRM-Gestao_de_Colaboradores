@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { Usuario } from '../types';
 import {
   LayoutDashboard,
   Users,
@@ -11,6 +12,7 @@ import {
   Settings,
   RefreshCw,
   TrendingUp,
+  UserCog,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -19,6 +21,8 @@ interface SidebarProps {
   onReset: () => void;
   colaboradoresCount: number;
   tarefasPendentesCount: number;
+  currentUser: Usuario | null;
+  onLogout: () => void;
 }
 
 export default function Sidebar({
@@ -27,10 +31,13 @@ export default function Sidebar({
   onReset,
   colaboradoresCount,
   tarefasPendentesCount,
+  currentUser,
+  onLogout,
 }: SidebarProps) {
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'colaboradores', label: 'Colaboradores', icon: Users, badge: colaboradoresCount },
+    { id: 'usuarios', label: 'Gerenciar Usuários', icon: UserCog },
     { id: 'tarefas', label: 'Tarefas de Liderança', icon: CheckSquare, badge: tarefasPendentesCount },
     { id: 'analytics', label: 'Analytics & PDIs', icon: BarChart3 },
     { id: 'config', label: 'Configuração Banco', icon: Settings },
@@ -83,29 +90,23 @@ export default function Sidebar({
         })}
       </nav>
 
-      {/* System Quick Reset / Footer */}
-      <div className="p-4 border-t border-slate-800 flex flex-col gap-4">
+      {/* System Footer */}
+      <div className="p-4 border-t border-slate-800 flex flex-col gap-3">
         <div className="flex items-center gap-3 px-2">
-          <div className="h-8 w-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center font-bold text-xs text-teal-400">
-            CK
+          <div className="h-8 w-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center font-bold text-xs text-teal-400 shrink-0">
+            {currentUser?.nome ? currentUser.nome.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase() : 'US'}
           </div>
           <div className="flex-1 overflow-hidden">
-            <h4 className="text-xs font-semibold text-white truncate">Cristiano Kuhn</h4>
-            <p className="text-[10px] text-slate-500 truncate">cristianokuhn7@gmail.com</p>
+            <h4 className="text-xs font-semibold text-white truncate">{currentUser?.nome || 'Usuário'}</h4>
+            <p className="text-[10px] text-slate-500 truncate">{currentUser?.email || 'email@empresa.com'}</p>
           </div>
         </div>
 
         <button
-          id="btn-reset-demo"
-          onClick={() => {
-            if (confirm('Deseja resetar os dados para o padrão de demonstração?')) {
-              onReset();
-            }
-          }}
-          className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs border border-slate-800 rounded-xl hover:bg-slate-800/50 hover:border-slate-700 transition duration-150 text-slate-500 hover:text-slate-300 font-medium cursor-pointer"
+          onClick={onLogout}
+          className="w-full flex items-center gap-2 px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 active:bg-rose-500/35 text-rose-400 hover:text-rose-300 rounded-xl text-[10px] font-bold transition duration-150 cursor-pointer justify-center uppercase tracking-wider"
         >
-          <RefreshCw size={12} />
-          Resetar Dados Demo
+          Sair do Sistema
         </button>
       </div>
     </aside>

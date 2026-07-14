@@ -40,6 +40,10 @@ export interface Colaborador {
   situacao: SituacaoColaborador;
   empresaId: string;
   telefone?: string;
+  cidadeBase?: string;
+  prazoAvaliacao180?: number;
+  realizarExperiencia?: boolean;
+  avaliacoesCompletas?: string[];
 }
 
 export type TipoRegistro =
@@ -109,4 +113,16 @@ export interface GoogleScriptConfig {
 }
 
 export type DataSourceProvider = 'local' | 'googlescript' | 'supabase';
+
+export interface Usuario {
+  id: string;
+  nome: string;
+  email: string;
+  senha_hash?: string;
+  perfil: 'Administrador' | 'Coordenador' | 'Supervisor' | 'Lider';
+  setor_id: string;
+  ativo: boolean;
+  ultimo_login?: string;
+}
+
 

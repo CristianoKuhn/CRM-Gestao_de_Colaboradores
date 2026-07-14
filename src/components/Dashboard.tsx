@@ -8,6 +8,7 @@ import {
   Colaborador,
   TimelineRegistro,
   Tarefa,
+  Usuario,
 } from '../types';
 import {
   MessageSquare,
@@ -22,6 +23,7 @@ import {
   PlusCircle,
   Clock,
   ArrowRight,
+  Sparkles,
 } from 'lucide-react';
 
 interface DashboardProps {
@@ -31,6 +33,8 @@ interface DashboardProps {
   onNavigateToList: (tab: string, filter?: any) => void;
   onSelectColaborador: (id: string) => void;
   onOpenNewRegistroModal: (colaboradorId?: string) => void;
+  currentUser: Usuario;
+  onUpdateColaborador: (col: Colaborador) => void;
 }
 
 export default function Dashboard({
@@ -40,8 +44,111 @@ export default function Dashboard({
   onNavigateToList,
   onSelectColaborador,
   onOpenNewRegistroModal,
+  currentUser,
+  onUpdateColaborador,
 }: DashboardProps) {
   const HOJE = new Date('2026-07-13');
+
+  // Calcular lembretes de avaliação e período de experiência para o líder direto (ou todos, se Admin/Supervisor/Coordenador)
+  const calculateReminders = () => {
+    const list: {
+      id: string;
+      colaborador: Colaborador;
+      milestone: string;
+      titulo: string;
+      prazoData: string;
+      atrasado: boolean;
+      diasRestantes: number;
+    }[] = [];
+
+    colaboradores.forEach((col) => {
+      // Filtrar se o usuário logado é o líder direto deste colaborador
+      // Se for Admin, Coordenador, Supervisor, pode ver os lembretes de todos.
+      // Se for Lider, apenas os dele.
+      const isMyColaborador =
+        currentUser.perfil === 'Administrador' ||
+        currentUser.perfil === 'Coordenador' ||
+        currentUser.perfil === 'Supervisor' ||
+        col.liderId === currentUser.id ||
+        col.liderId?.replace('lid-', 'usu-') === currentUser.id ||
+        (col.liderId === 'lid-1' && currentUser.nome.includes('Carlos')); // Demo mapping for seed data
+
+      if (!isMyColaborador) return;
+
+      const admissao = new Date(col.dataAdmissao);
+      if (isNaN(admissao.getTime())) return;
+
+      // 1. Período de Experiência (15, 30, 60, 90 dias)
+      if (col.realizarExperiencia !== false) {
+        const milestones = [15, 30, 60, 90];
+        milestones.forEach((days) => {
+          const completed = col.avaliacoesCompletas?.includes(String(days));
+          if (completed) return;
+
+          const dueDate = new Date(admissao);
+          dueDate.setDate(dueDate.getDate() + days);
+
+          const diffTime = dueDate.getTime() - HOJE.getTime();
+          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+          // Mostramos o lembrete se o prazo já passou (atrasado) ou se falta menos de 15 dias
+          if (diffDays <= 15) {
+            list.push({
+              id: `${col.id}-exp-${days}`,
+              colaborador: col,
+              milestone: String(days),
+              titulo: `Avaliação de Experiência - ${days} Dias`,
+              prazoData: dueDate.toISOString().split('T')[0],
+              atrasado: diffDays < 0,
+              diasRestantes: diffDays,
+            });
+          }
+        });
+      }
+
+      // 2. Avaliação 180º (padrão de 6 meses)
+      const prazoMeses = col.prazoAvaliacao180 || 6;
+      const completed180 = col.avaliacoesCompletas?.includes('180');
+      if (!completed180) {
+        const dueDate180 = new Date(admissao);
+        dueDate180.setMonth(dueDate180.getMonth() + prazoMeses);
+
+        const diffTime180 = dueDate180.getTime() - HOJE.getTime();
+        const diffDays180 = Math.ceil(diffTime180 / (1000 * 60 * 60 * 24));
+
+        // Mostramos se já passou ou se faltam menos de 30 dias
+        if (diffDays180 <= 30) {
+          list.push({
+            id: `${col.id}-180`,
+            colaborador: col,
+            milestone: '180',
+            titulo: `Avaliação 180º (${prazoMeses} Meses)`,
+            prazoData: dueDate180.toISOString().split('T')[0],
+            atrasado: diffDays180 < 0,
+            diasRestantes: diffDays180,
+          });
+        }
+      }
+    });
+
+    return list.sort((a, b) => a.diasRestantes - b.diasRestantes);
+  };
+
+  const lembretesAcompanhamento = calculateReminders();
+
+  const handleCompleteMilestone = async (col: Colaborador, milestone: string) => {
+    const novasCompletas = [...(col.avaliacoesCompletas || [])];
+    if (!novasCompletas.includes(milestone)) {
+      novasCompletas.push(milestone);
+    }
+
+    const colAtualizado: Colaborador = {
+      ...col,
+      avaliacoesCompletas: novasCompletas,
+    };
+
+    onUpdateColaborador(colAtualizado);
+  };
 
   // 1. Feedbacks Pendentes: Feedbacks em andamento/pendente
   const feedbacksPendentes = timeline.filter(
@@ -322,6 +429,91 @@ export default function Dashboard({
           </div>
         </div>
       </div>
+
+      {/* Lembretes de Avaliação / Período de Experiência */}
+      {lembretesAcompanhamento.length > 0 && (
+        <div className="bg-amber-50/30 border border-amber-100 rounded-3xl p-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="p-1.5 bg-amber-100 text-amber-700 rounded-lg">
+                <AlertTriangle size={16} />
+              </span>
+              <div>
+                <h2 className="text-md font-bold text-slate-900">Pendências de Avaliações (Líder Direto)</h2>
+                <p className="text-xs text-slate-500">Há colaboradores sob sua gestão com prazos de experiência ou avaliação 180º pendentes.</p>
+              </div>
+            </div>
+            <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-800">
+              {lembretesAcompanhamento.length} {lembretesAcompanhamento.length === 1 ? 'pendência' : 'pendências'}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {lembretesAcompanhamento.map((lembrete) => {
+              const col = lembrete.colaborador;
+              return (
+                <div
+                  key={lembrete.id}
+                  className={`p-4 rounded-2xl border bg-white flex items-start gap-3.5 shadow-xs hover:shadow-md transition duration-200 ${
+                    lembrete.atrasado ? 'border-rose-100 bg-rose-50/5' : 'border-slate-150'
+                  }`}
+                >
+                  <img
+                    src={col.fotoUrl}
+                    alt={col.nome}
+                    className="w-10 h-10 rounded-full object-cover shrink-0 border border-slate-200 mt-0.5"
+                  />
+                  <div className="flex-1 min-w-0 space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[10px] font-bold tracking-wider text-teal-600 uppercase">
+                        {lembrete.titulo}
+                      </span>
+                      {lembrete.atrasado ? (
+                        <span className="text-[9px] font-extrabold bg-rose-50 text-rose-650 px-1.5 py-0.5 rounded-md uppercase">
+                          Vencido
+                        </span>
+                      ) : (
+                        <span className="text-[9px] font-extrabold bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded-md uppercase">
+                          Próximo
+                        </span>
+                      )}
+                    </div>
+                    
+                    <h4 className="text-sm font-bold text-slate-800 truncate">
+                      {col.nome}
+                    </h4>
+                    
+                    <div className="text-[11px] text-slate-500 flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3">
+                      <span><strong>Cidade Base:</strong> {col.cidadeBase || 'Não informada'}</span>
+                      <span className="hidden sm:inline">&middot;</span>
+                      <span><strong>Admissão:</strong> {new Date(col.dataAdmissao).toLocaleDateString('pt-BR')}</span>
+                    </div>
+
+                    <p className="text-[11px] text-slate-400">
+                      Prazo limite: <strong className="text-slate-600">{new Date(lembrete.prazoData).toLocaleDateString('pt-BR')}</strong> ({lembrete.atrasado ? `${Math.abs(lembrete.diasRestantes)} dias atrás` : `em ${lembrete.diasRestantes} dias`})
+                    </p>
+
+                    <div className="flex gap-2 pt-2">
+                      <button
+                        onClick={() => handleCompleteMilestone(col, lembrete.milestone)}
+                        className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-[10px] font-bold rounded-lg cursor-pointer transition"
+                      >
+                        ✓ Marcar Concluída
+                      </button>
+                      <button
+                        onClick={() => onOpenNewRegistroModal(col.id)}
+                        className="px-2.5 py-1 bg-slate-150 hover:bg-slate-200 text-slate-700 text-[10px] font-bold rounded-lg cursor-pointer transition"
+                      >
+                        Lançar Feedback
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Main Sections: Left (Urgent Tasks), Right (Recent Timeline) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">

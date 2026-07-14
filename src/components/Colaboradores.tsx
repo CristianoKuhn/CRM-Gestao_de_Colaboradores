@@ -12,6 +12,7 @@ import {
   Empresa,
   SituacaoColaborador,
 } from '../types';
+import { DataService } from '../services/DataService';
 import {
   Search,
   Filter,
@@ -25,6 +26,8 @@ import {
   Sparkles,
   Briefcase,
   UserCheck,
+  Upload,
+  RefreshCw,
 } from 'lucide-react';
 
 interface ColaboradoresProps {
@@ -75,6 +78,28 @@ export default function Colaboradores({
   const [newColSituacao, setNewColSituacao] = useState<SituacaoColaborador>('Ativo');
   const [newColEmpresaId, setNewColEmpresaId] = useState(empresas[0]?.id || '');
   const [newColTelefone, setNewColTelefone] = useState('');
+  const [newCidadeBase, setNewCidadeBase] = useState('');
+  const [newPrazoAvaliacao180, setNewPrazoAvaliacao180] = useState<number>(6);
+  const [newRealizarExperiencia, setNewRealizarExperiencia] = useState<boolean>(true);
+
+  const photoInputRef = React.useRef<HTMLInputElement>(null);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+
+  const handleUploadPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploadingPhoto(true);
+    try {
+      const colaboradorNome = newColNome.trim() || 'Novo Colaborador';
+      const fileUrl = await DataService.uploadFile(file, 'Fotos Colaboradores', colaboradorNome);
+      setNewColFotoUrl(fileUrl);
+    } catch (err) {
+      console.error('Erro ao fazer upload da foto de perfil:', err);
+    } finally {
+      setIsUploadingPhoto(false);
+    }
+  };
 
   // Campos para Entidades Auxiliares
   const [auxNome, setAuxNome] = useState('');
@@ -134,6 +159,10 @@ export default function Colaboradores({
       situacao: newColSituacao,
       empresaId: newColEmpresaId || empresas[0]?.id,
       telefone: newColTelefone,
+      cidadeBase: newCidadeBase || 'São Paulo - SP',
+      prazoAvaliacao180: Number(newPrazoAvaliacao180 || 6),
+      realizarExperiencia: newRealizarExperiencia,
+      avaliacoesCompletas: [],
     };
 
     onAddColaborador(novoCol);
@@ -144,6 +173,9 @@ export default function Colaboradores({
     setNewColEmail('');
     setNewColFotoUrl('');
     setNewColTelefone('');
+    setNewCidadeBase('');
+    setNewPrazoAvaliacao180(6);
+    setNewRealizarExperiencia(true);
   };
 
   const handleCreateAux = (e: React.FormEvent) => {
@@ -469,7 +501,7 @@ export default function Colaboradores({
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Líder Responsável</label>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Líder Direto</label>
                   <select
                     value={newColLiderId}
                     onChange={(e) => setNewColLiderId(e.target.value)}
@@ -483,7 +515,21 @@ export default function Colaboradores({
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Data de Admissão</label>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Cidade Base</label>
+                  <input
+                    type="text"
+                    required
+                    value={newCidadeBase}
+                    onChange={(e) => setNewCidadeBase(e.target.value)}
+                    placeholder="Ex: São Paulo - SP"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Data de Contratação / Admissão</label>
                   <input
                     type="date"
                     required
@@ -491,22 +537,6 @@ export default function Colaboradores({
                     onChange={(e) => setNewColAdmissao(e.target.value)}
                     className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 cursor-pointer"
                   />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Situação Inicial</label>
-                  <select
-                    value={newColSituacao}
-                    onChange={(e) => setNewColSituacao(e.target.value as SituacaoColaborador)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 cursor-pointer"
-                  >
-                    <option value="Ativo">Ativo</option>
-                    <option value="Em Acompanhamento">Em Acompanhamento</option>
-                    <option value="Suspenso">Suspenso</option>
-                    <option value="Desligado">Desligado</option>
-                  </select>
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Empresa</label>
@@ -524,6 +554,63 @@ export default function Colaboradores({
                 </div>
               </div>
 
+              {/* Seção de Planejamento de Avaliações */}
+              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-4">
+                <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                  <Sparkles size={14} className="text-teal-500" />
+                  Planejamento de Avaliações
+                </h4>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 mb-1.5">Prazo para Avaliação 180º</label>
+                    <select
+                      value={newPrazoAvaliacao180}
+                      onChange={(e) => setNewPrazoAvaliacao180(Number(e.target.value))}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 cursor-pointer"
+                    >
+                      <option value={3}>3 meses</option>
+                      <option value={6}>6 meses (Padrão)</option>
+                      <option value={12}>12 meses</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 mb-1.5">Avaliação de Período de Experiência?</label>
+                    <div className="flex items-center h-9">
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={newRealizarExperiencia}
+                          onChange={(e) => setNewRealizarExperiencia(e.target.checked)}
+                          className="sr-only peer"
+                        />
+                        <div className="w-11 h-6 bg-slate-250 rounded-full peer peer-checked:bg-teal-500 relative after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full peer-checked:after:border-white border border-slate-200"></div>
+                        <span className="ml-2 text-xs font-medium text-slate-600">
+                          {newRealizarExperiencia ? 'Sim (15, 30, 60 e 90 dias)' : 'Não realizar'}
+                        </span>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Situação Inicial</label>
+                  <select
+                    value={newColSituacao}
+                    onChange={(e) => setNewColSituacao(e.target.value as SituacaoColaborador)}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 cursor-pointer"
+                  >
+                    <option value="Ativo">Ativo</option>
+                    <option value="Em Acompanhamento">Em Acompanhamento</option>
+                    <option value="Suspenso">Suspenso</option>
+                    <option value="Desligado">Desligado</option>
+                  </select>
+                </div>
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Telefone de Contato</label>
@@ -536,14 +623,36 @@ export default function Colaboradores({
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">URL da Foto de Perfil (Opcional)</label>
-                  <input
-                    type="url"
-                    value={newColFotoUrl}
-                    onChange={(e) => setNewColFotoUrl(e.target.value)}
-                    placeholder="Ex: https://images.unsplash.com/..."
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
-                  />
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Foto de Perfil</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="url"
+                      value={newColFotoUrl}
+                      onChange={(e) => setNewColFotoUrl(e.target.value)}
+                      placeholder="URL da imagem ou faça upload..."
+                      className="flex-1 px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => photoInputRef.current?.click()}
+                      disabled={isUploadingPhoto}
+                      className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer border border-slate-250 transition shrink-0"
+                    >
+                      {isUploadingPhoto ? (
+                        <RefreshCw size={14} className="animate-spin" />
+                      ) : (
+                        <Upload size={14} />
+                      )}
+                      {isUploadingPhoto ? 'Enviando...' : 'Carregar'}
+                    </button>
+                    <input
+                      ref={photoInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={handleUploadPhoto}
+                      className="hidden"
+                    />
+                  </div>
                 </div>
               </div>
 

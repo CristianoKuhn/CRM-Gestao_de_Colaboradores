@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useRef } from 'react';
+import { DataService } from '../services/DataService';
 import {
   Colaborador,
   TimelineRegistro,
@@ -42,6 +43,7 @@ import {
   ExternalLink,
   MapPin,
   ClipboardList,
+  RefreshCw,
 } from 'lucide-react';
 
 interface ColaboradorProfileProps {
@@ -68,6 +70,9 @@ export default function ColaboradorProfile({
   onAddTimelineRegistro,
 }: ColaboradorProfileProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const [isUploadingAnexo, setIsUploadingAnexo] = useState(false);
 
   // Estados locais para filtros da timeline
   const [timelineSearch, setTimelineSearch] = useState('');
@@ -200,37 +205,70 @@ export default function ColaboradorProfile({
     }
   };
 
-  // Upload simulado do Supabase Storage
-  const handleFileUpload = (files: FileList | null) => {
+  // Tratar alteração da foto do colaborador
+  const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploadingPhoto(true);
+    try {
+      const novaUrl = await DataService.uploadFile(file, 'Fotos Colaboradores', colaborador.nome);
+      onUpdateColaborador({
+        ...colaborador,
+        fotoUrl: novaUrl
+      });
+    } catch (err) {
+      console.error('Erro ao alterar foto do colaborador:', err);
+    } finally {
+      setIsUploadingPhoto(false);
+    }
+  };
+
+  // Upload real para o Google Drive
+  const handleFileUpload = async (files: FileList | null) => {
     if (!files) return;
 
-    const novosAnexos: Anexo[] = Array.from(files).map((f) => {
-      const isImg = f.type.startsWith('image/');
-      const randomUrl = isImg
-        ? 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=400'
-        : '#';
+    setIsUploadingAnexo(true);
+    try {
+      const novosAnexos: Anexo[] = [];
+      const folderName = regTipo === 'Plano de Desenvolvimento Individual (PDI)' ? 'documentos' : 'Anexos';
 
-      let sizeFriendly = `${(f.size / 1024).toFixed(0)} KB`;
-      if (f.size > 1024 * 1024) {
-        sizeFriendly = `${(f.size / (1024 * 1024)).toFixed(1)} MB`;
+      for (const file of Array.from(files)) {
+        try {
+          const fileUrl = await DataService.uploadFile(file, folderName, colaborador.nome);
+
+          let sizeFriendly = `${(file.size / 1024).toFixed(0)} KB`;
+          if (file.size > 1024 * 1024) {
+            sizeFriendly = `${(file.size / (1024 * 1024)).toFixed(1)} MB`;
+          }
+
+          let tipoFormatado = 'documento';
+          if (file.type.startsWith('image/')) tipoFormatado = 'imagem';
+          else if (file.type.includes('pdf')) tipoFormatado = 'pdf';
+          else if (file.type.startsWith('audio/')) tipoFormatado = 'audio';
+          else if (file.type.startsWith('video/')) tipoFormatado = 'video';
+          else if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls') || file.type.includes('excel') || file.type.includes('spreadsheet')) {
+            tipoFormatado = 'excel';
+          }
+
+          novosAnexos.push({
+            id: `anx-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+            nome: file.name,
+            tipo: tipoFormatado,
+            url: fileUrl,
+            tamanho: sizeFriendly,
+          });
+        } catch (uploadError) {
+          console.error(`Erro ao fazer upload de ${file.name}:`, uploadError);
+        }
       }
 
-      let tipoFormatado = 'documento';
-      if (f.type.startsWith('image/')) tipoFormatado = 'imagem';
-      else if (f.type.includes('pdf')) tipoFormatado = 'pdf';
-      else if (f.type.startsWith('audio/')) tipoFormatado = 'audio';
-      else if (f.type.startsWith('video/')) tipoFormatado = 'video';
-
-      return {
-        id: `anx-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-        nome: f.name,
-        tipo: tipoFormatado,
-        url: randomUrl,
-        tamanho: sizeFriendly,
-      };
-    });
-
-    setRegAnexos((prev) => [...prev, ...novosAnexos]);
+      setRegAnexos((prev) => [...prev, ...novosAnexos]);
+    } catch (err) {
+      console.error('Erro no upload de arquivos:', err);
+    } finally {
+      setIsUploadingAnexo(false);
+    }
   };
 
   const removeAnexo = (id: string) => {
@@ -311,11 +349,32 @@ export default function ColaboradorProfile({
 
           {/* Profile Card Main Body */}
           <div className="p-6 pt-0 relative -mt-12 flex flex-col items-center border-b border-slate-100">
-            <img
-              src={colaborador.fotoUrl}
-              alt={colaborador.nome}
-              className="w-24 h-24 rounded-full object-cover border-4 border-white shadow-md mb-3"
-            />
+            {/* Editable Profile Photo */}
+            <div className="relative group/photo mb-3">
+              <img
+                src={colaborador.fotoUrl}
+                alt={colaborador.nome}
+                className="w-24 h-24 rounded-full object-cover border-4 border-white shadow-md group-hover/photo:brightness-75 transition-all"
+              />
+              <button
+                type="button"
+                onClick={() => photoInputRef.current?.click()}
+                className="absolute inset-0 flex items-center justify-center bg-slate-950/40 text-white rounded-full opacity-0 group-hover/photo:opacity-100 transition-opacity cursor-pointer duration-150"
+                title="Alterar Foto de Perfil"
+              >
+                <Upload size={18} />
+              </button>
+              <input
+                ref={photoInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handlePhotoChange}
+                className="hidden"
+              />
+            </div>
+            {isUploadingPhoto && (
+              <span className="text-[10px] font-bold text-teal-600 animate-pulse mb-2">Atualizando foto...</span>
+            )}
             <h2 className="text-xl font-extrabold text-slate-900 text-center tracking-tight">{colaborador.nome}</h2>
             <p className="text-xs text-slate-400 font-medium text-center">{colaborador.email}</p>
 
@@ -634,16 +693,26 @@ export default function ColaboradorProfile({
                     onDragOver={handleDragOver}
                     onDragLeave={handleDragLeave}
                     onDrop={handleDrop}
-                    onClick={() => fileInputRef.current?.click()}
+                    onClick={() => !isUploadingAnexo && fileInputRef.current?.click()}
                     className={`border-2 border-dashed rounded-2xl p-6 flex flex-col items-center justify-center cursor-pointer transition ${
                       isDragging
                         ? 'border-teal-500 bg-teal-50/20'
                         : 'border-slate-200 bg-slate-50 hover:bg-slate-100/50 hover:border-slate-300'
-                    }`}
+                    } ${isUploadingAnexo ? 'pointer-events-none opacity-60' : ''}`}
                   >
-                    <Upload size={24} className="text-slate-400 mb-1.5" />
-                    <p className="text-xs font-semibold text-slate-700">Arrastar arquivos aqui ou clicar para selecionar</p>
-                    <p className="text-[10px] text-slate-400 mt-1">Imagens, PDFs, Documentos, Áudio ou Vídeo</p>
+                    {isUploadingAnexo ? (
+                      <>
+                        <RefreshCw size={24} className="text-teal-500 mb-1.5 animate-spin" />
+                        <p className="text-xs font-bold text-teal-600 animate-pulse">Enviando arquivos ao Google Drive...</p>
+                        <p className="text-[10px] text-slate-400 mt-1">Sempre criando uma subpasta organizada para o colaborador</p>
+                      </>
+                    ) : (
+                      <>
+                        <Upload size={24} className="text-slate-400 mb-1.5" />
+                        <p className="text-xs font-semibold text-slate-700">Arrastar arquivos aqui ou clicar para selecionar</p>
+                        <p className="text-[10px] text-slate-400 mt-1">Imagens, PDFs, Planilhas Excel ou Vídeos</p>
+                      </>
+                    )}
                     <input
                       ref={fileInputRef}
                       type="file"

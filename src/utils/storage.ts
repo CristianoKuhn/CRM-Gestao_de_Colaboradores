@@ -14,6 +14,7 @@ import {
   SupabaseConfig,
   GoogleScriptConfig,
   DataSourceProvider,
+  Usuario,
 } from '../types';
 
 // Chaves para o LocalStorage
@@ -25,6 +26,7 @@ const KEYS = {
   COLABORADORES: 'gc_colaboradores',
   TIMELINE: 'gc_timeline',
   TAREFAS: 'gc_tarefas',
+  USUARIOS: 'gc_usuarios',
   SUPABASE: 'gc_supabase_config',
   GOOGLESCRIPT: 'gc_googlescript_config',
   PROVIDER: 'gc_datasource_provider',
@@ -60,6 +62,12 @@ const SEED_LIDERES: Lider[] = [
   { id: 'lid-3', nome: 'Roberto Souza', email: 'roberto.souza@inovacao.com', cargo: 'Gerente de Customer Success', fotoUrl: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&q=80&w=200' }
 ];
 
+const SEED_USUARIOS: Usuario[] = [
+  { id: 'usu-1', nome: 'Carlos Silva', email: 'carlos.silva@inovacao.com', perfil: 'Administrador', setor_id: 'set-1', ativo: true, ultimo_login: '13/07/2026 10:00:00', senha_hash: '123456' },
+  { id: 'usu-2', nome: 'Mariana Santos', email: 'mariana.santos@inovacao.com', perfil: 'Coordenador', setor_id: 'set-2', ativo: true, ultimo_login: '13/07/2026 09:15:00', senha_hash: '123456' },
+  { id: 'usu-3', nome: 'Roberto Souza', email: 'roberto.souza@inovacao.com', perfil: 'Supervisor', setor_id: 'set-3', ativo: true, ultimo_login: '12/07/2026 15:30:00', senha_hash: '123456' }
+];
+
 const SEED_COLABORADORES: Colaborador[] = [
   {
     id: 'col-1',
@@ -72,7 +80,11 @@ const SEED_COLABORADORES: Colaborador[] = [
     dataAdmissao: '2024-03-10',
     situacao: 'Ativo',
     empresaId: 'emp-1',
-    telefone: '(11) 98888-1111'
+    telefone: '(11) 98888-1111',
+    cidadeBase: 'São Paulo - SP',
+    prazoAvaliacao180: 6,
+    realizarExperiencia: true,
+    avaliacoesCompletas: ['15', '30', '60', '90', '180']
   },
   {
     id: 'col-2',
@@ -85,7 +97,11 @@ const SEED_COLABORADORES: Colaborador[] = [
     dataAdmissao: '2023-01-15',
     situacao: 'Ativo',
     empresaId: 'emp-1',
-    telefone: '(11) 98888-2222'
+    telefone: '(11) 98888-2222',
+    cidadeBase: 'Belo Horizonte - MG',
+    prazoAvaliacao180: 6,
+    realizarExperiencia: false,
+    avaliacoesCompletas: []
   },
   {
     id: 'col-3',
@@ -98,7 +114,11 @@ const SEED_COLABORADORES: Colaborador[] = [
     dataAdmissao: '2025-05-20',
     situacao: 'Em Acompanhamento',
     empresaId: 'emp-1',
-    telefone: '(11) 98888-3333'
+    telefone: '(11) 98888-3333',
+    cidadeBase: 'Rio de Janeiro - RJ',
+    prazoAvaliacao180: 6,
+    realizarExperiencia: true,
+    avaliacoesCompletas: ['15', '30']
   },
   {
     id: 'col-4',
@@ -111,7 +131,11 @@ const SEED_COLABORADORES: Colaborador[] = [
     dataAdmissao: '2024-09-01',
     situacao: 'Ativo',
     empresaId: 'emp-1',
-    telefone: '(11) 98888-4444'
+    telefone: '(11) 98888-4444',
+    cidadeBase: 'São Paulo - SP',
+    prazoAvaliacao180: 6,
+    realizarExperiencia: true,
+    avaliacoesCompletas: ['15', '30', '60', '90']
   },
   {
     id: 'col-5',
@@ -124,7 +148,11 @@ const SEED_COLABORADORES: Colaborador[] = [
     dataAdmissao: '2022-11-10',
     situacao: 'Ativo',
     empresaId: 'emp-1',
-    telefone: '(11) 98888-5555'
+    telefone: '(11) 98888-5555',
+    cidadeBase: 'Curitiba - PR',
+    prazoAvaliacao180: 6,
+    realizarExperiencia: true,
+    avaliacoesCompletas: ['15', '30', '60', '90', '180']
   }
 ];
 
@@ -316,12 +344,12 @@ const DEFAULT_SUPABASE: SupabaseConfig = {
 };
 
 const DEFAULT_GOOGLESCRIPT: GoogleScriptConfig = {
-  webAppUrl: '',
+  webAppUrl: 'https://script.google.com/macros/s/AKfycbz8iGKX9f9VNECQL1fcQttiMaEuT3a61YS3hE3HYi13SUvx3ShxF3RF69u7LkQhac0V/exec',
   driveFolderId: '',
-  isConnected: false,
+  isConnected: true,
 };
 
-const DEFAULT_PROVIDER: DataSourceProvider = 'local';
+const DEFAULT_PROVIDER: DataSourceProvider = 'googlescript';
 
 // Funções de Inicialização e Leitura/Escrita
 export function initializeStorage() {
@@ -346,12 +374,27 @@ export function initializeStorage() {
   if (!localStorage.getItem(KEYS.TAREFAS)) {
     localStorage.setItem(KEYS.TAREFAS, JSON.stringify(SEED_TAREFAS));
   }
+  if (!localStorage.getItem(KEYS.USUARIOS)) {
+    localStorage.setItem(KEYS.USUARIOS, JSON.stringify(SEED_USUARIOS));
+  }
   if (!localStorage.getItem(KEYS.SUPABASE)) {
     localStorage.setItem(KEYS.SUPABASE, JSON.stringify(DEFAULT_SUPABASE));
   }
-  if (!localStorage.getItem(KEYS.GOOGLESCRIPT)) {
+  
+  const existingGoogleConfig = localStorage.getItem(KEYS.GOOGLESCRIPT);
+  if (!existingGoogleConfig) {
     localStorage.setItem(KEYS.GOOGLESCRIPT, JSON.stringify(DEFAULT_GOOGLESCRIPT));
+  } else {
+    try {
+      const parsed = JSON.parse(existingGoogleConfig);
+      if (!parsed.webAppUrl || parsed.webAppUrl !== DEFAULT_GOOGLESCRIPT.webAppUrl) {
+        localStorage.setItem(KEYS.GOOGLESCRIPT, JSON.stringify(DEFAULT_GOOGLESCRIPT));
+      }
+    } catch (e) {
+      localStorage.setItem(KEYS.GOOGLESCRIPT, JSON.stringify(DEFAULT_GOOGLESCRIPT));
+    }
   }
+
   if (!localStorage.getItem(KEYS.PROVIDER)) {
     localStorage.setItem(KEYS.PROVIDER, JSON.stringify(DEFAULT_PROVIDER));
   }
@@ -377,6 +420,7 @@ export const StorageAPI = {
   getColaboradores: (): Colaborador[] => get<Colaborador>(KEYS.COLABORADORES),
   getTimeline: (): TimelineRegistro[] => get<TimelineRegistro>(KEYS.TIMELINE),
   getTarefas: (): Tarefa[] => get<Tarefa>(KEYS.TAREFAS),
+  getUsuarios: (): Usuario[] => get<Usuario>(KEYS.USUARIOS),
   
   getSupabaseConfig: (): SupabaseConfig => {
     initializeStorage();
@@ -449,6 +493,23 @@ export const StorageAPI = {
     }
   },
 
+  saveUsuario: (usuario: Usuario) => {
+    const list = StorageAPI.getUsuarios();
+    const index = list.findIndex(u => u.id === usuario.id);
+    if (index >= 0) {
+      list[index] = usuario;
+      set(KEYS.USUARIOS, list);
+    } else {
+      set(KEYS.USUARIOS, [...list, usuario]);
+    }
+  },
+
+  deleteUsuario: (id: string) => {
+    const list = StorageAPI.getUsuarios();
+    const filtered = list.filter(u => u.id !== id);
+    set(KEYS.USUARIOS, filtered);
+  },
+
   toggleTarefa: (id: string): Tarefa | undefined => {
     const list = StorageAPI.getTarefas();
     const index = list.findIndex(t => t.id === id);
@@ -481,6 +542,7 @@ export const StorageAPI = {
     localStorage.removeItem(KEYS.COLABORADORES);
     localStorage.removeItem(KEYS.TIMELINE);
     localStorage.removeItem(KEYS.TAREFAS);
+    localStorage.removeItem(KEYS.USUARIOS);
     initializeStorage();
   }
 };

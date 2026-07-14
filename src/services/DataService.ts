@@ -14,8 +14,19 @@ import {
   SupabaseConfig,
   GoogleScriptConfig,
   DataSourceProvider,
+  TipoRegistro,
+  Usuario,
 } from '../types';
 import { StorageAPI } from '../utils/storage';
+
+export function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = (error) => reject(error);
+  });
+}
 
 export interface IDataService {
   getEmpresas(): Promise<Empresa[]>;
@@ -25,6 +36,7 @@ export interface IDataService {
   getColaboradores(): Promise<Colaborador[]>;
   getTimeline(): Promise<TimelineRegistro[]>;
   getTarefas(): Promise<Tarefa[]>;
+  getUsuarios(): Promise<Usuario[]>;
 
   saveEmpresa(empresa: Empresa): Promise<void>;
   saveSetor(setor: Setor): Promise<void>;
@@ -34,6 +46,14 @@ export interface IDataService {
   saveTimelineRegistro(registro: TimelineRegistro): Promise<void>;
   saveTarefa(tarefa: Tarefa): Promise<void>;
   toggleTarefa(id: string): Promise<Tarefa | undefined>;
+  saveUsuario(usuario: Usuario): Promise<void>;
+  deleteUsuario(id: string): Promise<void>;
+
+  uploadFile(
+    file: File,
+    folderName: 'Fotos Colaboradores' | 'Anexos' | 'documentos',
+    colaboradorNome: string
+  ): Promise<string>;
 
   resetData(): Promise<void>;
 }
@@ -63,6 +83,9 @@ export class LocalDataService implements IDataService {
   async getTarefas(): Promise<Tarefa[]> {
     return StorageAPI.getTarefas();
   }
+  async getUsuarios(): Promise<Usuario[]> {
+    return StorageAPI.getUsuarios();
+  }
 
   async saveEmpresa(empresa: Empresa): Promise<void> {
     StorageAPI.saveEmpresa(empresa);
@@ -85,8 +108,21 @@ export class LocalDataService implements IDataService {
   async saveTarefa(tarefa: Tarefa): Promise<void> {
     StorageAPI.saveTarefa(tarefa);
   }
+  async saveUsuario(usuario: Usuario): Promise<void> {
+    StorageAPI.saveUsuario(usuario);
+  }
+  async deleteUsuario(id: string): Promise<void> {
+    StorageAPI.deleteUsuario(id);
+  }
   async toggleTarefa(id: string): Promise<Tarefa | undefined> {
     return StorageAPI.toggleTarefa(id);
+  }
+  async uploadFile(
+    file: File,
+    folderName: 'Fotos Colaboradores' | 'Anexos' | 'documentos',
+    colaboradorNome: string
+  ): Promise<string> {
+    return fileToBase64(file);
   }
   async resetData(): Promise<void> {
     StorageAPI.resetData();
@@ -105,19 +141,23 @@ export class GoogleScriptDataService implements IDataService {
   }
 
   private async request<T>(action: string, payload?: any): Promise<T> {
-    if (!this.config.webAppUrl) {
-      throw new Error('URL do Google Apps Script não configurada.');
-    }
-
-    const url = new URL(this.config.webAppUrl);
+    // Sempre faz a chamada para o nosso backend proxy full-stack
+    const url = new URL('/api/googlescript', window.location.origin);
     url.searchParams.set('action', action);
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+
+    // Repassa a URL configurada no frontend para o backend proxy via header
+    if (this.config.webAppUrl) {
+      headers['x-google-script-url'] = this.config.webAppUrl;
+    }
 
     const options: RequestInit = {
       method: payload ? 'POST' : 'GET',
       mode: 'cors',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers,
     };
 
     if (payload) {
@@ -133,7 +173,7 @@ export class GoogleScriptDataService implements IDataService {
     }
 
     const result = await response.json();
-    if (result.status === 'error') {
+    if (result.status === 'error' || result.success === false) {
       throw new Error(result.message || 'Erro reportado pelo Google Apps Script.');
     }
 
@@ -142,165 +182,459 @@ export class GoogleScriptDataService implements IDataService {
 
   async getEmpresas(): Promise<Empresa[]> {
     try {
-      return await this.request<Empresa[]>('getEmpresas');
+      const raw = await this.request<any[]>('getEmpresas');
+      return raw.map(e => ({
+        id: String(e.id || ''),
+        nome: String(e.nome || ''),
+      }));
     } catch (e) {
-      console.warn('Erro ao conectar ao Google Sheets, usando fallback local:', e);
+      console.warn('GoogleScript getEmpresas falhou, usando LocalStorage fallback:', e);
       return this.localFallback.getEmpresas();
     }
   }
 
   async getSetores(): Promise<Setor[]> {
     try {
-      return await this.request<Setor[]>('getSetores');
+      const raw = await this.request<any[]>('getSetores');
+      return raw.map(s => ({
+        id: String(s.id || ''),
+        nome: String(s.nome || ''),
+      }));
     } catch (e) {
-      console.warn('Erro ao conectar ao Google Sheets, usando fallback local:', e);
+      console.warn('GoogleScript getSetores falhou, usando LocalStorage fallback:', e);
       return this.localFallback.getSetores();
     }
   }
 
   async getCargos(): Promise<Cargo[]> {
     try {
-      return await this.request<Cargo[]>('getCargos');
+      const raw = await this.request<any[]>('getCargos');
+      return raw.map(c => ({
+        id: String(c.id || ''),
+        nome: String(c.nome || ''),
+      }));
     } catch (e) {
-      console.warn('Erro ao conectar ao Google Sheets, usando fallback local:', e);
+      console.warn('GoogleScript getCargos falhou, usando LocalStorage fallback:', e);
       return this.localFallback.getCargos();
     }
   }
 
   async getLideres(): Promise<Lider[]> {
     try {
-      return await this.request<Lider[]>('getLideres');
+      const raw = await this.request<any[]>('getLideres');
+      return raw.map(l => ({
+        id: String(l.id || ''),
+        nome: String(l.nome || ''),
+        email: String(l.email || ''),
+        cargo: String(l.cargo || ''),
+        fotoUrl: String(l.fotoUrl || l.foto_url || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&q=80&w=200'),
+      }));
     } catch (e) {
-      console.warn('Erro ao conectar ao Google Sheets, usando fallback local:', e);
+      console.warn('GoogleScript getLideres falhou, usando LocalStorage fallback:', e);
       return this.localFallback.getLideres();
     }
   }
 
   async getColaboradores(): Promise<Colaborador[]> {
     try {
-      return await this.request<Colaborador[]>('getColaboradores');
+      let raw: any[];
+      try {
+        raw = await this.request<any[]>('listarColaboradores');
+      } catch (err) {
+        raw = await this.request<any[]>('getColaboradores');
+      }
+
+      return raw.map(c => {
+        let completed: string[] = [];
+        if (typeof c.avaliacoes_completas === 'string') {
+          try {
+            completed = JSON.parse(c.avaliacoes_completas);
+          } catch (e) {
+            completed = [];
+          }
+        } else if (Array.isArray(c.avaliacoes_completas)) {
+          completed = c.avaliacoes_completas;
+        } else if (Array.isArray(c.avaliacoesCompletas)) {
+          completed = c.avaliacoesCompletas;
+        }
+
+        return {
+          id: String(c.id || ''),
+          nome: String(c.nome || ''),
+          email: String(c.email || ''),
+          fotoUrl: String(c.foto_url || c.fotoUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200'),
+          cargoId: String(c.cargo_id || c.cargoId || ''),
+          setorId: String(c.setor_id || c.setorId || ''),
+          liderId: String(c.lider_id || c.liderId || ''),
+          dataAdmissao: String(c.data_admissao || c.dataAdmissao || ''),
+          situacao: (c.situacao || (c.ativo === false ? 'Desligado' : 'Ativo')) as any,
+          empresaId: String(c.empresa_id || c.empresaId || ''),
+          telefone: String(c.telefone || ''),
+          cidadeBase: String(c.cidade_base || c.cidadeBase || ''),
+          prazoAvaliacao180: Number(c.prazo_avaliacao_180 ?? c.prazoAvaliacao180 ?? 6),
+          realizarExperiencia: c.realizar_experiencia === true || c.realizar_experiencia === 'true' || c.realizar_experiencia === 1 || c.realizar_experiencia === '1' || c.realizar_experiencia === undefined || c.realizarExperiencia === true,
+          avaliacoesCompletas: completed,
+        };
+      });
     } catch (e) {
-      console.warn('Erro ao conectar ao Google Sheets, usando fallback local:', e);
+      console.warn('GoogleScript getColaboradores falhou, usando LocalStorage fallback:', e);
       return this.localFallback.getColaboradores();
     }
   }
 
   async getTimeline(): Promise<TimelineRegistro[]> {
     try {
-      return await this.request<TimelineRegistro[]>('getTimeline');
+      let raw: any[];
+      try {
+        raw = await this.request<any[]>('getTimeline');
+      } catch (err) {
+        raw = await this.request<any[]>('listarRegistros');
+      }
+
+      return raw.map(r => {
+        let titulo = r.titulo || '';
+        if (!titulo) {
+          if (r.tipo?.includes('Feedback')) titulo = r.Feedback;
+          else if (r.tipo?.includes('Reconhecimento')) titulo = r.Reconhecimento;
+          else if (r.tipo?.includes('Advertência') || r.tipo?.includes('Suspensão') || r.tipo?.includes('Advertencia')) {
+            titulo = r.Advertência || r.Advertencia;
+          } else if (r.tipo?.includes('PDI')) titulo = r.PDI;
+          else if (r.tipo?.includes('1:1')) titulo = r['1:1'];
+          else titulo = r.Observação || r.Observacao;
+        }
+
+        return {
+          id: String(r.id || ''),
+          colaboradorId: String(r.colaborador_id || r.colaboradorId || ''),
+          tipo: String(r.tipo || '') as TipoRegistro,
+          data: String(r.data || r.criado_em || ''),
+          titulo: String(titulo || ''),
+          descricao: String(r.descricao || ''),
+          responsavelId: String(r.lider || r.responsavel_id || r.responsavelId || ''),
+          prioridade: (r.prioridade || 'Baixa') as any,
+          status: (r.status || 'Concluído') as any,
+          prazoAcompanhamento: String(r.prazo || r.prazo_acompanhamento || r.prazoAcompanhamento || ''),
+          gerarTarefaFutura: r.gerar_tarefa_futura === true || r.gerar_tarefa_futura === 'true',
+          anexos: typeof r.anexos === 'string' ? JSON.parse(r.anexos) : (r.anexos || []),
+          tarefaId: String(r.tarefa_id || r.tarefaId || '')
+        };
+      });
     } catch (e) {
-      console.warn('Erro ao conectar ao Google Sheets, usando fallback local:', e);
+      console.warn('GoogleScript getTimeline falhou, usando LocalStorage fallback:', e);
       return this.localFallback.getTimeline();
     }
   }
 
   async getTarefas(): Promise<Tarefa[]> {
     try {
-      return await this.request<Tarefa[]>('getTarefas');
+      let raw: any[];
+      try {
+        raw = await this.request<any[]>('getTarefas');
+      } catch (err) {
+        raw = await this.request<any[]>('listarTarefas');
+      }
+
+      return raw.map(t => ({
+        id: String(t.id || ''),
+        colaboradorId: String(t.colaborador_id || t.colaboradorId || ''),
+        titulo: String(t.titulo || ''),
+        descricao: String(t.descricao || ''),
+        vencimento: String(t.vencimento || t.prazo || ''),
+        concluida: t.concluida === true || t.concluida === 'true' || t.status === 'Concluído',
+        tipoOrigem: String(t.tipo_origem || t.tipoOrigem || '') as TipoRegistro,
+        registroId: String(t.registro_id || t.registroId || ''),
+        responsavelId: String(t.responsavel_id || t.responsavelId || t.lider || '')
+      }));
     } catch (e) {
-      console.warn('Erro ao conectar ao Google Sheets, usando fallback local:', e);
+      console.warn('GoogleScript getTarefas falhou, usando LocalStorage fallback:', e);
       return this.localFallback.getTarefas();
     }
   }
 
   async saveEmpresa(empresa: Empresa): Promise<void> {
-    // Atualiza localmente primeiro como cache
     await this.localFallback.saveEmpresa(empresa);
-    if (this.config.webAppUrl) {
+    try {
+      await this.request('saveEmpresa', { data: empresa });
+    } catch (e) {
       try {
-        await this.request('saveEmpresa', { data: empresa });
-      } catch (e) {
-        console.error('Falha ao sincronizar salvamento com o Google Sheets:', e);
+        await this.request('salvarEmpresa', { data: empresa });
+      } catch (e2) {
+        console.warn('Erro ao sincronizar empresa com GoogleScript (usando fallback local):', e2);
       }
     }
   }
 
   async saveSetor(setor: Setor): Promise<void> {
     await this.localFallback.saveSetor(setor);
-    if (this.config.webAppUrl) {
+    try {
+      await this.request('saveSetor', { data: setor });
+    } catch (e) {
       try {
-        await this.request('saveSetor', { data: setor });
-      } catch (e) {
-        console.error('Falha ao sincronizar salvamento com o Google Sheets:', e);
+        await this.request('salvarSetor', { data: setor });
+      } catch (e2) {
+        console.warn('Erro ao sincronizar setor com GoogleScript (usando fallback local):', e2);
       }
     }
   }
 
   async saveCargo(cargo: Cargo): Promise<void> {
     await this.localFallback.saveCargo(cargo);
-    if (this.config.webAppUrl) {
+    try {
+      await this.request('saveCargo', { data: cargo });
+    } catch (e) {
       try {
-        await this.request('saveCargo', { data: cargo });
-      } catch (e) {
-        console.error('Falha ao sincronizar salvamento com o Google Sheets:', e);
+        await this.request('salvarCargo', { data: cargo });
+      } catch (e2) {
+        console.warn('Erro ao sincronizar cargo com GoogleScript (usando fallback local):', e2);
       }
     }
   }
 
   async saveLider(lider: Lider): Promise<void> {
     await this.localFallback.saveLider(lider);
-    if (this.config.webAppUrl) {
+    try {
+      const body = {
+        id: lider.id,
+        nome: lider.nome,
+        email: lider.email,
+        cargo: lider.cargo,
+        foto_url: lider.fotoUrl,
+      };
+      await this.request('saveLider', { data: body });
+    } catch (e) {
       try {
-        await this.request('saveLider', { data: lider });
-      } catch (e) {
-        console.error('Falha ao sincronizar salvamento com o Google Sheets:', e);
+        const body = {
+          id: lider.id,
+          nome: lider.nome,
+          email: lider.email,
+          cargo: lider.cargo,
+          foto_url: lider.fotoUrl,
+        };
+        await this.request('salvarLider', { data: body });
+      } catch (e2) {
+        console.warn('Erro ao sincronizar lider com GoogleScript (usando fallback local):', e2);
       }
     }
   }
 
   async saveColaborador(colaborador: Colaborador): Promise<void> {
     await this.localFallback.saveColaborador(colaborador);
-    if (this.config.webAppUrl) {
+    const body = {
+      id: colaborador.id,
+      nome: colaborador.nome,
+      email: colaborador.email,
+      telefone: colaborador.telefone || '',
+      cargo_id: colaborador.cargoId,
+      setor_id: colaborador.setorId,
+      lider_id: colaborador.liderId,
+      data_admissao: colaborador.dataAdmissao,
+      situacao: colaborador.situacao,
+      empresa_id: colaborador.empresaId,
+      foto_url: colaborador.fotoUrl,
+      ativo: colaborador.situacao !== 'Desligado',
+      cidade_base: colaborador.cidadeBase || '',
+      prazo_avaliacao_180: colaborador.prazoAvaliacao180 ?? 6,
+      realizar_experiencia: colaborador.realizarExperiencia ?? true,
+      avaliacoes_completas: JSON.stringify(colaborador.avaliacoesCompletas || []),
+    };
+
+    try {
+      await this.request('saveColaborador', { data: body });
+    } catch (err) {
       try {
-        await this.request('saveColaborador', { data: colaborador });
-      } catch (e) {
-        console.error('Falha ao sincronizar salvamento com o Google Sheets:', e);
+        await this.request('salvarColaborador', { data: body });
+      } catch (err2) {
+        try {
+          await this.request('novoColaborador', body);
+        } catch (err3) {
+          console.warn('Erro ao sincronizar colaborador com GoogleScript (usando fallback local):', err3);
+        }
       }
     }
   }
 
   async saveTimelineRegistro(registro: TimelineRegistro): Promise<void> {
     await this.localFallback.saveTimelineRegistro(registro);
-    if (this.config.webAppUrl) {
+    const body: any = {
+      id: registro.id,
+      colaborador_id: registro.colaboradorId,
+      tipo: registro.tipo,
+      descricao: registro.descricao,
+      status: registro.status,
+      prioridade: registro.prioridade,
+      data: registro.data,
+      prazo: registro.prazoAcompanhamento || '',
+      lider: registro.responsavelId,
+      data_conclusao: registro.status === 'Concluído' ? new Date().toLocaleDateString('pt-BR') : '',
+      gerar_tarefa_futura: registro.gerarTarefaFutura || false,
+      anexos: JSON.stringify(registro.anexos || []),
+      tarefa_id: registro.tarefaId || '',
+    };
+
+    body.Feedback = '';
+    body.Reconhecimento = '';
+    body['Advertência'] = '';
+    body.PDI = '';
+    body['1:1'] = '';
+    body['Observação'] = '';
+
+    if (registro.tipo.includes('Feedback')) {
+      body.Feedback = registro.titulo;
+    } else if (registro.tipo.includes('Reconhecimento') || registro.tipo.includes('Elogio')) {
+      body.Reconhecimento = registro.titulo;
+    } else if (registro.tipo.includes('Advertência') || registro.tipo.includes('Suspensão') || registro.tipo.includes('Advertencia')) {
+      body['Advertência'] = registro.titulo;
+    } else if (registro.tipo.includes('PDI') || registro.tipo.includes('Plano')) {
+      body.PDI = registro.titulo;
+    } else if (registro.tipo === 'Conversa Individual (1:1)' || (registro.tipo as string) === '1:1') {
+      body['1:1'] = registro.titulo;
+    } else {
+      body['Observação'] = registro.titulo;
+    }
+
+    try {
+      await this.request('saveTimelineRegistro', { data: body });
+    } catch (err) {
       try {
-        await this.request('saveTimelineRegistro', { data: registro });
-      } catch (e) {
-        console.error('Falha ao sincronizar salvamento com o Google Sheets:', e);
+        await this.request('salvarRegistro', { data: body });
+      } catch (err2) {
+        console.warn('Erro ao sincronizar registro timeline com GoogleScript (usando fallback local):', err2);
       }
     }
   }
 
   async saveTarefa(tarefa: Tarefa): Promise<void> {
     await this.localFallback.saveTarefa(tarefa);
-    if (this.config.webAppUrl) {
+    const body = {
+      id: tarefa.id,
+      colaborador_id: tarefa.colaboradorId,
+      titulo: tarefa.titulo,
+      descricao: tarefa.descricao,
+      vencimento: tarefa.vencimento,
+      concluida: tarefa.concluida,
+      tipo_origem: tarefa.tipoOrigem,
+      registro_id: tarefa.registroId,
+      responsavel_id: tarefa.responsavelId,
+      status: tarefa.concluida ? 'Concluído' : 'Pendente',
+    };
+
+    try {
+      await this.request('saveTarefa', { data: body });
+    } catch (err) {
       try {
-        await this.request('saveTarefa', { data: tarefa });
-      } catch (e) {
-        console.error('Falha ao sincronizar salvamento com o Google Sheets:', e);
+        await this.request('salvarTarefa', { data: body });
+      } catch (err2) {
+        console.warn('Erro ao sincronizar tarefa com GoogleScript (usando fallback local):', err2);
       }
     }
   }
 
   async toggleTarefa(id: string): Promise<Tarefa | undefined> {
-    const tarefa = await this.localFallback.toggleTarefa(id);
-    if (tarefa && this.config.webAppUrl) {
-      try {
-        await this.request('saveTarefa', { data: tarefa });
-      } catch (e) {
-        console.error('Falha ao sincronizar alternância de tarefa com o Google Sheets:', e);
-      }
+    const resLocal = await this.localFallback.toggleTarefa(id);
+    try {
+      const response = await this.request<Tarefa>('toggleTarefa', { id });
+      return response || resLocal;
+    } catch (e) {
+      console.warn('GoogleScript toggleTarefa falhou, usando local:', e);
+      return resLocal;
     }
-    return tarefa;
   }
 
   async resetData(): Promise<void> {
     await this.localFallback.resetData();
-    if (this.config.webAppUrl) {
+    try {
+      await this.request('resetData');
+    } catch (e) {
+      console.warn('Erro ao resetar dados no GoogleScript (usando fallback local):', e);
+    }
+  }
+
+  async getUsuarios(): Promise<Usuario[]> {
+    try {
+      let raw: any[];
       try {
-        await this.request('resetData');
-      } catch (e) {
-        console.error('Falha ao sincronizar reset com o Google Sheets:', e);
+        raw = await this.request<any[]>('getUsuarios');
+      } catch (err) {
+        raw = await this.request<any[]>('listarUsuarios');
       }
+
+      return raw.map(u => ({
+        id: String(u.id || ''),
+        nome: String(u.nome || ''),
+        email: String(u.email || ''),
+        senha_hash: String(u.senha_hash || u.senhaHash || ''),
+        perfil: (u.perfil || 'Lider') as any,
+        setor_id: String(u.setor_id || u.setorId || ''),
+        ativo: u.ativo === true || u.ativo === 'true' || u.ativo === 1 || u.ativo === '1' || u.ativo === undefined,
+        ultimo_login: String(u.ultimo_login || u.ultimoLogin || '')
+      }));
+    } catch (e) {
+      console.warn('GoogleScript getUsuarios falhou, usando LocalStorage fallback:', e);
+      return this.localFallback.getUsuarios();
+    }
+  }
+
+  async saveUsuario(usuario: Usuario): Promise<void> {
+    await this.localFallback.saveUsuario(usuario);
+    const body = {
+      id: usuario.id,
+      nome: usuario.nome,
+      email: usuario.email,
+      senha_hash: usuario.senha_hash || '',
+      perfil: usuario.perfil,
+      setor_id: usuario.setor_id,
+      ativo: usuario.ativo,
+      ultimo_login: usuario.ultimo_login || ''
+    };
+    try {
+      await this.request('saveUsuario', { data: body });
+    } catch (e) {
+      try {
+        await this.request('salvarUsuario', { data: body });
+      } catch (e2) {
+        console.warn('Erro ao sincronizar usuario com GoogleScript (usando fallback local):', e2);
+      }
+    }
+  }
+
+  async deleteUsuario(id: string): Promise<void> {
+    await this.localFallback.deleteUsuario(id);
+    try {
+      await this.request('deleteUsuario', { id });
+    } catch (e) {
+      try {
+        await this.request('excluirUsuario', { id });
+      } catch (e2) {
+        try {
+          await this.request('deletarUsuario', { id });
+        } catch (e3) {
+          console.warn('Erro ao excluir usuario no GoogleScript (usando fallback local):', e3);
+        }
+      }
+    }
+  }
+
+  async uploadFile(
+    file: File,
+    folderName: 'Fotos Colaboradores' | 'Anexos' | 'documentos',
+    colaboradorNome: string
+  ): Promise<string> {
+    const base64Data = await fileToBase64(file);
+    if (!this.config.webAppUrl) {
+      return base64Data;
+    }
+    try {
+      const response = await this.request<{ url: string }>('salvarArquivoDrive', {
+        folderName,
+        colaboradorNome,
+        fileName: file.name,
+        fileData: base64Data,
+        mimeType: file.type
+      });
+      return response.url;
+    } catch (e) {
+      console.warn('Erro ao salvar arquivo no Drive via Apps Script:', e);
+      return this.localFallback.uploadFile(file, folderName, colaboradorNome);
     }
   }
 }
@@ -593,6 +927,65 @@ export class SupabaseDataService implements IDataService {
   async resetData(): Promise<void> {
     await this.localFallback.resetData();
   }
+
+  async getUsuarios(): Promise<Usuario[]> {
+    try {
+      const raw = await this.request<any[]>('usuarios');
+      return raw.map(u => ({
+        id: u.id,
+        nome: u.nome,
+        email: u.email,
+        senha_hash: u.senha_hash,
+        perfil: u.perfil,
+        setor_id: u.setor_id,
+        ativo: u.ativo,
+        ultimo_login: u.ultimo_login
+      }));
+    } catch (e) {
+      console.warn('Erro ao consultar Supabase para usuarios, usando local:', e);
+      return this.localFallback.getUsuarios();
+    }
+  }
+
+  async saveUsuario(usuario: Usuario): Promise<void> {
+    await this.localFallback.saveUsuario(usuario);
+    if (this.config.supabaseUrl) {
+      try {
+        const body = {
+          id: usuario.id,
+          nome: usuario.nome,
+          email: usuario.email,
+          senha_hash: usuario.senha_hash || '',
+          perfil: usuario.perfil,
+          setor_id: usuario.setor_id,
+          ativo: usuario.ativo,
+          ultimo_login: usuario.ultimo_login || null
+        };
+        await this.request('usuarios', 'POST', body);
+      } catch (e) {
+        console.error('Erro ao sincronizar usuario com Supabase:', e);
+      }
+    }
+  }
+
+  async deleteUsuario(id: string): Promise<void> {
+    await this.localFallback.deleteUsuario(id);
+    if (this.config.supabaseUrl) {
+      try {
+        await this.request(`usuarios`, 'DELETE', undefined, `?id=eq.${id}`);
+      } catch (e) {
+        console.error('Erro ao excluir usuario do Supabase:', e);
+      }
+    }
+  }
+
+  async uploadFile(
+    file: File,
+    folderName: 'Fotos Colaboradores' | 'Anexos' | 'documentos',
+    colaboradorNome: string
+  ): Promise<string> {
+    return this.localFallback.uploadFile(file, folderName, colaboradorNome);
+  }
 }
 
 // -----------------------------------------------------------------
@@ -600,15 +993,8 @@ export class SupabaseDataService implements IDataService {
 // -----------------------------------------------------------------
 class DynamicDataService implements IDataService {
   private getService(): IDataService {
-    const provider = StorageAPI.getDataSourceProvider();
-    if (provider === 'googlescript') {
-      const config = StorageAPI.getGoogleScriptConfig();
-      return new GoogleScriptDataService(config);
-    } else if (provider === 'supabase') {
-      const config = StorageAPI.getSupabaseConfig();
-      return new SupabaseDataService(config);
-    }
-    return new LocalDataService();
+    const config = StorageAPI.getGoogleScriptConfig();
+    return new GoogleScriptDataService(config);
   }
 
   async getEmpresas(): Promise<Empresa[]> {
@@ -631,6 +1017,9 @@ class DynamicDataService implements IDataService {
   }
   async getTarefas(): Promise<Tarefa[]> {
     return this.getService().getTarefas();
+  }
+  async getUsuarios(): Promise<Usuario[]> {
+    return this.getService().getUsuarios();
   }
 
   async saveEmpresa(empresa: Empresa): Promise<void> {
@@ -656,6 +1045,19 @@ class DynamicDataService implements IDataService {
   }
   async toggleTarefa(id: string): Promise<Tarefa | undefined> {
     return this.getService().toggleTarefa(id);
+  }
+  async saveUsuario(usuario: Usuario): Promise<void> {
+    await this.getService().saveUsuario(usuario);
+  }
+  async deleteUsuario(id: string): Promise<void> {
+    await this.getService().deleteUsuario(id);
+  }
+  async uploadFile(
+    file: File,
+    folderName: 'Fotos Colaboradores' | 'Anexos' | 'documentos',
+    colaboradorNome: string
+  ): Promise<string> {
+    return this.getService().uploadFile(file, folderName, colaboradorNome);
   }
   async resetData(): Promise<void> {
     await this.getService().resetData();

@@ -28,6 +28,26 @@ export function fileToBase64(file: File): Promise<string> {
   });
 }
 
+function parseSetoresPermitidos(value: unknown, setorId: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.map(String).filter(Boolean);
+  }
+
+  if (typeof value === 'string' && value.trim()) {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) {
+        return parsed.map(String).filter(Boolean);
+      }
+    } catch {
+      return value.split(',').map((id) => id.trim()).filter(Boolean);
+    }
+  }
+
+  const setorLegado = String(setorId || '').trim();
+  return setorLegado ? [setorLegado] : [];
+}
+
 export interface IDataService {
   getEmpresas(): Promise<Empresa[]>;
   getSetores(): Promise<Setor[]>;
@@ -397,6 +417,10 @@ export class GoogleScriptDataService implements IDataService {
         email: lider.email,
         cargo: lider.cargo,
         foto_url: lider.fotoUrl,
+        perfil: 'Lider',
+        setor_id: lider.setoresPermitidos?.[0] || '',
+        setores_permitidos: JSON.stringify(lider.setoresPermitidos || []),
+        ativo: true,
       };
       await this.request('saveLider', { data: body });
     } catch (e) {
@@ -544,6 +568,10 @@ export class GoogleScriptDataService implements IDataService {
         senha_hash: String(u.senha_hash || u.senhaHash || ''),
         perfil: (u.perfil || 'Lider') as any,
         setor_id: String(u.setor_id || u.setorId || ''),
+        setoresPermitidos: parseSetoresPermitidos(
+          u.setores_permitidos ?? u.setoresPermitidos,
+          u.setor_id ?? u.setorId
+        ),
         ativo: u.ativo === true || u.ativo === 'true' || u.ativo === 1 || u.ativo === '1' || u.ativo === undefined,
         ultimo_login: String(u.ultimo_login || u.ultimoLogin || '')
       }));
@@ -561,7 +589,8 @@ export class GoogleScriptDataService implements IDataService {
       email: usuario.email,
       senha_hash: usuario.senha_hash || '',
       perfil: usuario.perfil,
-      setor_id: usuario.setor_id,
+      setor_id: usuario.setoresPermitidos?.[0] || usuario.setor_id || '',
+      setores_permitidos: JSON.stringify(usuario.setoresPermitidos || (usuario.setor_id ? [usuario.setor_id] : [])),
       ativo: usuario.ativo,
       ultimo_login: usuario.ultimo_login || ''
     };

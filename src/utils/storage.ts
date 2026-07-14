@@ -432,7 +432,7 @@ export const StorageAPI = {
     // Prioriza a variável de ambiente da Vercel (VITE_GOOGLE_SCRIPT_URL)
     // Se não existir, mantém o fallback para o localStorage
     const envUrl = import.meta.env.VITE_GOOGLE_SCRIPT_URL;
-    const stored = localStorage.getItem(STORAGE_KEYS.GOOGLE_SCRIPT_CONFIG);
+    const stored = localStorage.getItem(KEYS.GOOGLESCRIPT);
     const config = stored ? JSON.parse(stored) : { webAppUrl: '', driveFolderId: '', isConnected: false };
 
     return {

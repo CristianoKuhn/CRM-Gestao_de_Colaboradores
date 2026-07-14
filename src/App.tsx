@@ -134,6 +134,11 @@ export default function App() {
   };
 
   // Métodos rápidos para entidades auxiliares
+  const handleAddEmpresa = async (nome: string) => {
+    await DataService.saveEmpresa({ id: `emp-${Date.now()}`, nome });
+    loadAllData();
+  };
+
   const handleAddSetor = async (nome: string) => {
     await DataService.saveSetor({ id: `set-${Date.now()}`, nome });
     loadAllData();
@@ -249,8 +254,33 @@ export default function App() {
     setActiveTab('colaboradores');
   };
 
+  // Aplicar a permissão por setor em um único ponto para proteger todas as telas.
+  const acessoGlobal = currentUser?.perfil !== 'Lider';
+  const setoresPermitidos = currentUser?.setoresPermitidos?.length
+    ? currentUser.setoresPermitidos
+    : currentUser?.setor_id
+      ? [currentUser.setor_id]
+      : [];
+
+  const colaboradoresVisiveis = acessoGlobal
+    ? colaboradores
+    : colaboradores.filter((col) => setoresPermitidos.includes(col.setorId));
+  const idsColaboradoresVisiveis = new Set(colaboradoresVisiveis.map((col) => col.id));
+  const timelineVisivel = acessoGlobal
+    ? timeline
+    : timeline.filter((registro) => idsColaboradoresVisiveis.has(registro.colaboradorId));
+  const tarefasVisiveis = acessoGlobal
+    ? tarefas
+    : tarefas.filter((tarefa) => idsColaboradoresVisiveis.has(tarefa.colaboradorId));
+  const setoresVisiveis = acessoGlobal
+    ? setores
+    : setores.filter((setor) => setoresPermitidos.includes(setor.id));
+  const colaboradorSelecionado = selectedColaboradorId
+    ? colaboradoresVisiveis.find((col) => col.id === selectedColaboradorId)
+    : undefined;
+
   // Contadores dinâmicos para barra lateral
-  const tarefasPendentesCount = tarefas.filter((t) => !t.concluida).length;
+  const tarefasPendentesCount = tarefasVisiveis.filter((t) => !t.concluida).length;
 
   if (currentUser === null) {
     return <Login onLoginSuccess={handleLoginSuccess} />;
@@ -267,7 +297,7 @@ export default function App() {
           setPreselectedFilters({});
         }}
         onReset={handleResetDemoData}
-        colaboradoresCount={colaboradores.length}
+        colaboradoresCount={colaboradoresVisiveis.length}
         tarefasPendentesCount={tarefasPendentesCount}
         currentUser={currentUser}
         onLogout={handleLogout}
@@ -299,9 +329,9 @@ export default function App() {
           {/* Renders Selected View */}
           {activeTab === 'dashboard' && (
             <Dashboard
-              colaboradores={colaboradores}
-              timeline={timeline}
-              tarefas={tarefas}
+              colaboradores={colaboradoresVisiveis}
+              timeline={timelineVisivel}
+              tarefas={tarefasVisiveis}
               onNavigateToList={handleNavigateFromDashboard}
               onSelectColaborador={handleSelectColaborador}
               onOpenNewRegistroModal={handleQuickFeedbackTrigger}
@@ -311,11 +341,11 @@ export default function App() {
           )}
 
           {activeTab === 'colaboradores' && (
-            selectedColaboradorId ? (
+            selectedColaboradorId && colaboradorSelecionado ? (
               <ColaboradorProfile
-                colaborador={colaboradores.find((c) => c.id === selectedColaboradorId)!}
-                timeline={timeline}
-                setores={setores}
+                colaborador={colaboradorSelecionado}
+                timeline={timelineVisivel}
+                setores={setoresVisiveis}
                 cargos={cargos}
                 lideres={lideres}
                 empresas={empresas}
@@ -325,13 +355,14 @@ export default function App() {
               />
             ) : (
               <Colaboradores
-                colaboradores={colaboradores}
-                setores={setores}
+                colaboradores={colaboradoresVisiveis}
+                setores={setoresVisiveis}
                 cargos={cargos}
                 lideres={lideres}
                 empresas={empresas}
                 onSelectColaborador={handleSelectColaborador}
                 onAddColaborador={handleAddColaborador}
+                onAddEmpresa={handleAddEmpresa}
                 onAddSetor={handleAddSetor}
                 onAddCargo={handleAddCargo}
                 onAddLider={handleAddLider}
@@ -342,8 +373,8 @@ export default function App() {
 
           {activeTab === 'tarefas' && (
             <Tarefas
-              tarefas={tarefas}
-              colaboradores={colaboradores}
+              tarefas={tarefasVisiveis}
+              colaboradores={colaboradoresVisiveis}
               lideres={lideres}
               cargos={cargos}
               onToggleTarefa={handleToggleTarefa}
@@ -353,10 +384,10 @@ export default function App() {
 
           {activeTab === 'analytics' && (
             <Analytics
-              colaboradores={colaboradores}
-              timeline={timeline}
-              setores={setores}
-              tarefas={tarefas}
+              colaboradores={colaboradoresVisiveis}
+              timeline={timelineVisivel}
+              setores={setoresVisiveis}
+              tarefas={tarefasVisiveis}
             />
           )}
 
@@ -403,7 +434,7 @@ export default function App() {
             </p>
 
             <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
-              {colaboradores.map((col) => (
+              {colaboradoresVisiveis.map((col) => (
                 <div
                   key={col.id}
                   onClick={() => handleQuickFeedbackTrigger(col.id)}

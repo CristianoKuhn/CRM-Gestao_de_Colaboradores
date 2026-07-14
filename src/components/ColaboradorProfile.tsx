@@ -150,9 +150,17 @@ export default function ColaboradorProfile({
 
   // Alterar situação rápida do colaborador
   const handleChangeSituacao = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const novaSituacao = e.target.value as SituacaoColaborador;
+    
+    // Se mudar para Desligado, marcamos todas as avaliações como concluídas para limpar pendências
+    const novasCompletas = novaSituacao === 'Desligado' 
+      ? Array.from(new Set([...(colaborador.avaliacoesCompletas || []), '15', '30', '60', '90', '180']))
+      : colaborador.avaliacoesCompletas;
+
     onUpdateColaborador({
       ...colaborador,
-      situacao: e.target.value as SituacaoColaborador,
+      situacao: novaSituacao,
+      avaliacoesCompletas: novasCompletas,
     });
   };
 

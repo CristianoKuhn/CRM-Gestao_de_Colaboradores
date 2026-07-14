@@ -141,7 +141,6 @@ export class GoogleScriptDataService implements IDataService {
   }
 
   private async request<T>(action: string, payload?: any): Promise<T> {
-    // Sempre faz a chamada para o nosso backend proxy full-stack
     const url = new URL('/api/googlescript', window.location.origin);
     url.searchParams.set('action', action);
 
@@ -149,7 +148,6 @@ export class GoogleScriptDataService implements IDataService {
       'Content-Type': 'application/json',
     };
 
-    // Repassa a URL configurada no frontend para o backend proxy via header
     if (this.config.webAppUrl) {
       headers['x-google-script-url'] = this.config.webAppUrl;
     }
@@ -435,7 +433,7 @@ export class GoogleScriptDataService implements IDataService {
       cidade_base: colaborador.cidadeBase || '',
       prazo_avaliacao_180: colaborador.prazoAvaliacao180 ?? 6,
       realizar_experiencia: colaborador.realizarExperiencia ?? true,
-      avaliacoes_completas: JSON.stringify(colaborador.avaliacoesCompletas || []),
+      avaliacoes_completas: colaborador.avaliacoesCompletas || [],
     };
 
     try {
@@ -455,10 +453,12 @@ export class GoogleScriptDataService implements IDataService {
 
   async saveTimelineRegistro(registro: TimelineRegistro): Promise<void> {
     await this.localFallback.saveTimelineRegistro(registro);
+    // Lógica simplificada: envia apenas o título, o script cuida da coluna correta
     const body: any = {
       id: registro.id,
       colaborador_id: registro.colaboradorId,
       tipo: registro.tipo,
+      titulo: registro.titulo, // Agora enviamos o título diretamente
       descricao: registro.descricao,
       status: registro.status,
       prioridade: registro.prioridade,
@@ -467,30 +467,9 @@ export class GoogleScriptDataService implements IDataService {
       lider: registro.responsavelId,
       data_conclusao: registro.status === 'Concluído' ? new Date().toLocaleDateString('pt-BR') : '',
       gerar_tarefa_futura: registro.gerarTarefaFutura || false,
-      anexos: JSON.stringify(registro.anexos || []),
+      anexos: registro.anexos || [],
       tarefa_id: registro.tarefaId || '',
     };
-
-    body.Feedback = '';
-    body.Reconhecimento = '';
-    body['Advertência'] = '';
-    body.PDI = '';
-    body['1:1'] = '';
-    body['Observação'] = '';
-
-    if (registro.tipo.includes('Feedback')) {
-      body.Feedback = registro.titulo;
-    } else if (registro.tipo.includes('Reconhecimento') || registro.tipo.includes('Elogio')) {
-      body.Reconhecimento = registro.titulo;
-    } else if (registro.tipo.includes('Advertência') || registro.tipo.includes('Suspensão') || registro.tipo.includes('Advertencia')) {
-      body['Advertência'] = registro.titulo;
-    } else if (registro.tipo.includes('PDI') || registro.tipo.includes('Plano')) {
-      body.PDI = registro.titulo;
-    } else if (registro.tipo === 'Conversa Individual (1:1)' || (registro.tipo as string) === '1:1') {
-      body['1:1'] = registro.titulo;
-    } else {
-      body['Observação'] = registro.titulo;
-    }
 
     try {
       await this.request('saveTimelineRegistro', { data: body });
@@ -723,7 +702,6 @@ export class SupabaseDataService implements IDataService {
 
   async getColaboradores(): Promise<Colaborador[]> {
     try {
-      // Mapeia snake_case para camelCase
       const raw = await this.request<any[]>('colaboradores');
       return raw.map(c => ({
         id: c.id,
@@ -856,7 +834,6 @@ export class SupabaseDataService implements IDataService {
           empresa_id: colaborador.empresaId,
           telefone: colaborador.telefone,
         };
-        // Use upsert via POST with Prefer: resolution=merge-duplicates or do PATCH if existing
         await this.request('colaboradores', 'POST', body);
       } catch (e) {
         console.error('Erro ao sincronizar colaborador com Supabase:', e);

@@ -26,6 +26,7 @@ export interface Lider {
   email: string;
   cargo?: string;
   fotoUrl?: string;
+  setoresPermitidos?: string[];
 }
 
 export interface Colaborador {
@@ -121,8 +122,7 @@ export interface Usuario {
   senha_hash?: string;
   perfil: 'Administrador' | 'Coordenador' | 'Supervisor' | 'Lider';
   setor_id: string;
+  setoresPermitidos?: string[];
   ativo: boolean;
   ultimo_login?: string;
 }
-
-

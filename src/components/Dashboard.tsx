@@ -62,6 +62,9 @@ export default function Dashboard({
     }[] = [];
 
     colaboradores.forEach((col) => {
+      // Ocultar pendências de colaboradores desligados
+      if (col.situacao === 'Desligado') return;
+
       // Filtrar se o usuário logado é o líder direto deste colaborador
       // Se for Admin, Coordenador, Supervisor, pode ver os lembretes de todos.
       // Se for Lider, apenas os dele.
@@ -496,7 +499,7 @@ export default function Dashboard({
                     <div className="flex gap-2 pt-2">
                       <button
                         onClick={() => handleCompleteMilestone(col, lembrete.milestone)}
-                        className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-[10px] font-bold rounded-lg cursor-pointer transition"
+                        className="px-2.5 py-1 border border-teal-200 text-teal-600 text-[10px] font-bold rounded-lg hover:bg-teal-50 cursor-pointer transition"
                       >
                         ✓ Marcar Concluída
                       </button>

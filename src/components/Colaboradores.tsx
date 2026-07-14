@@ -38,6 +38,7 @@ interface ColaboradoresProps {
   empresas: Empresa[];
   onSelectColaborador: (id: string) => void;
   onAddColaborador: (col: Colaborador) => void;
+  onAddEmpresa: (nome: string) => void;
   onAddSetor: (nome: string) => void;
   onAddCargo: (nome: string) => void;
   onAddLider: (lider: Lider) => void;
@@ -52,6 +53,7 @@ export default function Colaboradores({
   empresas,
   onSelectColaborador,
   onAddColaborador,
+  onAddEmpresa,
   onAddSetor,
   onAddCargo,
   onAddLider,
@@ -65,7 +67,7 @@ export default function Colaboradores({
 
   // Modais de Cadastro
   const [isColModalOpen, setIsColModalOpen] = useState(false);
-  const [isAuxModalOpen, setIsAuxModalOpen] = useState<'setor' | 'cargo' | 'lider' | null>(null);
+  const [isAuxModalOpen, setIsAuxModalOpen] = useState<'empresa' | 'setor' | 'cargo' | 'lider' | null>(null);
 
   // Campos para Novo Colaborador
   const [newColNome, setNewColNome] = useState('');
@@ -104,6 +106,7 @@ export default function Colaboradores({
   // Campos para Entidades Auxiliares
   const [auxNome, setAuxNome] = useState('');
   const [auxEmail, setAuxEmail] = useState(''); // apenas para Líder
+  const [auxSetoresPermitidos, setAuxSetoresPermitidos] = useState<string[]>([]);
 
   // Função para calcular o tempo de empresa de forma legível
   function calcularTempoEmpresa(dataAdmissaoStr: string): string {
@@ -182,7 +185,9 @@ export default function Colaboradores({
     e.preventDefault();
     if (!auxNome) return;
 
-    if (isAuxModalOpen === 'setor') {
+    if (isAuxModalOpen === 'empresa') {
+      onAddEmpresa(auxNome);
+    } else if (isAuxModalOpen === 'setor') {
       onAddSetor(auxNome);
     } else if (isAuxModalOpen === 'cargo') {
       onAddCargo(auxNome);
@@ -192,11 +197,13 @@ export default function Colaboradores({
         nome: auxNome,
         email: auxEmail || `${auxNome.toLowerCase().replace(/\s/g, '.')}@inovacao.com`,
         cargo: 'Gestor / Líder de Equipe',
+        setoresPermitidos: auxSetoresPermitidos,
       });
     }
 
     setAuxNome('');
     setAuxEmail('');
+    setAuxSetoresPermitidos([]);
     setIsAuxModalOpen(null);
   };
 
@@ -213,6 +220,13 @@ export default function Colaboradores({
 
         {/* Quick Actions Buttons */}
         <div className="flex flex-wrap gap-2">
+          <button
+            id="btn-cadastrar-empresa"
+            onClick={() => setIsAuxModalOpen('empresa')}
+            className="px-3.5 py-2 border border-slate-200 text-slate-600 bg-slate-50 rounded-xl text-xs font-semibold hover:bg-slate-100 cursor-pointer"
+          >
+            + Empresa
+          </button>
           <button
             id="btn-cadastrar-setor"
             onClick={() => setIsAuxModalOpen('setor')}
@@ -682,7 +696,7 @@ export default function Colaboradores({
           <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-6 animate-scale-up border border-slate-100">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3 mb-4">
               <h3 className="text-md font-bold text-slate-900">
-                Cadastrar Novo {isAuxModalOpen === 'setor' ? 'Setor' : isAuxModalOpen === 'cargo' ? 'Cargo' : 'Líder'}
+                Cadastrar Novo {isAuxModalOpen === 'empresa' ? 'Empresa' : isAuxModalOpen === 'setor' ? 'Setor' : isAuxModalOpen === 'cargo' ? 'Cargo' : 'Líder'}
               </h3>
               <button
                 onClick={() => setIsAuxModalOpen(null)}
@@ -695,31 +709,57 @@ export default function Colaboradores({
             <form onSubmit={handleCreateAux} className="space-y-4">
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">
-                  Nome do {isAuxModalOpen === 'setor' ? 'Setor' : isAuxModalOpen === 'cargo' ? 'Cargo' : 'Líder'}
+                  Nome da/do {isAuxModalOpen === 'empresa' ? 'Empresa' : isAuxModalOpen === 'setor' ? 'Setor' : isAuxModalOpen === 'cargo' ? 'Cargo' : 'Líder'}
                 </label>
                 <input
                   type="text"
                   required
                   value={auxNome}
                   onChange={(e) => setAuxNome(e.target.value)}
-                  placeholder={`Ex: ${isAuxModalOpen === 'setor' ? 'Recursos Humanos' : isAuxModalOpen === 'cargo' ? 'Analista de Sistemas' : 'Renata Souza'}`}
+                  placeholder={`Ex: ${isAuxModalOpen === 'empresa' ? 'Empresa Exemplo Ltda.' : isAuxModalOpen === 'setor' ? 'Recursos Humanos' : isAuxModalOpen === 'cargo' ? 'Analista de Sistemas' : 'Renata Souza'}`}
                   className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
                 />
               </div>
 
               {isAuxModalOpen === 'lider' && (
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">
-                    E-mail do Líder
-                  </label>
-                  <input
-                    type="email"
-                    value={auxEmail}
-                    onChange={(e) => setAuxEmail(e.target.value)}
-                    placeholder="Ex: renata.souza@empresa.com"
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
-                  />
-                </div>
+                <>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">
+                      E-mail do Líder
+                    </label>
+                    <input
+                      type="email"
+                      value={auxEmail}
+                      onChange={(e) => setAuxEmail(e.target.value)}
+                      placeholder="Ex: renata.souza@empresa.com"
+                      className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">
+                      Setores Permitidos
+                    </label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-40 overflow-y-auto p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                      {setores.map((setor) => (
+                        <label key={setor.id} className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={auxSetoresPermitidos.includes(setor.id)}
+                            onChange={(e) => {
+                              setAuxSetoresPermitidos((atuais) =>
+                                e.target.checked
+                                  ? [...atuais, setor.id]
+                                  : atuais.filter((id) => id !== setor.id)
+                              );
+                            }}
+                            className="h-4 w-4 rounded border-slate-300 text-teal-500 focus:ring-teal-500 cursor-pointer"
+                          />
+                          {setor.nome}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </>
               )}
 
               <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">

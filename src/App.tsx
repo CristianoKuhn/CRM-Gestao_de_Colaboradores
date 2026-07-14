@@ -269,9 +269,12 @@ export default function App() {
   const timelineVisivel = acessoGlobal
     ? timeline
     : timeline.filter((registro) => idsColaboradoresVisiveis.has(registro.colaboradorId));
-  const tarefasVisiveis = acessoGlobal
-    ? tarefas
-    : tarefas.filter((tarefa) => idsColaboradoresVisiveis.has(tarefa.colaboradorId));
+  const tarefasVisiveis = tarefas.filter((tarefa) => {
+    const col = colaboradores.find(c => c.id === tarefa.colaboradorId);
+    if (!col || col.situacao === 'Desligado') return false;
+    if (acessoGlobal) return true;
+    return setoresPermitidos.includes(col.setorId);
+  });
   const setoresVisiveis = acessoGlobal
     ? setores
     : setores.filter((setor) => setoresPermitidos.includes(setor.id));

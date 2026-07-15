@@ -54,7 +54,7 @@ export default function Config({
   currentUser,
 }: ConfigProps) {
   const [webAppUrl, setWebAppUrl] = useState(googleConfig.webAppUrl || '');
-  const [newOnboardingSetor, setNewOnboardingSetor] = useState(setores[0]?.id || '');
+  const [newOnboardingSetores, setNewOnboardingSetores] = useState<string[]>([]);
   const [newOnboardingTitulo, setNewOnboardingTitulo] = useState('');
   const [newOnboardingDesc, setNewOnboardingDesc] = useState('');
 
@@ -126,15 +126,17 @@ export default function Config({
 
   const handleAddOnboarding = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newOnboardingTitulo) return;
+    if (!newOnboardingTitulo || newOnboardingSetores.length === 0) return;
+
     onAddOnboardingItem({
       id: `onb-${Date.now()}`,
-      setorId: newOnboardingSetor,
+      setorIds: newOnboardingSetores,
       titulo: newOnboardingTitulo,
       descricao: newOnboardingDesc,
     });
     setNewOnboardingTitulo('');
     setNewOnboardingDesc('');
+    setNewOnboardingSetores([]);
   };
 
   return (
@@ -299,14 +301,29 @@ export default function Config({
               <h3 className="text-xs font-bold text-slate-700 uppercase">Novo Item de Check-in</h3>
               
               <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Setor Alvo</label>
-                <select
-                  value={newOnboardingSetor}
-                  onChange={(e) => setNewOnboardingSetor(e.target.value)}
-                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-1 focus:ring-teal-500"
-                >
-                  {setores.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
-                </select>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Setores Alvo (Selecione um ou mais)</label>
+                <div className="flex flex-wrap gap-1.5 p-2.5 bg-white border border-slate-200 rounded-xl max-h-32 overflow-y-auto">
+                  {setores.map(s => (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => {
+                        setNewOnboardingSetores(prev => 
+                          prev.includes(s.id) 
+                            ? prev.filter(id => id !== s.id) 
+                            : [...prev, s.id]
+                        );
+                      }}
+                      className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all border ${
+                        newOnboardingSetores.includes(s.id)
+                          ? 'bg-teal-500 text-white border-teal-500'
+                          : 'bg-slate-50 text-slate-500 border-slate-100 hover:border-teal-300'
+                      }`}
+                    >
+                      {s.nome}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <div>
@@ -344,34 +361,27 @@ export default function Config({
             <div className="space-y-4">
               <h3 className="text-xs font-bold text-slate-700 uppercase">Itens Cadastrados</h3>
               <div className="max-h-[350px] overflow-y-auto space-y-3 pr-2 custom-scrollbar">
-                {setores.map(setor => {
-                  const itemsSetor = onboardingItems.filter(i => i.setorId === setor.id);
-                  if (itemsSetor.length === 0) return null;
-                  return (
-                    <div key={setor.id} className="space-y-2">
-                      <div className="text-[10px] font-extrabold text-teal-600 bg-teal-50 px-2 py-0.5 rounded-md inline-block uppercase tracking-wider">
-                        {setor.nome}
-                      </div>
-                      <div className="space-y-1.5">
-                        {itemsSetor.map(item => (
-                          <div key={item.id} className="flex items-center justify-between p-2.5 bg-white border border-slate-100 rounded-xl hover:border-slate-200 transition-all group">
-                            <div className="min-w-0">
-                              <p className="text-xs font-bold text-slate-800 truncate">{item.titulo}</p>
-                              <p className="text-[10px] text-slate-400 line-clamp-1">{item.descricao}</p>
-                            </div>
-                            <button
-                              onClick={() => onDeleteOnboardingItem(item.id)}
-                              className="p-1.5 text-slate-300 hover:text-rose-500 transition-colors cursor-pointer"
-                              title="Remover Item"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </div>
+                {onboardingItems.map(item => (
+                  <div key={item.id} className="flex items-center justify-between p-2.5 bg-white border border-slate-100 rounded-xl hover:border-slate-200 transition-all group">
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-slate-800 truncate">{item.titulo}</p>
+                      <div className="flex flex-wrap gap-1 mt-0.5">
+                        {item.setorIds.map(sid => (
+                          <span key={sid} className="px-1 py-0.5 bg-slate-50 text-slate-400 rounded text-[8px] font-bold">
+                            {setores.find(s => s.id === sid)?.nome || sid}
+                          </span>
                         ))}
                       </div>
                     </div>
-                  );
-                })}
+                    <button
+                      onClick={() => onDeleteOnboardingItem(item.id)}
+                      className="p-1.5 text-slate-300 hover:text-rose-500 transition-colors cursor-pointer"
+                      title="Remover Item"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                ))}
                 {onboardingItems.length === 0 && (
                   <div className="text-center py-10 text-slate-400">
                     <p className="text-xs">Nenhum item de onboarding configurado ainda.</p>

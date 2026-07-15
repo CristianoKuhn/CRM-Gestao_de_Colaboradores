@@ -16,6 +16,8 @@ import {
   DataSourceProvider,
   TipoRegistro,
   Usuario,
+  OnboardingItem,
+  OnboardingChecklist,
 } from '../types';
 import { StorageAPI } from '../utils/storage';
 
@@ -68,6 +70,12 @@ export interface IDataService {
   toggleTarefa(id: string): Promise<Tarefa | undefined>;
   saveUsuario(usuario: Usuario): Promise<void>;
   deleteUsuario(id: string): Promise<void>;
+
+  getOnboardingItems(): Promise<OnboardingItem[]>;
+  saveOnboardingItem(item: OnboardingItem): Promise<void>;
+  deleteOnboardingItem(id: string): Promise<void>;
+  getOnboardingChecklists(): Promise<OnboardingChecklist[]>;
+  saveOnboardingChecklist(checklist: OnboardingChecklist): Promise<void>;
 
   uploadFile(
     file: File,
@@ -133,6 +141,21 @@ export class LocalDataService implements IDataService {
   }
   async deleteUsuario(id: string): Promise<void> {
     StorageAPI.deleteUsuario(id);
+  }
+  async getOnboardingItems(): Promise<OnboardingItem[]> {
+    return StorageAPI.getOnboardingItems();
+  }
+  async saveOnboardingItem(item: OnboardingItem): Promise<void> {
+    StorageAPI.saveOnboardingItem(item);
+  }
+  async deleteOnboardingItem(id: string): Promise<void> {
+    StorageAPI.deleteOnboardingItem(id);
+  }
+  async getOnboardingChecklists(): Promise<OnboardingChecklist[]> {
+    return StorageAPI.getOnboardingChecklists();
+  }
+  async saveOnboardingChecklist(checklist: OnboardingChecklist): Promise<void> {
+    StorageAPI.saveOnboardingChecklist(checklist);
   }
   async toggleTarefa(id: string): Promise<Tarefa | undefined> {
     return StorageAPI.toggleTarefa(id);
@@ -622,6 +645,63 @@ export class GoogleScriptDataService implements IDataService {
     }
   }
 
+  async getOnboardingItems(): Promise<OnboardingItem[]> {
+    try {
+      const raw = await this.request<any[]>('getOnboardingItems');
+      return raw.map(i => ({
+        id: String(i.id || ''),
+        setorId: String(i.setor_id || i.setorId || ''),
+        titulo: String(i.titulo || ''),
+        descricao: String(i.descricao || ''),
+      }));
+    } catch (e) {
+      return this.localFallback.getOnboardingItems();
+    }
+  }
+  async saveOnboardingItem(item: OnboardingItem): Promise<void> {
+    await this.localFallback.saveOnboardingItem(item);
+    try {
+      const body = {
+        id: item.id,
+        setor_id: item.setorId,
+        titulo: item.titulo,
+        descricao: item.descricao,
+      };
+      await this.request('saveOnboardingItem', { data: body });
+    } catch (e) {}
+  }
+  async deleteOnboardingItem(id: string): Promise<void> {
+    await this.localFallback.deleteOnboardingItem(id);
+    try {
+      await this.request('deleteOnboardingItem', { id });
+    } catch (e) {}
+  }
+  async getOnboardingChecklists(): Promise<OnboardingChecklist[]> {
+    try {
+      const raw = await this.request<any[]>('getOnboardingChecklists');
+      return raw.map(c => ({
+        id: String(c.id || ''),
+        colaboradorId: String(c.colaborador_id || c.colaboradorId || ''),
+        itemsConcluidos: typeof c.items_concluidos === 'string' ? JSON.parse(c.items_concluidos) : (c.items_concluidos || []),
+        dataCriacao: String(c.data_criacao || c.dataCriacao || ''),
+      }));
+    } catch (e) {
+      return this.localFallback.getOnboardingChecklists();
+    }
+  }
+  async saveOnboardingChecklist(checklist: OnboardingChecklist): Promise<void> {
+    await this.localFallback.saveOnboardingChecklist(checklist);
+    try {
+      const body = {
+        id: checklist.id,
+        colaborador_id: checklist.colaboradorId,
+        items_concluidos: JSON.stringify(checklist.itemsConcluidos),
+        data_criacao: checklist.dataCriacao,
+      };
+      await this.request('saveOnboardingChecklist', { data: body });
+    } catch (e) {}
+  }
+
   async uploadFile(
     file: File,
     folderName: 'Fotos Colaboradores' | 'Anexos' | 'documentos',
@@ -985,6 +1065,22 @@ export class SupabaseDataService implements IDataService {
     }
   }
 
+  async getOnboardingItems(): Promise<OnboardingItem[]> {
+    return this.localFallback.getOnboardingItems();
+  }
+  async saveOnboardingItem(item: OnboardingItem): Promise<void> {
+    await this.localFallback.saveOnboardingItem(item);
+  }
+  async deleteOnboardingItem(id: string): Promise<void> {
+    await this.localFallback.deleteOnboardingItem(id);
+  }
+  async getOnboardingChecklists(): Promise<OnboardingChecklist[]> {
+    return this.localFallback.getOnboardingChecklists();
+  }
+  async saveOnboardingChecklist(checklist: OnboardingChecklist): Promise<void> {
+    await this.localFallback.saveOnboardingChecklist(checklist);
+  }
+
   async uploadFile(
     file: File,
     folderName: 'Fotos Colaboradores' | 'Anexos' | 'documentos',
@@ -1065,6 +1161,22 @@ class DynamicDataService implements IDataService {
   ): Promise<string> {
     return this.getService().uploadFile(file, folderName, colaboradorNome);
   }
+  async getOnboardingItems(): Promise<OnboardingItem[]> {
+    return this.getService().getOnboardingItems();
+  }
+  async saveOnboardingItem(item: OnboardingItem): Promise<void> {
+    await this.getService().saveOnboardingItem(item);
+  }
+  async deleteOnboardingItem(id: string): Promise<void> {
+    await this.getService().deleteOnboardingItem(id);
+  }
+  async getOnboardingChecklists(): Promise<OnboardingChecklist[]> {
+    return this.getService().getOnboardingChecklists();
+  }
+  async saveOnboardingChecklist(checklist: OnboardingChecklist): Promise<void> {
+    await this.getService().saveOnboardingChecklist(checklist);
+  }
+
   async resetData(): Promise<void> {
     await this.getService().resetData();
   }

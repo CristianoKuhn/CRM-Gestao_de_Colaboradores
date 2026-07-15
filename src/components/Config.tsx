@@ -4,7 +4,14 @@
  */
 
 import React, { useState } from 'react';
-import { SupabaseConfig, GoogleScriptConfig, DataSourceProvider } from '../types';
+import { 
+  SupabaseConfig, 
+  GoogleScriptConfig, 
+  DataSourceProvider, 
+  Setor, 
+  OnboardingItem,
+  Usuario 
+} from '../types';
 import {
   Key,
   CheckCircle,
@@ -13,7 +20,10 @@ import {
   Settings2,
   RefreshCw,
   Server,
-  AlertCircle
+  AlertCircle,
+  PlusCircle,
+  Trash2,
+  ClipboardList
 } from 'lucide-react';
 
 interface ConfigProps {
@@ -23,6 +33,11 @@ interface ConfigProps {
   onSaveGoogleConfig: (config: GoogleScriptConfig) => void;
   activeProvider: DataSourceProvider;
   onChangeProvider: (provider: DataSourceProvider) => void;
+  setores: Setor[];
+  onboardingItems: OnboardingItem[];
+  onAddOnboardingItem: (item: OnboardingItem) => void;
+  onDeleteOnboardingItem: (id: string) => void;
+  currentUser: Usuario;
 }
 
 export default function Config({
@@ -32,8 +47,20 @@ export default function Config({
   onSaveGoogleConfig,
   activeProvider,
   onChangeProvider,
+  setores,
+  onboardingItems,
+  onAddOnboardingItem,
+  onDeleteOnboardingItem,
+  currentUser,
 }: ConfigProps) {
   const [webAppUrl, setWebAppUrl] = useState(googleConfig.webAppUrl || '');
+  const [newOnboardingSetor, setNewOnboardingSetor] = useState(setores[0]?.id || '');
+  const [newOnboardingTitulo, setNewOnboardingTitulo] = useState('');
+  const [newOnboardingDesc, setNewOnboardingDesc] = useState('');
+
+  const canManageOnboarding = currentUser.perfil === 'Administrador' || 
+                             currentUser.perfil === 'Coordenador' || 
+                             currentUser.perfil === 'Supervisor';
   const [driveFolderId, setDriveFolderId] = useState(googleConfig.driveFolderId || '');
   const [isTesting, setIsTesting] = useState(false);
   const [testStatus, setTestStatus] = useState<'idle' | 'success' | 'error'>('idle');
@@ -95,6 +122,19 @@ export default function Config({
     } finally {
       setIsTesting(false);
     }
+  };
+
+  const handleAddOnboarding = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newOnboardingTitulo) return;
+    onAddOnboardingItem({
+      id: `onb-${Date.now()}`,
+      setorId: newOnboardingSetor,
+      titulo: newOnboardingTitulo,
+      descricao: newOnboardingDesc,
+    });
+    setNewOnboardingTitulo('');
+    setNewOnboardingDesc('');
   };
 
   return (
@@ -244,6 +284,104 @@ export default function Config({
           </div>
         </div>
       </div>
+
+      {/* Onboarding Parametrization Panel (Only for Supervisors/Admins) */}
+      {canManageOnboarding && (
+        <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-6">
+          <div className="flex items-center gap-2 border-b border-slate-50 pb-3">
+            <ClipboardList size={18} className="text-teal-600" />
+            <h2 className="font-extrabold text-slate-900 text-sm uppercase tracking-wider">Parametrização de Onboarding</h2>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            {/* Form to add new item */}
+            <form onSubmit={handleAddOnboarding} className="space-y-4 bg-slate-50 p-5 rounded-2xl border border-slate-100">
+              <h3 className="text-xs font-bold text-slate-700 uppercase">Novo Item de Check-in</h3>
+              
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Setor Alvo</label>
+                <select
+                  value={newOnboardingSetor}
+                  onChange={(e) => setNewOnboardingSetor(e.target.value)}
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-1 focus:ring-teal-500"
+                >
+                  {setores.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Título da Ação</label>
+                <input
+                  type="text"
+                  value={newOnboardingTitulo}
+                  onChange={(e) => setNewOnboardingTitulo(e.target.value)}
+                  placeholder="Ex: Entrega de Equipamentos"
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-1 focus:ring-teal-500"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Descrição / Instrução</label>
+                <textarea
+                  value={newOnboardingDesc}
+                  onChange={(e) => setNewOnboardingDesc(e.target.value)}
+                  placeholder="Ex: Entregar notebook, mouse e configurar e-mail corporativo."
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-1 focus:ring-teal-500 h-20 resize-none"
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="w-full py-2.5 bg-teal-600 hover:bg-teal-500 text-white font-extrabold rounded-xl text-xs shadow-sm transition flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <PlusCircle size={14} />
+                Adicionar ao Setor
+              </button>
+            </form>
+
+            {/* List of current items by sector */}
+            <div className="space-y-4">
+              <h3 className="text-xs font-bold text-slate-700 uppercase">Itens Cadastrados</h3>
+              <div className="max-h-[350px] overflow-y-auto space-y-3 pr-2 custom-scrollbar">
+                {setores.map(setor => {
+                  const itemsSetor = onboardingItems.filter(i => i.setorId === setor.id);
+                  if (itemsSetor.length === 0) return null;
+                  return (
+                    <div key={setor.id} className="space-y-2">
+                      <div className="text-[10px] font-extrabold text-teal-600 bg-teal-50 px-2 py-0.5 rounded-md inline-block uppercase tracking-wider">
+                        {setor.nome}
+                      </div>
+                      <div className="space-y-1.5">
+                        {itemsSetor.map(item => (
+                          <div key={item.id} className="flex items-center justify-between p-2.5 bg-white border border-slate-100 rounded-xl hover:border-slate-200 transition-all group">
+                            <div className="min-w-0">
+                              <p className="text-xs font-bold text-slate-800 truncate">{item.titulo}</p>
+                              <p className="text-[10px] text-slate-400 line-clamp-1">{item.descricao}</p>
+                            </div>
+                            <button
+                              onClick={() => onDeleteOnboardingItem(item.id)}
+                              className="p-1.5 text-slate-300 hover:text-rose-500 transition-colors cursor-pointer"
+                              title="Remover Item"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+                {onboardingItems.length === 0 && (
+                  <div className="text-center py-10 text-slate-400">
+                    <p className="text-xs">Nenhum item de onboarding configurado ainda.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

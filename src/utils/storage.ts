@@ -19,6 +19,13 @@ import {
   OnboardingChecklist,
   AlertaInteligente,
   ConfiguracaoAlertas,
+  Documento,
+  TipoReconhecimento,
+  Reconhecimento,
+  ConfiguracaoReconhecimento,
+  MetaLideranca,
+  MetaSetor,
+  AcompanhamentoRealizado,
 } from '../types';
 
 // Chaves para o LocalStorage
@@ -38,6 +45,15 @@ const KEYS = {
   ONBOARDING_CHECKLISTS: 'gc_onboarding_checklists',
   ALERTAS: 'gc_alertas_inteligentes',
   CONFIG_ALERTAS: 'gc_config_alertas',
+  // P3: Documentos
+  DOCUMENTOS: 'gc_documentos',
+  // P4: Reconhecimento
+  CONFIG_RECONHECIMENTO: 'gc_config_reconhecimento',
+  RECONHECIMENTOS: 'gc_reconhecimentos',
+  // P5: Metas
+  METAS_LIDERANCA: 'gc_metas_lideranca',
+  METAS_SETOR: 'gc_metas_setor',
+  ACOMPANHAMENTOS: 'gc_acompanhamentos',
 };
 
 // Dados Iniciais para o Seed
@@ -359,6 +375,41 @@ const DEFAULT_GOOGLESCRIPT: GoogleScriptConfig = {
 
 const DEFAULT_PROVIDER: DataSourceProvider = 'googlescript';
 
+// ========== P3: DOCUMENTOS SEED ==========
+const SEED_DOCUMENTOS: Documento[] = [];
+
+// ========== P4: RECONHECIMENTO SEED ==========
+const SEED_TIPOS_RECONHECIMENTO: TipoReconhecimento[] = [
+  { id: 'tipo-1', nome: 'MVP do Mês', icone: 'Trophy', cor: '#fbbf24', ativo: true, criterios: 'Colaborador que se destacou em resultados e entregas.' },
+  { id: 'tipo-2', nome: 'Inovador', icone: 'Lightbulb', cor: '#f97316', ativo: true, criterios: 'Colaborador que propõe ideias inovadoras.' },
+  { id: 'tipo-3', nome: 'Team Player', icone: 'Users', cor: '#22c55e', ativo: true, criterios: 'Colaborador que ajuda e collaborate com o time.' },
+  { id: 'tipo-4', nome: 'Cliente Primero', icone: 'Heart', cor: '#ec4899', ativo: true, criterios: 'Colaborador que entrega excelente experiência ao cliente.' },
+  { id: 'tipo-5', nome: 'Crescimento', icone: 'TrendingUp', cor: '#8b5cf6', ativo: true, criterios: 'Colaborador em constante desenvolvimento.' },
+];
+
+const DEFAULT_CONFIG_RECONHECIMENTO: ConfiguracaoReconhecimento = {
+  tipos: SEED_TIPOS_RECONHECIMENTO,
+  permitirIndicacaoPeer: true,
+  permiteUploadCertificado: true,
+  notificacoesAutomaticas: true,
+};
+
+const SEED_RECONHECIMENTOS: Reconhecimento[] = [];
+
+// ========== P5: METAS SEED ==========
+const SEED_METAS_LIDERANCA: MetaLideranca[] = [
+  { id: 'meta-lid-1', liderId: 'lid-1', tipoInteracao: 'feedback', titulo: 'Feedbacks Mensais', descricao: 'Realizar no mínimo 4 feedbacks por mês', quantidadeMinima: 4, periodo: 'mensal', ativo: true },
+  { id: 'meta-lid-2', liderId: 'lid-1', tipoInteracao: 'conversa_alinhamento', titulo: 'Conversas de Alinhamento', descricao: 'No mínimo 2 conversas de alinhamento por mês', quantidadeMinima: 2, periodo: 'mensal', ativo: true },
+  { id: 'meta-lid-3', liderId: 'lid-2', tipoInteracao: 'conversa_desenvolvimento', titulo: 'Conversas de Desenvolvimento', descricao: 'Realizar 2 conversas de desenvolvimento por mês', quantidadeMinima: 2, periodo: 'mensal', ativo: true },
+];
+
+const SEED_METAS_SETOR: MetaSetor[] = [
+  { id: 'meta-set-1', setorId: 'set-1', tipoInteracao: 'feedback', titulo: 'Feedbacks por Setor Tech', descricao: 'Mínimo de 8 feedbacks no setor de TI por mês', quantidadeMinima: 8, periodo: 'mensal', ativo: true },
+  { id: 'meta-set-2', setorId: 'set-2', tipoInteracao: 'conversa_informal', titulo: 'Check-ins Informais', descricao: 'Mínimo de 12 check-ins informais por setor por mês', quantidadeMinima: 12, periodo: 'mensal', ativo: true },
+];
+
+const SEED_ACOMPANHAMENTOS: AcompanhamentoRealizado[] = [];
+
 // Funções de Inicialização e Leitura/Escrita
 export function initializeStorage() {
   if (!localStorage.getItem(KEYS.EMPRESAS)) {
@@ -405,6 +456,30 @@ export function initializeStorage() {
 
   if (!localStorage.getItem(KEYS.PROVIDER)) {
     localStorage.setItem(KEYS.PROVIDER, JSON.stringify(DEFAULT_PROVIDER));
+  }
+
+  // P3: Documentos
+  if (!localStorage.getItem(KEYS.DOCUMENTOS)) {
+    localStorage.setItem(KEYS.DOCUMENTOS, JSON.stringify(SEED_DOCUMENTOS));
+  }
+
+  // P4: Reconhecimento
+  if (!localStorage.getItem(KEYS.CONFIG_RECONHECIMENTO)) {
+    localStorage.setItem(KEYS.CONFIG_RECONHECIMENTO, JSON.stringify(DEFAULT_CONFIG_RECONHECIMENTO));
+  }
+  if (!localStorage.getItem(KEYS.RECONHECIMENTOS)) {
+    localStorage.setItem(KEYS.RECONHECIMENTOS, JSON.stringify(SEED_RECONHECIMENTOS));
+  }
+
+  // P5: Metas
+  if (!localStorage.getItem(KEYS.METAS_LIDERANCA)) {
+    localStorage.setItem(KEYS.METAS_LIDERANCA, JSON.stringify(SEED_METAS_LIDERANCA));
+  }
+  if (!localStorage.getItem(KEYS.METAS_SETOR)) {
+    localStorage.setItem(KEYS.METAS_SETOR, JSON.stringify(SEED_METAS_SETOR));
+  }
+  if (!localStorage.getItem(KEYS.ACOMPANHAMENTOS)) {
+    localStorage.setItem(KEYS.ACOMPANHAMENTOS, JSON.stringify(SEED_ACOMPANHAMENTOS));
   }
 }
 
@@ -646,5 +721,152 @@ export const StorageAPI = {
 
   gerarIdAlerta: (): string => {
     return `alerta-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  },
+
+  // ========== P3: DOCUMENTOS ==========
+  getDocumentos: (): Documento[] => {
+    return get<Documento>(KEYS.DOCUMENTOS);
+  },
+
+  getDocumentosPorColaborador: (colaboradorId: string): Documento[] => {
+    return StorageAPI.getDocumentos().filter(d => d.colaboradorId === colaboradorId);
+  },
+
+  saveDocumento: (documento: Documento) => {
+    const docs = StorageAPI.getDocumentos();
+    const index = docs.findIndex(d => d.id === documento.id);
+    if (index >= 0) {
+      docs[index] = documento;
+    } else {
+      docs.push(documento);
+    }
+    set(KEYS.DOCUMENTOS, docs);
+  },
+
+  deleteDocumento: (id: string) => {
+    const docs = StorageAPI.getDocumentos().filter(d => d.id !== id);
+    set(KEYS.DOCUMENTOS, docs);
+  },
+
+  // ========== P4: RECONHECIMENTO ==========
+  getConfiguracaoReconhecimento: (): ConfiguracaoReconhecimento => {
+    initializeStorage();
+    const config = localStorage.getItem(KEYS.CONFIG_RECONHECIMENTO);
+    return config ? JSON.parse(config) : DEFAULT_CONFIG_RECONHECIMENTO;
+  },
+
+  saveConfiguracaoReconhecimento: (config: ConfiguracaoReconhecimento) => {
+    localStorage.setItem(KEYS.CONFIG_RECONHECIMENTO, JSON.stringify(config));
+  },
+
+  getReconhecimentos: (): Reconhecimento[] => {
+    return get<Reconhecimento>(KEYS.RECONHECIMENTOS);
+  },
+
+  getReconhecimentosPorColaborador: (colaboradorId: string): Reconhecimento[] => {
+    return StorageAPI.getReconhecimentos().filter(r => r.colaboradorId === colaboradorId);
+  },
+
+  saveReconhecimento: (reconhecimento: Reconhecimento) => {
+    const recs = StorageAPI.getReconhecimentos();
+    const index = recs.findIndex(r => r.id === reconhecimento.id);
+    if (index >= 0) {
+      recs[index] = reconhecimento;
+    } else {
+      recs.push(reconhecimento);
+    }
+    set(KEYS.RECONHECIMENTOS, recs);
+  },
+
+  deleteReconhecimento: (id: string) => {
+    const recs = StorageAPI.getReconhecimentos().filter(r => r.id !== id);
+    set(KEYS.RECONHECIMENTOS, recs);
+  },
+
+  // ========== P5: METAS ==========
+  getMetasLideranca: (): MetaLideranca[] => {
+    return get<MetaLideranca>(KEYS.METAS_LIDERANCA);
+  },
+
+  getMetasLiderancaPorLider: (liderId: string): MetaLideranca[] => {
+    return StorageAPI.getMetasLideranca().filter(m => m.liderId === liderId);
+  },
+
+  saveMetaLideranca: (meta: MetaLideranca) => {
+    const metas = StorageAPI.getMetasLideranca();
+    const index = metas.findIndex(m => m.id === meta.id);
+    if (index >= 0) {
+      metas[index] = meta;
+    } else {
+      metas.push(meta);
+    }
+    set(KEYS.METAS_LIDERANCA, metas);
+  },
+
+  deleteMetaLideranca: (id: string) => {
+    const metas = StorageAPI.getMetasLideranca().filter(m => m.id !== id);
+    set(KEYS.METAS_LIDERANCA, metas);
+  },
+
+  getMetasSetor: (): MetaSetor[] => {
+    return get<MetaSetor>(KEYS.METAS_SETOR);
+  },
+
+  getMetasSetorPorSetor: (setorId: string): MetaSetor[] => {
+    return StorageAPI.getMetasSetor().filter(m => m.setorId === setorId);
+  },
+
+  saveMetaSetor: (meta: MetaSetor) => {
+    const metas = StorageAPI.getMetasSetor();
+    const index = metas.findIndex(m => m.id === meta.id);
+    if (index >= 0) {
+      metas[index] = meta;
+    } else {
+      metas.push(meta);
+    }
+    set(KEYS.METAS_SETOR, metas);
+  },
+
+  deleteMetaSetor: (id: string) => {
+    const metas = StorageAPI.getMetasSetor().filter(m => m.id !== id);
+    set(KEYS.METAS_SETOR, metas);
+  },
+
+  getAcompanhamentos: (): AcompanhamentoRealizado[] => {
+    return get<AcompanhamentoRealizado>(KEYS.ACOMPANHAMENTOS);
+  },
+
+  getAcompanhamentosPorLider: (liderId: string, periodo?: string): AcompanhamentoRealizado[] => {
+    let acs = StorageAPI.getAcompanhamentos().filter(a => a.liderId === liderId);
+    if (periodo) {
+      acs = acs.filter(a => a.data.startsWith(periodo));
+    }
+    return acs;
+  },
+
+  getAcompanhamentosPorColaborador: (colaboradorId: string): AcompanhamentoRealizado[] => {
+    return StorageAPI.getAcompanhamentos().filter(a => a.colaboradorId === colaboradorId);
+  },
+
+  saveAcompanhamento: (acomp: AcompanhamentoRealizado) => {
+    const acs = StorageAPI.getAcompanhamentos();
+    const index = acs.findIndex(a => a.id === acomp.id);
+    if (index >= 0) {
+      acs[index] = acomp;
+    } else {
+      acs.push(acomp);
+    }
+    set(KEYS.ACOMPANHAMENTOS, acs);
+  },
+
+  deleteAcompanhamento: (id: string) => {
+    const acs = StorageAPI.getAcompanhamentos().filter(a => a.id !== id);
+    set(KEYS.ACOMPANHAMENTOS, acs);
+  },
+
+  // Contar interações por tipo no período
+  contarInteracoesPorTipo: (liderId: string, tipoInteracao: string, periodo: string): number => {
+    return StorageAPI.getAcompanhamentosPorLider(liderId, periodo)
+      .filter(a => a.tipoInteracao === tipoInteracao).length;
   },
 };

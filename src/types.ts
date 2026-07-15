@@ -172,3 +172,133 @@ export interface ConfiguracaoAlertas {
   diasAntecedenciaAvaliacao180: number; // Padrão: 30 dias
   alertasPersistentes: boolean; // Padrão: true
 }
+
+// ========== P3: CENTRAL DE DOCUMENTOS ==========
+export type CategoriaDocumento = 
+  | 'certificado'
+  | 'termo_assinado'
+  | 'advertencia'
+  | 'avaliacao'
+  | 'feedback_pdf'
+  | 'contrato'
+  | 'curriculo'
+  | 'documento_pessoal'
+  | 'outro';
+
+export interface Documento {
+  id: string;
+  colaboradorId: string;
+  nome: string;
+  categoria: CategoriaDocumento;
+  tipoArquivo: string; // pdf, docx, png, jpg, etc
+  url: string; // URL no Google Drive
+  driveFileId?: string; // ID do arquivo no Drive
+  tamanho: string; // Ex: "2.5 MB"
+  uploadedPor: string; // Usuario ID
+  dataUpload: string;
+  descricao?: string;
+}
+
+// ========== P4: SISTEMA DE RECONHECIMENTO ==========
+export interface TipoReconhecimento {
+  id: string;
+  nome: string; // Ex: "MVP do Mês", "Inovador", "Team Player"
+  icone: string; // Nome do ícone Lucide
+  cor: string; // Cor em hex ou Tailwind
+  ativo: boolean;
+  criterios?: string; // Descrição dos critérios
+}
+
+export interface Reconhecimento {
+  id: string;
+  colaboradorId: string;
+  tipoId: string; // ID do TipoReconhecimento
+  titulo: string;
+  descricao: string;
+  concedidoPor: string; // Usuario ID (gestor)
+  dataConcessao: string;
+  visibleEquipe: boolean; // Se aparece no mural da equipe
+  arquivoUrl?: string; // Certificação PDF, se aplicável
+}
+
+export interface ConfiguracaoReconhecimento {
+  tipos: TipoReconhecimento[];
+  permitirIndicacaoPeer: boolean; // Se colaboradores podem indicar colegas
+  permiteUploadCertificado: boolean;
+  notificacoesAutomaticas: boolean;
+}
+
+// ========== P4: LINHA DO TEMPO INTELIGENTE ==========
+export interface ItemLinhaTempo {
+  id: string;
+  tipo: 'registro' | 'documento' | 'reconhecimento' | 'meta' | 'tarefa' | 'avaliacao';
+  titulo: string;
+  descricao: string;
+  data: string;
+  icone: string;
+  cor: string;
+  entidadeId?: string; // ID da entidade relacionada (registro, documento, etc)
+  entidadeTipo?: string; // Tipo da entidade
+}
+
+// ========== P5: SISTEMA DE METAS ==========
+export type TipoInteracao = 
+  | 'avaliacao_180'
+  | 'avaliacao_bem_estar'
+  | 'avaliacao_experiencia'
+  | 'feedback'
+  | 'conversa_alinhamento'
+  | 'conversa_disciplinar'
+  | 'conversa_informal'
+  | 'conversa_desenvolvimento'
+  | 'conversa_reconhecimento'
+  | 'onboarding'
+  | 'pdiavaliacao_360';
+
+export interface MetaLideranca {
+  id: string;
+  liderId: string;
+  tipoInteracao: TipoInteracao;
+  titulo: string;
+  descricao: string;
+  quantidadeMinima: number; // Meta mensal
+  periodo: 'mensal' | 'trimestral' | 'semestral';
+  ativo: boolean;
+}
+
+export interface MetaSetor {
+  id: string;
+  setorId: string;
+  tipoInteracao: TipoInteracao;
+  titulo: string;
+  descricao: string;
+  quantidadeMinima: number; // Meta mensal
+  periodo: 'mensal' | 'trimestral' | 'semestral';
+  ativo: boolean;
+}
+
+export interface AcompanhamentoRealizado {
+  id: string;
+  tipoInteracao: TipoInteracao;
+  colaboradorId: string;
+  liderId: string;
+  setorId: string;
+  data: string;
+  descricao?: string;
+  documentoId?: string; // Link para documento gerado
+}
+
+export interface ResumoMetas {
+  liderId: string;
+  periodo: string; // YYYY-MM
+  metas: {
+    metaId: string;
+    tipoInteracao: TipoInteracao;
+    quantidadeMeta: number;
+    quantidadeRealizada: number;
+    percentual: number;
+  }[];
+  totalMeta: number;
+  totalRealizado: number;
+  percentualGeral: number;
+}

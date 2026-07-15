@@ -20,6 +20,13 @@ import {
   OnboardingChecklist,
   AlertaInteligente,
   ConfiguracaoAlertas,
+  Documento,
+  TipoReconhecimento,
+  Reconhecimento,
+  ConfiguracaoReconhecimento,
+  MetaLideranca,
+  MetaSetor,
+  AcompanhamentoRealizado,
 } from '../types';
 import { StorageAPI } from '../utils/storage';
 
@@ -87,6 +94,29 @@ export interface IDataService {
   getConfiguracaoAlertas(): Promise<ConfiguracaoAlertas>;
   saveConfiguracaoAlertas(config: ConfiguracaoAlertas): Promise<void>;
   gerarIdAlerta(): Promise<string>;
+
+  // P3: Documentos
+  getDocumentos(): Promise<Documento[]>;
+  saveDocumento(doc: Documento): Promise<void>;
+  deleteDocumento(id: string): Promise<void>;
+
+  // P4: Reconhecimento
+  getConfiguracaoReconhecimento(): Promise<ConfiguracaoReconhecimento>;
+  saveConfiguracaoReconhecimento(config: ConfiguracaoReconhecimento): Promise<void>;
+  getReconhecimentos(): Promise<Reconhecimento[]>;
+  saveReconhecimento(rec: Reconhecimento): Promise<void>;
+  deleteReconhecimento(id: string): Promise<void>;
+
+  // P5: Metas
+  getMetasLideranca(): Promise<MetaLideranca[]>;
+  saveMetaLideranca(meta: MetaLideranca): Promise<void>;
+  deleteMetaLideranca(id: string): Promise<void>;
+  getMetasSetor(): Promise<MetaSetor[]>;
+  saveMetaSetor(meta: MetaSetor): Promise<void>;
+  deleteMetaSetor(id: string): Promise<void>;
+  getAcompanhamentos(): Promise<AcompanhamentoRealizado[]>;
+  saveAcompanhamento(acomp: AcompanhamentoRealizado): Promise<void>;
+  deleteAcompanhamento(id: string): Promise<void>;
 
   uploadFile(
     file: File,
@@ -193,6 +223,63 @@ export class LocalDataService implements IDataService {
   }
   async gerarIdAlerta(): Promise<string> {
     return StorageAPI.gerarIdAlerta();
+  }
+
+  // P3: Documentos
+  async getDocumentos(): Promise<Documento[]> {
+    return StorageAPI.getDocumentos();
+  }
+  async saveDocumento(doc: Documento): Promise<void> {
+    StorageAPI.saveDocumento(doc);
+  }
+  async deleteDocumento(id: string): Promise<void> {
+    StorageAPI.deleteDocumento(id);
+  }
+
+  // P4: Reconhecimento
+  async getConfiguracaoReconhecimento(): Promise<ConfiguracaoReconhecimento> {
+    return StorageAPI.getConfiguracaoReconhecimento();
+  }
+  async saveConfiguracaoReconhecimento(config: ConfiguracaoReconhecimento): Promise<void> {
+    StorageAPI.saveConfiguracaoReconhecimento(config);
+  }
+  async getReconhecimentos(): Promise<Reconhecimento[]> {
+    return StorageAPI.getReconhecimentos();
+  }
+  async saveReconhecimento(rec: Reconhecimento): Promise<void> {
+    StorageAPI.saveReconhecimento(rec);
+  }
+  async deleteReconhecimento(id: string): Promise<void> {
+    StorageAPI.deleteReconhecimento(id);
+  }
+
+  // P5: Metas
+  async getMetasLideranca(): Promise<MetaLideranca[]> {
+    return StorageAPI.getMetasLideranca();
+  }
+  async saveMetaLideranca(meta: MetaLideranca): Promise<void> {
+    StorageAPI.saveMetaLideranca(meta);
+  }
+  async deleteMetaLideranca(id: string): Promise<void> {
+    StorageAPI.deleteMetaLideranca(id);
+  }
+  async getMetasSetor(): Promise<MetaSetor[]> {
+    return StorageAPI.getMetasSetor();
+  }
+  async saveMetaSetor(meta: MetaSetor): Promise<void> {
+    StorageAPI.saveMetaSetor(meta);
+  }
+  async deleteMetaSetor(id: string): Promise<void> {
+    StorageAPI.deleteMetaSetor(id);
+  }
+  async getAcompanhamentos(): Promise<AcompanhamentoRealizado[]> {
+    return StorageAPI.getAcompanhamentos();
+  }
+  async saveAcompanhamento(acomp: AcompanhamentoRealizado): Promise<void> {
+    StorageAPI.saveAcompanhamento(acomp);
+  }
+  async deleteAcompanhamento(id: string): Promise<void> {
+    StorageAPI.deleteAcompanhamento(id);
   }
 
   async uploadFile(
@@ -767,6 +854,63 @@ export class GoogleScriptDataService implements IDataService {
     return this.localFallback.gerarIdAlerta();
   }
 
+  // P3: Documentos
+  async getDocumentos(): Promise<Documento[]> {
+    return this.localFallback.getDocumentos();
+  }
+  async saveDocumento(doc: Documento): Promise<void> {
+    await this.localFallback.saveDocumento(doc);
+  }
+  async deleteDocumento(id: string): Promise<void> {
+    await this.localFallback.deleteDocumento(id);
+  }
+
+  // P4: Reconhecimento
+  async getConfiguracaoReconhecimento(): Promise<ConfiguracaoReconhecimento> {
+    return this.localFallback.getConfiguracaoReconhecimento();
+  }
+  async saveConfiguracaoReconhecimento(config: ConfiguracaoReconhecimento): Promise<void> {
+    await this.localFallback.saveConfiguracaoReconhecimento(config);
+  }
+  async getReconhecimentos(): Promise<Reconhecimento[]> {
+    return this.localFallback.getReconhecimentos();
+  }
+  async saveReconhecimento(rec: Reconhecimento): Promise<void> {
+    await this.localFallback.saveReconhecimento(rec);
+  }
+  async deleteReconhecimento(id: string): Promise<void> {
+    await this.localFallback.deleteReconhecimento(id);
+  }
+
+  // P5: Metas
+  async getMetasLideranca(): Promise<MetaLideranca[]> {
+    return this.localFallback.getMetasLideranca();
+  }
+  async saveMetaLideranca(meta: MetaLideranca): Promise<void> {
+    await this.localFallback.saveMetaLideranca(meta);
+  }
+  async deleteMetaLideranca(id: string): Promise<void> {
+    await this.localFallback.deleteMetaLideranca(id);
+  }
+  async getMetasSetor(): Promise<MetaSetor[]> {
+    return this.localFallback.getMetasSetor();
+  }
+  async saveMetaSetor(meta: MetaSetor): Promise<void> {
+    await this.localFallback.saveMetaSetor(meta);
+  }
+  async deleteMetaSetor(id: string): Promise<void> {
+    await this.localFallback.deleteMetaSetor(id);
+  }
+  async getAcompanhamentos(): Promise<AcompanhamentoRealizado[]> {
+    return this.localFallback.getAcompanhamentos();
+  }
+  async saveAcompanhamento(acomp: AcompanhamentoRealizado): Promise<void> {
+    await this.localFallback.saveAcompanhamento(acomp);
+  }
+  async deleteAcompanhamento(id: string): Promise<void> {
+    await this.localFallback.deleteAcompanhamento(id);
+  }
+
   async uploadFile(
     file: File,
     folderName: 'Fotos Colaboradores' | 'Anexos' | 'documentos',
@@ -1179,6 +1323,63 @@ export class SupabaseDataService implements IDataService {
     return this.localFallback.gerarIdAlerta();
   }
 
+  // P3: Documentos
+  async getDocumentos(): Promise<Documento[]> {
+    return this.localFallback.getDocumentos();
+  }
+  async saveDocumento(doc: Documento): Promise<void> {
+    await this.localFallback.saveDocumento(doc);
+  }
+  async deleteDocumento(id: string): Promise<void> {
+    await this.localFallback.deleteDocumento(id);
+  }
+
+  // P4: Reconhecimento
+  async getConfiguracaoReconhecimento(): Promise<ConfiguracaoReconhecimento> {
+    return this.localFallback.getConfiguracaoReconhecimento();
+  }
+  async saveConfiguracaoReconhecimento(config: ConfiguracaoReconhecimento): Promise<void> {
+    await this.localFallback.saveConfiguracaoReconhecimento(config);
+  }
+  async getReconhecimentos(): Promise<Reconhecimento[]> {
+    return this.localFallback.getReconhecimentos();
+  }
+  async saveReconhecimento(rec: Reconhecimento): Promise<void> {
+    await this.localFallback.saveReconhecimento(rec);
+  }
+  async deleteReconhecimento(id: string): Promise<void> {
+    await this.localFallback.deleteReconhecimento(id);
+  }
+
+  // P5: Metas
+  async getMetasLideranca(): Promise<MetaLideranca[]> {
+    return this.localFallback.getMetasLideranca();
+  }
+  async saveMetaLideranca(meta: MetaLideranca): Promise<void> {
+    await this.localFallback.saveMetaLideranca(meta);
+  }
+  async deleteMetaLideranca(id: string): Promise<void> {
+    await this.localFallback.deleteMetaLideranca(id);
+  }
+  async getMetasSetor(): Promise<MetaSetor[]> {
+    return this.localFallback.getMetasSetor();
+  }
+  async saveMetaSetor(meta: MetaSetor): Promise<void> {
+    await this.localFallback.saveMetaSetor(meta);
+  }
+  async deleteMetaSetor(id: string): Promise<void> {
+    await this.localFallback.deleteMetaSetor(id);
+  }
+  async getAcompanhamentos(): Promise<AcompanhamentoRealizado[]> {
+    return this.localFallback.getAcompanhamentos();
+  }
+  async saveAcompanhamento(acomp: AcompanhamentoRealizado): Promise<void> {
+    await this.localFallback.saveAcompanhamento(acomp);
+  }
+  async deleteAcompanhamento(id: string): Promise<void> {
+    await this.localFallback.deleteAcompanhamento(id);
+  }
+
   async uploadFile(
     file: File,
     folderName: 'Fotos Colaboradores' | 'Anexos' | 'documentos',
@@ -1296,6 +1497,63 @@ class DynamicDataService implements IDataService {
   }
   async gerarIdAlerta(): Promise<string> {
     return this.getService().gerarIdAlerta();
+  }
+
+  // P3: Documentos
+  async getDocumentos(): Promise<Documento[]> {
+    return this.getService().getDocumentos();
+  }
+  async saveDocumento(doc: Documento): Promise<void> {
+    await this.getService().saveDocumento(doc);
+  }
+  async deleteDocumento(id: string): Promise<void> {
+    await this.getService().deleteDocumento(id);
+  }
+
+  // P4: Reconhecimento
+  async getConfiguracaoReconhecimento(): Promise<ConfiguracaoReconhecimento> {
+    return this.getService().getConfiguracaoReconhecimento();
+  }
+  async saveConfiguracaoReconhecimento(config: ConfiguracaoReconhecimento): Promise<void> {
+    await this.getService().saveConfiguracaoReconhecimento(config);
+  }
+  async getReconhecimentos(): Promise<Reconhecimento[]> {
+    return this.getService().getReconhecimentos();
+  }
+  async saveReconhecimento(rec: Reconhecimento): Promise<void> {
+    await this.getService().saveReconhecimento(rec);
+  }
+  async deleteReconhecimento(id: string): Promise<void> {
+    await this.getService().deleteReconhecimento(id);
+  }
+
+  // P5: Metas
+  async getMetasLideranca(): Promise<MetaLideranca[]> {
+    return this.getService().getMetasLideranca();
+  }
+  async saveMetaLideranca(meta: MetaLideranca): Promise<void> {
+    await this.getService().saveMetaLideranca(meta);
+  }
+  async deleteMetaLideranca(id: string): Promise<void> {
+    await this.getService().deleteMetaLideranca(id);
+  }
+  async getMetasSetor(): Promise<MetaSetor[]> {
+    return this.getService().getMetasSetor();
+  }
+  async saveMetaSetor(meta: MetaSetor): Promise<void> {
+    await this.getService().saveMetaSetor(meta);
+  }
+  async deleteMetaSetor(id: string): Promise<void> {
+    await this.getService().deleteMetaSetor(id);
+  }
+  async getAcompanhamentos(): Promise<AcompanhamentoRealizado[]> {
+    return this.getService().getAcompanhamentos();
+  }
+  async saveAcompanhamento(acomp: AcompanhamentoRealizado): Promise<void> {
+    await this.getService().saveAcompanhamento(acomp);
+  }
+  async deleteAcompanhamento(id: string): Promise<void> {
+    await this.getService().deleteAcompanhamento(id);
   }
 
   async resetData(): Promise<void> {

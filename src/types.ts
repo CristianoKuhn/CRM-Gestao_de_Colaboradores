@@ -92,7 +92,7 @@ export interface TimelineRegistro {
 
 export interface OnboardingItem {
   id: string;
-  setorId: string;
+  setorIds: string[]; // Alterado para múltiplos setores
   titulo: string;
   descricao: string;
 }

@@ -19,13 +19,6 @@ export default function Login({ onLoginSuccess }: LoginProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Lista de usuários para preenchimento rápido em demonstração
-  const demoUsers = [
-    { nome: 'Carlos Silva (Admin)', email: 'carlos.silva@inovacao.com', perfil: 'Administrador' },
-    { nome: 'Mariana Santos (Coord)', email: 'mariana.santos@inovacao.com', perfil: 'Coordenador' },
-    { nome: 'Roberto Souza (Superv)', email: 'roberto.souza@inovacao.com', perfil: 'Supervisor' },
-  ];
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) {
@@ -81,22 +74,16 @@ export default function Login({ onLoginSuccess }: LoginProps) {
     }
   };
 
-  const handleQuickLogin = (demoEmail: string) => {
-    setEmail(demoEmail);
-    setPassword('123456');
-    setError(null);
-  };
-
   return (
     <div id="login-container" className="min-h-screen bg-slate-900 flex flex-col justify-center py-12 sm:px-6 lg:px-8 font-sans antialiased">
       <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
         {/* Brand Logo */}
-        <div className="inline-flex items-center gap-3 bg-teal-500 text-slate-900 font-extrabold p-3 rounded-2xl shadow-lg shadow-teal-500/20 mb-4 animate-bounce">
+        <div className="inline-flex items-center gap-3 bg-teal-500 text-slate-900 font-extrabold p-3 rounded-2xl shadow-lg shadow-teal-500/20 mb-4">
           <TrendingUp size={28} />
         </div>
-        <h2 className="text-2xl font-extrabold text-white tracking-tight">Liderança Pro</h2>
+        <h2 className="text-2xl font-extrabold text-white tracking-tight">Gestão360</h2>
         <p className="mt-1 text-xs text-slate-400 font-medium">
-          Portal de Gestão de Colaboradores & CRM de Liderança
+          Construindo equipes de alta performance
         </p>
       </div>
 
@@ -175,31 +162,6 @@ export default function Login({ onLoginSuccess }: LoginProps) {
               {!isLoading && <ArrowRight size={14} />}
             </button>
           </form>
-
-          {/* Quick Access/Demo Selector */}
-          <div className="pt-4 border-t border-slate-700/50">
-            <span className="block text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-3 text-center">
-              Acesso Rápido de Demonstração (Senha: 123456)
-            </span>
-            <div className="grid grid-cols-1 gap-2">
-              {demoUsers.map((user, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={() => handleQuickLogin(user.email)}
-                  className="flex items-center justify-between p-2.5 bg-slate-900/40 hover:bg-slate-900/80 border border-slate-700/30 hover:border-slate-600/50 rounded-xl text-left transition duration-150 cursor-pointer group"
-                >
-                  <div className="min-w-0">
-                    <p className="text-[10px] font-bold text-slate-200 group-hover:text-teal-400 transition">{user.nome}</p>
-                    <p className="text-[9px] text-slate-500 truncate">{user.email}</p>
-                  </div>
-                  <span className="text-[9px] font-semibold bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded group-hover:bg-slate-700 transition">
-                    {user.perfil}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
 
         </div>
       </div>

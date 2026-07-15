@@ -483,6 +483,11 @@ export const StorageAPI = {
     }
   },
 
+  deleteColaborador: (id: string) => {
+    const list = StorageAPI.getColaboradores();
+    set(KEYS.COLABORADORES, list.filter(c => c.id !== id));
+  },
+
   saveTimelineRegistro: (registro: TimelineRegistro) => {
     const list = StorageAPI.getTimeline();
     const index = list.findIndex(r => r.id === registro.id);

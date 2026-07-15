@@ -53,7 +53,7 @@ export default function Sidebar({
           </div>
           <span className="font-semibold text-lg tracking-tight text-white">Gestão360</span>
         </div>
-        <p className="text-xs text-slate-400">Liderança Pro</p>
+        <p className="text-xs text-slate-400">Construindo equipes de alta performance</p>
       </div>
 
       {/* Navigation Links */}

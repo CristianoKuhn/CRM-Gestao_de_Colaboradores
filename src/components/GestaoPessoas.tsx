@@ -1453,7 +1453,7 @@ export default function GestaoPessoas({
     <div className="p-8">
       <div className="mb-6">
         <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-          <UsersRound size={24} className="text-teal-500" />
+          <Users size={24} className="text-teal-500" />
           Gestão de Pessoas
         </h1>
         <p className="text-xs text-slate-500 mt-1">

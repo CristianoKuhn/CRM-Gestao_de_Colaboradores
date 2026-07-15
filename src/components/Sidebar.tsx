@@ -17,7 +17,6 @@ import {
   Trophy,
   Target,
   Award,
-  UsersRound,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -42,7 +41,7 @@ export default function Sidebar({
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'colaboradores', label: 'Colaboradores', icon: Users, badge: colaboradoresCount },
-    { id: 'gestao-pessoas', label: 'Gestão de Pessoas', icon: UsersRound },
+    { id: 'gestao-pessoas', label: 'Gestão de Pessoas', icon: Users },
     { id: 'usuarios', label: 'Gerenciar Usuários', icon: UserCog },
     { id: 'tarefas', label: 'Tarefas de Liderança', icon: CheckSquare, badge: tarefasPendentesCount },
     { id: 'documentos', label: 'Central Docs', icon: FolderOpen },

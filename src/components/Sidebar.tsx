@@ -51,9 +51,9 @@ export default function Sidebar({
           <div className="bg-teal-500 text-slate-900 font-bold p-1.5 rounded-lg flex items-center justify-center">
             <TrendingUp size={20} />
           </div>
-          <span className="font-semibold text-lg tracking-tight text-white">Liderança Pro</span>
+          <span className="font-semibold text-lg tracking-tight text-white">Gestão360</span>
         </div>
-        <p className="text-xs text-slate-400">Gestão de Colaboradores</p>
+        <p className="text-xs text-slate-400">Liderança Pro</p>
       </div>
 
       {/* Navigation Links */}

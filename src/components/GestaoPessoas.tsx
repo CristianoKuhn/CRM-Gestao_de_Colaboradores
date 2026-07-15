@@ -38,6 +38,7 @@ import {
   Gift,
   TrendingUp,
   Info,
+  LayoutDashboard,
 } from 'lucide-react';
 
 // ==========================================

@@ -42,6 +42,9 @@ interface ColaboradoresProps {
   onAddSetor: (nome: string) => void;
   onAddCargo: (nome: string) => void;
   onAddLider: (lider: Lider) => void;
+  onUpdateColaborador: (col: Colaborador) => void;
+  onDeleteColaborador: (id: string) => void;
+  currentUser: any;
   preselectedFilters?: any;
 }
 
@@ -57,6 +60,9 @@ export default function Colaboradores({
   onAddSetor,
   onAddCargo,
   onAddLider,
+  onUpdateColaborador,
+  onDeleteColaborador,
+  currentUser,
   preselectedFilters = {},
 }: ColaboradoresProps) {
   // Estados para Filtros
@@ -67,6 +73,7 @@ export default function Colaboradores({
 
   // Modais de Cadastro
   const [isColModalOpen, setIsColModalOpen] = useState(false);
+  const [editingColaboradorId, setEditingColaboradorId] = useState<string | null>(null);
   const [isAuxModalOpen, setIsAuxModalOpen] = useState<'empresa' | 'setor' | 'cargo' | 'lider' | null>(null);
 
   // Campos para Novo Colaborador
@@ -145,14 +152,14 @@ export default function Colaboradores({
     return matchesSearch && matchesSetor && matchesCargo && matchesSituacao;
   });
 
-  const handleCreateColaborador = (e: React.FormEvent) => {
+  const handleSaveColaborador = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newColNome || !newColEmail) return;
 
     const foto = newColFotoUrl || `https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200`;
 
-    const novoCol: Colaborador = {
-      id: `col-${Date.now()}`,
+    const colData: Colaborador = {
+      id: editingColaboradorId || `col-${Date.now()}`,
       nome: newColNome,
       email: newColEmail,
       fotoUrl: foto,
@@ -166,14 +173,41 @@ export default function Colaboradores({
       cidadeBase: newCidadeBase || 'São Paulo - SP',
       prazoAvaliacao180: Number(newPrazoAvaliacao180 || 6),
       realizarExperiencia: newRealizarExperiencia,
-      avaliacoesCompletas: [],
+      avaliacoesCompletas: editingColaboradorId ? (colaboradores.find(c => c.id === editingColaboradorId)?.avaliacoesCompletas || []) : [],
       dataNascimento: newColNascimento,
     };
 
-    onAddColaborador(novoCol);
-    setIsColModalOpen(false);
+    if (editingColaboradorId) {
+      onUpdateColaborador(colData);
+    } else {
+      onAddColaborador(colData);
+    }
+    
+    closeColModal();
+  };
 
-    // Reset Form
+  const openEditModal = (col: Colaborador) => {
+    setEditingColaboradorId(col.id);
+    setNewColNome(col.nome);
+    setNewColEmail(col.email);
+    setNewColFotoUrl(col.fotoUrl);
+    setNewColCargoId(col.cargoId);
+    setNewColSetorId(col.setorId);
+    setNewColLiderId(col.liderId);
+    setNewColAdmissao(col.dataAdmissao);
+    setNewColSituacao(col.situacao);
+    setNewColEmpresaId(col.empresaId);
+    setNewColTelefone(col.telefone || '');
+    setNewCidadeBase(col.cidadeBase || '');
+    setNewPrazoAvaliacao180(col.prazoAvaliacao180 || 6);
+    setNewRealizarExperiencia(col.realizarExperiencia ?? true);
+    setNewColNascimento(col.dataNascimento || '');
+    setIsColModalOpen(true);
+  };
+
+  const closeColModal = () => {
+    setIsColModalOpen(false);
+    setEditingColaboradorId(null);
     setNewColNome('');
     setNewColEmail('');
     setNewColFotoUrl('');
@@ -459,7 +493,7 @@ export default function Colaboradores({
               </button>
             </div>
 
-            <form onSubmit={handleCreateColaborador} className="space-y-4">
+            <form onSubmit={handleSaveColaborador} className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Nome Completo</label>
@@ -685,7 +719,7 @@ export default function Colaboradores({
               <div className="flex justify-end gap-2 pt-4 border-t border-slate-100">
                 <button
                   type="button"
-                  onClick={() => setIsColModalOpen(false)}
+                  onClick={closeColModal}
                   className="px-4 py-2 border border-slate-200 text-slate-600 bg-slate-50 rounded-xl text-sm font-semibold hover:bg-slate-100 cursor-pointer transition"
                 >
                   Cancelar
@@ -694,7 +728,7 @@ export default function Colaboradores({
                   type="submit"
                   className="px-5 py-2 bg-teal-500 text-slate-950 font-bold rounded-xl text-sm hover:bg-teal-400 cursor-pointer shadow-md shadow-teal-500/10 transition"
                 >
-                  Salvar Colaborador
+                  {editingColaboradorId ? 'Salvar Alterações' : 'Salvar Colaborador'}
                 </button>
               </div>
             </form>

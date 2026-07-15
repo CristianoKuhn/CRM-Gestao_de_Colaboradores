@@ -24,7 +24,10 @@ import {
   Clock,
   ArrowRight,
   Sparkles,
+  Cake,
+  ClipboardCheck,
 } from 'lucide-react';
+import { OnboardingItem, OnboardingChecklist } from '../types';
 
 interface DashboardProps {
   colaboradores: Colaborador[];
@@ -35,6 +38,9 @@ interface DashboardProps {
   onOpenNewRegistroModal: (colaboradorId?: string) => void;
   currentUser: Usuario;
   onUpdateColaborador: (col: Colaborador) => void;
+  onboardingItems: OnboardingItem[];
+  onboardingChecklists: OnboardingChecklist[];
+  onSaveOnboardingChecklist: (checklist: OnboardingChecklist) => void;
 }
 
 export default function Dashboard({
@@ -46,6 +52,9 @@ export default function Dashboard({
   onOpenNewRegistroModal,
   currentUser,
   onUpdateColaborador,
+  onboardingItems,
+  onboardingChecklists,
+  onSaveOnboardingChecklist,
 }: DashboardProps) {
   const HOJE = new Date('2026-07-13');
 
@@ -203,11 +212,71 @@ export default function Dashboard({
     return dataAdmissao.getMonth() === 6; // Julho
   });
 
+  // 7b. Aniversários de nascimento do mês (Julho)
+  const aniversariantesNascimento = colaboradores.filter((c) => {
+    if (!c.dataNascimento) return false;
+    const dataNasc = new Date(c.dataNascimento);
+    return dataNasc.getMonth() === 6; // Julho
+  });
+
   // 8. Colaboradores em Acompanhamento
   const colAcompanhamento = colaboradores.filter((c) => c.situacao === 'Em Acompanhamento');
 
   // 9. Tarefas Pendentes
   const tarefasPendentes = tarefas.filter((t) => !t.concluida);
+
+  // 10. Onboarding Automático (primeiros 60 dias)
+  const calculateOnboardingReminders = () => {
+    const list: {
+      colaborador: Colaborador;
+      checklist: OnboardingChecklist;
+      itemsPendentes: OnboardingItem[];
+    }[] = [];
+
+    colaboradores.forEach(col => {
+      if (col.situacao === 'Desligado') return;
+      
+      const admissao = new Date(col.dataAdmissao);
+      const diffTime = HOJE.getTime() - admissao.getTime();
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      
+      // Apenas colaboradores nos primeiros 60 dias
+      if (diffDays >= 0 && diffDays <= 60) {
+        const itemsSetor = onboardingItems.filter(i => i.setorId === col.setorId);
+        if (itemsSetor.length === 0) return;
+
+        let checklist = onboardingChecklists.find(c => c.colaboradorId === col.id);
+        if (!checklist) {
+          checklist = {
+            id: `obc-${col.id}`,
+            colaboradorId: col.id,
+            itemsConcluidos: [],
+            dataCriacao: HOJE.toISOString().split('T')[0]
+          };
+        }
+
+        const pendentes = itemsSetor.filter(i => !checklist?.itemsConcluidos.includes(i.id));
+        if (pendentes.length > 0) {
+          list.push({ colaborador: col, checklist, itemsPendentes: pendentes });
+        }
+      }
+    });
+
+    return list;
+  };
+
+  const onboardingReminders = calculateOnboardingReminders();
+
+  const handleToggleOnboardingItem = (checklist: OnboardingChecklist, itemId: string) => {
+    const novosConcluidos = checklist.itemsConcluidos.includes(itemId)
+      ? checklist.itemsConcluidos.filter(id => id !== itemId)
+      : [...checklist.itemsConcluidos, itemId];
+    
+    onSaveOnboardingChecklist({
+      ...checklist,
+      itemsConcluidos: novosConcluidos
+    });
+  };
   const tarefasAtrasadas = tarefas.filter((t) => {
     if (t.concluida) return false;
     const limite = new Date(t.vencimento);
@@ -431,7 +500,76 @@ export default function Dashboard({
             </p>
           </div>
         </div>
+
+        {/* Card 9: Aniversariantes do Mês */}
+        <div
+          id="metric-aniversariantes-nascimento"
+          onClick={() => onNavigateToList('colaboradores', { month: 'Julho' })}
+          className="bg-white border border-slate-100 rounded-3xl p-5 hover:shadow-lg hover:border-pink-100 cursor-pointer group transition-all duration-300 flex items-start gap-4"
+        >
+          <div className="p-3 bg-pink-50 rounded-2xl text-pink-600 group-hover:bg-pink-500 group-hover:text-white transition-all">
+            <Cake size={22} />
+          </div>
+          <div>
+            <h3 className="text-sm font-medium text-slate-500">Aniversariantes</h3>
+            <div className="flex items-baseline gap-2 mt-1">
+              <span className="text-2xl font-extrabold text-slate-900">{aniversariantesNascimento.length}</span>
+              <span className="text-[10px] text-pink-600 font-medium">Em Julho</span>
+            </div>
+            <p className="text-xs text-slate-400 mt-2 flex items-center gap-1">
+              Celebrar com a equipe <ArrowRight size={12} className="opacity-0 group-hover:opacity-100 transition-opacity" />
+            </p>
+          </div>
+        </div>
       </div>
+
+      {/* Onboarding Checklist Section */}
+      {onboardingReminders.length > 0 && (
+        <div className="bg-teal-50/30 border border-teal-100 rounded-3xl p-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="p-1.5 bg-teal-100 text-teal-700 rounded-lg">
+                <ClipboardCheck size={16} />
+              </span>
+              <div>
+                <h2 className="text-md font-bold text-slate-900">Check-in de Onboarding (Primeiros 60 Dias)</h2>
+                <p className="text-xs text-slate-500">Garanta a melhor integração para os novos talentos da sua equipe.</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {onboardingReminders.map((rem) => (
+              <div key={rem.colaborador.id} className="bg-white p-4 rounded-2xl border border-slate-150 shadow-xs">
+                <div className="flex items-center gap-3 mb-3 pb-3 border-b border-slate-50">
+                  <img src={rem.colaborador.fotoUrl} className="w-8 h-8 rounded-full object-cover" />
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold text-slate-800 truncate">{rem.colaborador.nome}</p>
+                    <p className="text-[10px] text-slate-400">Início: {new Date(rem.colaborador.dataAdmissao).toLocaleDateString('pt-BR')}</p>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  {rem.itemsPendentes.map(item => (
+                    <div 
+                      key={item.id} 
+                      onClick={() => handleToggleOnboardingItem(rem.checklist, item.id)}
+                      className="flex items-start gap-2 p-2 rounded-xl hover:bg-slate-50 cursor-pointer transition group"
+                    >
+                      <div className="mt-0.5 w-4 h-4 border-2 border-slate-200 rounded flex items-center justify-center group-hover:border-teal-500 transition-colors">
+                        <div className="w-2 h-2 bg-teal-500 rounded-xs opacity-0 group-hover:opacity-30"></div>
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-bold text-slate-700 line-clamp-1">{item.titulo}</p>
+                        <p className="text-[9px] text-slate-400 line-clamp-1">{item.descricao}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Lembretes de Avaliação / Período de Experiência */}
       {lembretesAcompanhamento.length > 0 && (

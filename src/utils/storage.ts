@@ -15,6 +15,8 @@ import {
   GoogleScriptConfig,
   DataSourceProvider,
   Usuario,
+  OnboardingItem,
+  OnboardingChecklist,
 } from '../types';
 
 // Chaves para o LocalStorage
@@ -30,6 +32,8 @@ const KEYS = {
   SUPABASE: 'gc_supabase_config',
   GOOGLESCRIPT: 'gc_googlescript_config',
   PROVIDER: 'gc_datasource_provider',
+  ONBOARDING_ITEMS: 'gc_onboarding_items',
+  ONBOARDING_CHECKLISTS: 'gc_onboarding_checklists',
 };
 
 // Dados Iniciais para o Seed
@@ -431,7 +435,7 @@ export const StorageAPI = {
   getGoogleScriptConfig(): GoogleScriptConfig {
     // Prioriza a variável de ambiente da Vercel (VITE_GOOGLE_SCRIPT_URL)
     // Se não existir, mantém o fallback para o localStorage
-    const envUrl = import.meta.env.VITE_GOOGLE_SCRIPT_URL;
+    const envUrl = (window as any).VITE_GOOGLE_SCRIPT_URL; // Fallback para window em ambientes restritos
     const stored = localStorage.getItem(KEYS.GOOGLESCRIPT);
     const config = stored ? JSON.parse(stored) : { webAppUrl: '', driveFolderId: '', isConnected: false };
 
@@ -539,6 +543,32 @@ export const StorageAPI = {
 
   saveDataSourceProvider: (provider: DataSourceProvider) => {
     localStorage.setItem(KEYS.PROVIDER, provider);
+  },
+
+  // --- Onboarding ---
+  getOnboardingItems: (): OnboardingItem[] => {
+    return get(KEYS.ONBOARDING_ITEMS) || [];
+  },
+  saveOnboardingItem: (item: OnboardingItem) => {
+    const items = StorageAPI.getOnboardingItems();
+    const index = items.findIndex((i) => i.id === item.id);
+    if (index >= 0) items[index] = item;
+    else items.push(item);
+    set(KEYS.ONBOARDING_ITEMS, items);
+  },
+  deleteOnboardingItem: (id: string) => {
+    const items = StorageAPI.getOnboardingItems().filter((i) => i.id !== id);
+    set(KEYS.ONBOARDING_ITEMS, items);
+  },
+  getOnboardingChecklists: (): OnboardingChecklist[] => {
+    return get(KEYS.ONBOARDING_CHECKLISTS) || [];
+  },
+  saveOnboardingChecklist: (checklist: OnboardingChecklist) => {
+    const lists = StorageAPI.getOnboardingChecklists();
+    const index = lists.findIndex((l) => l.id === checklist.id);
+    if (index >= 0) lists[index] = checklist;
+    else lists.push(checklist);
+    set(KEYS.ONBOARDING_CHECKLISTS, lists);
   },
 
   // Resetar para valores padrão

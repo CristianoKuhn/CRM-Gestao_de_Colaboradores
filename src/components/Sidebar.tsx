@@ -13,6 +13,10 @@ import {
   RefreshCw,
   TrendingUp,
   UserCog,
+  FolderOpen,
+  Trophy,
+  Target,
+  Award,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -39,6 +43,9 @@ export default function Sidebar({
     { id: 'colaboradores', label: 'Colaboradores', icon: Users, badge: colaboradoresCount },
     { id: 'usuarios', label: 'Gerenciar Usuários', icon: UserCog },
     { id: 'tarefas', label: 'Tarefas de Liderança', icon: CheckSquare, badge: tarefasPendentesCount },
+    { id: 'documentos', label: 'Central Docs', icon: FolderOpen },
+    { id: 'reconhecimento', label: 'Reconhecimento', icon: Trophy },
+    { id: 'metas', label: 'Metas Liderança', icon: Target },
     { id: 'analytics', label: 'Analytics & PDIs', icon: BarChart3 },
     { id: 'config', label: 'Configuração Banco', icon: Settings },
   ];

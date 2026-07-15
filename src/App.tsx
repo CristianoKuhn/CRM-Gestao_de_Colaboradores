@@ -20,6 +20,12 @@ import {
   Usuario,
   OnboardingItem,
   OnboardingChecklist,
+  Documento,
+  Reconhecimento,
+  ConfiguracaoReconhecimento,
+  MetaLideranca,
+  MetaSetor,
+  AcompanhamentoRealizado,
 } from './types';
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
@@ -30,6 +36,9 @@ import Analytics from './components/Analytics';
 import Config from './components/Config';
 import Usuarios from './components/Usuarios';
 import Login from './components/Login';
+import CentralDocumentos from './components/CentralDocumentos';
+import SistemaReconhecimento from './components/SistemaReconhecimento';
+import MetasLideranca from './components/MetasLideranca';
 import { Users2, X, PlusCircle } from 'lucide-react';
 
 export default function App() {
@@ -85,6 +94,23 @@ export default function App() {
   const [onboardingItems, setOnboardingItems] = useState<OnboardingItem[]>([]);
   const [onboardingChecklists, setOnboardingChecklists] = useState<OnboardingChecklist[]>([]);
 
+  // P3: Documentos
+  const [documentos, setDocumentos] = useState<Documento[]>([]);
+
+  // P4: Reconhecimento
+  const [reconhecimentos, setReconhecimentos] = useState<Reconhecimento[]>([]);
+  const [configReconhecimento, setConfigReconhecimento] = useState<ConfiguracaoReconhecimento>({
+    tipos: [],
+    permitirIndicacaoPeer: true,
+    permiteUploadCertificado: true,
+    notificacoesAutomaticas: true,
+  });
+
+  // P5: Metas
+  const [metasLideranca, setMetasLideranca] = useState<MetaLideranca[]>([]);
+  const [metasSetor, setMetasSetor] = useState<MetaSetor[]>([]);
+  const [acompanhamentos, setAcompanhamentos] = useState<AcompanhamentoRealizado[]>([]);
+
   // Estado para colaborador selecionado (CRM detalhado)
   const [selectedColaboradorId, setSelectedColaboradorId] = useState<string | null>(null);
 
@@ -97,7 +123,7 @@ export default function App() {
   // Carregar dados de forma reativa do serviço ativo
   const loadAllData = async () => {
     try {
-      const [cols, timelineData, tarefasData, setoresData, cargosData, lideresData, empresasData, usuariosData, onbItems, onbChecklists] = await Promise.all([
+      const [cols, timelineData, tarefasData, setoresData, cargosData, lideresData, empresasData, usuariosData, onbItems, onbChecklists, docsData, recsData, configRecData, metasLidData, metasSetData, acompData] = await Promise.all([
         DataService.getColaboradores(),
         DataService.getTimeline(),
         DataService.getTarefas(),
@@ -108,6 +134,15 @@ export default function App() {
         DataService.getUsuarios(),
         DataService.getOnboardingItems(),
         DataService.getOnboardingChecklists(),
+        // P3: Documentos
+        DataService.getDocumentos(),
+        // P4: Reconhecimento
+        DataService.getReconhecimentos(),
+        DataService.getConfiguracaoReconhecimento(),
+        // P5: Metas
+        DataService.getMetasLideranca(),
+        DataService.getMetasSetor(),
+        DataService.getAcompanhamentos(),
       ]);
 
       setColaboradores(cols);
@@ -120,6 +155,18 @@ export default function App() {
       setUsuarios(usuariosData);
       setOnboardingItems(onbItems);
       setOnboardingChecklists(onbChecklists);
+
+      // P3: Documentos
+      setDocumentos(docsData);
+
+      // P4: Reconhecimento
+      setReconhecimentos(recsData);
+      setConfigReconhecimento(configRecData);
+
+      // P5: Metas
+      setMetasLideranca(metasLidData);
+      setMetasSetor(metasSetData);
+      setAcompanhamentos(acompData);
       
       setSupabaseConfig(StorageAPI.getSupabaseConfig());
       setGoogleScriptConfig(StorageAPI.getGoogleScriptConfig());
@@ -240,6 +287,59 @@ export default function App() {
   const handleSaveGoogleScriptConfig = (config: GoogleScriptConfig) => {
     StorageAPI.saveGoogleScriptConfig(config);
     setGoogleScriptConfig(config);
+    loadAllData();
+  };
+
+  // P3: Handlers de Documentos
+  const handleAddDocumento = async (doc: Documento) => {
+    await DataService.saveDocumento(doc);
+    loadAllData();
+  };
+
+  const handleDeleteDocumento = async (id: string) => {
+    await DataService.deleteDocumento(id);
+    loadAllData();
+  };
+
+  // P4: Handlers de Reconhecimento
+  const handleSaveReconhecimento = async (rec: Reconhecimento) => {
+    await DataService.saveReconhecimento(rec);
+    loadAllData();
+  };
+
+  const handleDeleteReconhecimento = async (id: string) => {
+    await DataService.deleteReconhecimento(id);
+    loadAllData();
+  };
+
+  const handleSaveConfigReconhecimento = async (config: ConfiguracaoReconhecimento) => {
+    await DataService.saveConfiguracaoReconhecimento(config);
+    loadAllData();
+  };
+
+  // P5: Handlers de Metas
+  const handleSaveMetaLideranca = async (meta: MetaLideranca) => {
+    await DataService.saveMetaLideranca(meta);
+    loadAllData();
+  };
+
+  const handleDeleteMetaLideranca = async (id: string) => {
+    await DataService.deleteMetaLideranca(id);
+    loadAllData();
+  };
+
+  const handleSaveMetaSetor = async (meta: MetaSetor) => {
+    await DataService.saveMetaSetor(meta);
+    loadAllData();
+  };
+
+  const handleDeleteMetaSetor = async (id: string) => {
+    await DataService.deleteMetaSetor(id);
+    loadAllData();
+  };
+
+  const handleSaveAcompanhamento = async (acomp: AcompanhamentoRealizado) => {
+    await DataService.saveAcompanhamento(acomp);
     loadAllData();
   };
 
@@ -434,6 +534,46 @@ export default function App() {
               setores={setores}
               onSaveUsuario={handleSaveUsuario}
               onDeleteUsuario={handleDeleteUsuario}
+            />
+          )}
+
+          {activeTab === 'documentos' && (
+            <CentralDocumentos
+              colaborador={{ id: 'todos', nome: 'Todos', email: '', fotoUrl: '', cargoId: '', setorId: '', liderId: '', dataAdmissao: '', situacao: 'Ativo', empresaId: '' } as Colaborador}
+              documentos={documentos}
+              onAddDocumento={handleAddDocumento}
+              onDeleteDocumento={handleDeleteDocumento}
+              currentUserId={currentUser?.id || ''}
+            />
+          )}
+
+          {activeTab === 'reconhecimento' && (
+            <SistemaReconhecimento
+              reconhecimentos={reconhecimentos}
+              configuracao={configReconhecimento}
+              colaboradores={colaboradores}
+              lideres={lideres}
+              currentUserId={currentUser?.id || ''}
+              onSaveReconhecimento={handleSaveReconhecimento}
+              onDeleteReconhecimento={handleDeleteReconhecimento}
+              onSaveConfiguracao={handleSaveConfigReconhecimento}
+            />
+          )}
+
+          {activeTab === 'metas' && (
+            <MetasLideranca
+              metasLideranca={metasLideranca}
+              metasSetor={metasSetor}
+              acompanhamentos={acompanhamentos}
+              lideres={lideres}
+              setores={setores}
+              colaboradores={colaboradores}
+              currentUserId={currentUser?.id || ''}
+              onSaveMetaLideranca={handleSaveMetaLideranca}
+              onDeleteMetaLideranca={handleDeleteMetaLideranca}
+              onSaveMetaSetor={handleSaveMetaSetor}
+              onDeleteMetaSetor={handleDeleteMetaSetor}
+              onSaveAcompanhamento={handleSaveAcompanhamento}
             />
           )}
 

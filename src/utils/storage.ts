@@ -596,14 +596,17 @@ export const StorageAPI = {
   getGoogleScriptConfig(): GoogleScriptConfig {
     // Prioriza a variável de ambiente da Vercel (VITE_GOOGLE_SCRIPT_URL)
     // Se não existir, mantém o fallback para o localStorage
-    const envUrl = (window as any).VITE_GOOGLE_SCRIPT_URL; // Fallback para window em ambientes restritos
+    const envUrl = (window as any).VITE_GOOGLE_SCRIPT_URL;
     const stored = localStorage.getItem(KEYS.GOOGLESCRIPT);
     const config = stored ? JSON.parse(stored) : { webAppUrl: '', driveFolderId: '', isConnected: false };
 
+    // URL padrão do Apps Script
+    const DEFAULT_URL = 'https://script.google.com/macros/s/AKfycbz8iGKX9f9VNECQL1fcQttiMaEuT3a61YS3hE3HYi13SUvx3ShxF3RF69u7LkQhac0V/exec';
+
     return {
       ...config,
-      webAppUrl: envUrl || config.webAppUrl,
-      isConnected: !!(envUrl || config.webAppUrl)
+      webAppUrl: envUrl || config.webAppUrl || DEFAULT_URL,
+      isConnected: !!(envUrl || config.webAppUrl || DEFAULT_URL)
     };
   },
 

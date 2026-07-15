@@ -26,6 +26,11 @@ import {
   MetaLideranca,
   MetaSetor,
   AcompanhamentoRealizado,
+  Ferias,
+  DayOff,
+  Folga,
+  PeriodoAquisitivo,
+  ConfiguracaoGestaoPessoas,
 } from '../types';
 
 // Chaves para o LocalStorage
@@ -55,6 +60,12 @@ const KEYS = {
   METAS_LIDERANCA: 'gc_metas_lideranca',
   METAS_SETOR: 'gc_metas_setor',
   ACOMPANHAMENTOS: 'gc_acompanhamentos',
+  // P6: Gestão de Pessoas
+  FERIAS: 'gc_ferias',
+  DAYOFFS: 'gc_dayoffs',
+  FOLGAS: 'gc_folgas',
+  PERIODOS_AQUISITIVOS: 'gc_periodos_aquisitivos',
+  CONFIG_GESTAO_PESSOAS: 'gc_config_gestao_pessoas',
 };
 
 // Dados Iniciais para o Seed
@@ -411,6 +422,59 @@ const SEED_METAS_SETOR: MetaSetor[] = [
 
 const SEED_ACOMPANHAMENTOS: AcompanhamentoRealizado[] = [];
 
+// ========== P6: GESTÃO DE PESSOAS SEED ==========
+const SEED_PERIODOS_AQUISITIVOS: PeriodoAquisitivo[] = [
+  // Aline - Contratada em 2024-03-10
+  { id: 'pa-1', colaboradorId: 'col-1', anoBase: 2024, dataInicio: '2024-03-10', dataFim: '2025-03-09', diasDisponiveis: 30, diasUsados: 0, status: 'vencido' },
+  { id: 'pa-2', colaboradorId: 'col-1', anoBase: 2025, dataInicio: '2025-03-10', dataFim: '2026-03-09', diasDisponiveis: 30, diasUsados: 10, status: 'ativo' },
+  // Bruno - Contratado em 2023-01-15
+  { id: 'pa-3', colaboradorId: 'col-2', anoBase: 2023, dataInicio: '2023-01-15', dataFim: '2024-01-14', diasDisponiveis: 30, diasUsados: 30, status: 'vencido' },
+  { id: 'pa-4', colaboradorId: 'col-2', anoBase: 2024, dataInicio: '2024-01-15', dataFim: '2025-01-14', diasDisponiveis: 30, diasUsados: 20, status: 'vencido' },
+  { id: 'pa-5', colaboradorId: 'col-2', anoBase: 2025, dataInicio: '2025-01-15', dataFim: '2026-01-14', diasDisponiveis: 30, diasUsados: 0, status: 'ativo' },
+  // Clarice - Contratada em 2025-05-20
+  { id: 'pa-6', colaboradorId: 'col-3', anoBase: 2025, dataInicio: '2025-05-20', dataFim: '2026-05-19', diasDisponiveis: 30, diasUsados: 0, status: 'ativo' },
+  // Daniel - Contratado em 2024-09-01
+  { id: 'pa-7', colaboradorId: 'col-4', anoBase: 2024, dataInicio: '2024-09-01', dataFim: '2025-08-31', diasDisponiveis: 30, diasUsados: 15, status: 'vencido' },
+  { id: 'pa-8', colaboradorId: 'col-4', anoBase: 2025, dataInicio: '2025-09-01', dataFim: '2026-08-31', diasDisponiveis: 30, diasUsados: 0, status: 'ativo' },
+  // Eduarda - Contratada em 2022-11-10
+  { id: 'pa-9', colaboradorId: 'col-5', anoBase: 2024, dataInicio: '2024-11-10', dataFim: '2025-11-09', diasDisponiveis: 30, diasUsados: 30, status: 'vencido' },
+  { id: 'pa-10', colaboradorId: 'col-5', anoBase: 2025, dataInicio: '2025-11-10', dataFim: '2026-11-09', diasDisponiveis: 30, diasUsados: 0, status: 'ativo' },
+];
+
+const SEED_FERIAS: Ferias[] = [
+  { id: 'fer-1', colaboradorId: 'col-1', periodoAquisitivoId: 'pa-2', dataInicio: '2026-07-20', dataFim: '2026-07-29', dias: 10, status: 'planejada', observacoes: 'Férias de meio de ano', createdAt: '2026-06-15' },
+  { id: 'fer-2', colaboradorId: 'col-2', periodoAquisitivoId: 'pa-5', dataInicio: '2026-08-01', dataFim: '2026-08-15', dias: 15, status: 'planejada', observacoes: '', createdAt: '2026-06-20' },
+];
+
+const SEED_DAYOFFS: DayOff[] = [
+  { id: 'do-1', colaboradorId: 'col-1', ano: 2026, dataLimite: '2026-07-15', status: 'disponivel', observacoes: '' },
+  { id: 'do-2', colaboradorId: 'col-2', ano: 2026, dataLimite: '2026-01-30', dataUtilizacao: '2026-01-15', status: 'utilizado' },
+  { id: 'do-3', colaboradorId: 'col-3', ano: 2026, dataLimite: '2026-06-20', status: 'disponivel' },
+  { id: 'do-4', colaboradorId: 'col-4', ano: 2026, dataLimite: '2026-09-15', status: 'disponivel' },
+  { id: 'do-5', colaboradorId: 'col-5', ano: 2026, dataLimite: '2026-11-25', status: 'disponivel' },
+];
+
+const SEED_FOLGAS: Folga[] = [
+  { id: 'fol-1', colaboradorId: 'col-1', data: '2026-07-10', motivo: 'Compensação por fim de semana trabalhado', status: 'aprovada', observacoes: '', createdAt: '2026-07-01' },
+  { id: 'fol-2', colaboradorId: 'col-2', data: '2026-07-18', motivo: 'Acompanhamento médico', status: 'aprovada', createdAt: '2026-07-15' },
+];
+
+const DEFAULT_CONFIG_GESTAO_PESSOAS: ConfiguracaoGestaoPessoas = {
+  diasAntecedenciaFerias: 30,
+  permitirFeriasProlongadas: false,
+  maximoDiasFolga: 5,
+  obrigarPeriodoAquisitivo: true,
+  anteciparAniversario: false,
+  notificacoes: {
+    ferias90dias: true,
+    feriasVencendo: true,
+    dayoffPendente: true,
+    folgasPendentes: true,
+    aniversarioProximo: true,
+    aniversarioEmpresaProximo: true,
+  },
+};
+
 // Funções de Inicialização e Leitura/Escrita
 export function initializeStorage() {
   if (!localStorage.getItem(KEYS.EMPRESAS)) {
@@ -481,6 +545,23 @@ export function initializeStorage() {
   }
   if (!localStorage.getItem(KEYS.ACOMPANHAMENTOS)) {
     localStorage.setItem(KEYS.ACOMPANHAMENTOS, JSON.stringify(SEED_ACOMPANHAMENTOS));
+  }
+
+  // P6: Gestão de Pessoas
+  if (!localStorage.getItem(KEYS.PERIODOS_AQUISITIVOS)) {
+    localStorage.setItem(KEYS.PERIODOS_AQUISITIVOS, JSON.stringify(SEED_PERIODOS_AQUISITIVOS));
+  }
+  if (!localStorage.getItem(KEYS.FERIAS)) {
+    localStorage.setItem(KEYS.FERIAS, JSON.stringify(SEED_FERIAS));
+  }
+  if (!localStorage.getItem(KEYS.DAYOFFS)) {
+    localStorage.setItem(KEYS.DAYOFFS, JSON.stringify(SEED_DAYOFFS));
+  }
+  if (!localStorage.getItem(KEYS.FOLGAS)) {
+    localStorage.setItem(KEYS.FOLGAS, JSON.stringify(SEED_FOLGAS));
+  }
+  if (!localStorage.getItem(KEYS.CONFIG_GESTAO_PESSOAS)) {
+    localStorage.setItem(KEYS.CONFIG_GESTAO_PESSOAS, JSON.stringify(DEFAULT_CONFIG_GESTAO_PESSOAS));
   }
 }
 
@@ -885,5 +966,136 @@ export const StorageAPI = {
   contarInteracoesPorTipo: (liderId: string, tipoInteracao: string, periodo: string): number => {
     return StorageAPI.getAcompanhamentosPorLider(liderId, periodo)
       .filter(a => a.tipoInteracao === tipoInteracao).length;
+  },
+
+  // ========== P6: GESTÃO DE PESSOAS ==========
+  
+  // Períodos Aquisitivos
+  getPeriodosAquisitivos: (): PeriodoAquisitivo[] => {
+    return get<PeriodoAquisitivo>(KEYS.PERIODOS_AQUISITIVOS);
+  },
+
+  getPeriodosAquisitivosPorColaborador: (colaboradorId: string): PeriodoAquisitivo[] => {
+    return StorageAPI.getPeriodosAquisitivos().filter(p => p.colaboradorId === colaboradorId);
+  },
+
+  getPeriodoAquisitivoAtivo: (colaboradorId: string): PeriodoAquisitivo | undefined => {
+    return StorageAPI.getPeriodosAquisitivosPorColaborador(colaboradorId)
+      .find(p => p.status === 'ativo');
+  },
+
+  savePeriodoAquisitivo: (periodo: PeriodoAquisitivo) => {
+    const periodos = StorageAPI.getPeriodosAquisitivos();
+    const index = periodos.findIndex(p => p.id === periodo.id);
+    if (index >= 0) {
+      periodos[index] = periodo;
+    } else {
+      periodos.push(periodo);
+    }
+    set(KEYS.PERIODOS_AQUISITIVOS, periodos);
+  },
+
+  deletePeriodoAquisitivo: (id: string) => {
+    const periodos = StorageAPI.getPeriodosAquisitivos().filter(p => p.id !== id);
+    set(KEYS.PERIODOS_AQUISITIVOS, periodos);
+  },
+
+  // Férias
+  getFerias: (): Ferias[] => {
+    return get<Ferias>(KEYS.FERIAS);
+  },
+
+  getFeriasPorColaborador: (colaboradorId: string): Ferias[] => {
+    return StorageAPI.getFerias().filter(f => f.colaboradorId === colaboradorId);
+  },
+
+  getFeriasPlanejadas: (): Ferias[] => {
+    return StorageAPI.getFerias().filter(f => f.status === 'planejada');
+  },
+
+  saveFerias: (ferias: Ferias) => {
+    const feriasList = StorageAPI.getFerias();
+    const index = feriasList.findIndex(f => f.id === ferias.id);
+    if (index >= 0) {
+      feriasList[index] = ferias;
+    } else {
+      feriasList.push(ferias);
+    }
+    set(KEYS.FERIAS, feriasList);
+  },
+
+  deleteFerias: (id: string) => {
+    const ferias = StorageAPI.getFerias().filter(f => f.id !== id);
+    set(KEYS.FERIAS, ferias);
+  },
+
+  // DayOffs
+  getDayOffs: (): DayOff[] => {
+    return get<DayOff>(KEYS.DAYOFFS);
+  },
+
+  getDayOffsPorColaborador: (colaboradorId: string): DayOff[] => {
+    return StorageAPI.getDayOffs().filter(d => d.colaboradorId === colaboradorId);
+  },
+
+  getDayOffDisponivel: (colaboradorId: string, ano: number): DayOff | undefined => {
+    return StorageAPI.getDayOffsPorColaborador(colaboradorId)
+      .find(d => d.ano === ano && d.status === 'disponivel');
+  },
+
+  saveDayOff: (dayoff: DayOff) => {
+    const dayoffs = StorageAPI.getDayOffs();
+    const index = dayoffs.findIndex(d => d.id === dayoff.id);
+    if (index >= 0) {
+      dayoffs[index] = dayoff;
+    } else {
+      dayoffs.push(dayoff);
+    }
+    set(KEYS.DAYOFFS, dayoffs);
+  },
+
+  deleteDayOff: (id: string) => {
+    const dayoffs = StorageAPI.getDayOffs().filter(d => d.id !== id);
+    set(KEYS.DAYOFFS, dayoffs);
+  },
+
+  // Folgas
+  getFolgas: (): Folga[] => {
+    return get<Folga>(KEYS.FOLGAS);
+  },
+
+  getFolgasPorColaborador: (colaboradorId: string): Folga[] => {
+    return StorageAPI.getFolgas().filter(f => f.colaboradorId === colaboradorId);
+  },
+
+  getFolgasPendentes: (): Folga[] => {
+    return StorageAPI.getFolgas().filter(f => f.status === 'pendente');
+  },
+
+  saveFolga: (folga: Folga) => {
+    const folgas = StorageAPI.getFolgas();
+    const index = folgas.findIndex(f => f.id === folga.id);
+    if (index >= 0) {
+      folgas[index] = folga;
+    } else {
+      folgas.push(folga);
+    }
+    set(KEYS.FOLGAS, folgas);
+  },
+
+  deleteFolga: (id: string) => {
+    const folgas = StorageAPI.getFolgas().filter(f => f.id !== id);
+    set(KEYS.FOLGAS, folgas);
+  },
+
+  // Configuração de Gestão de Pessoas
+  getConfiguracaoGestaoPessoas: (): ConfiguracaoGestaoPessoas => {
+    initializeStorage();
+    const config = localStorage.getItem(KEYS.CONFIG_GESTAO_PESSOAS);
+    return config ? JSON.parse(config) : DEFAULT_CONFIG_GESTAO_PESSOAS;
+  },
+
+  saveConfiguracaoGestaoPessoas: (config: ConfiguracaoGestaoPessoas) => {
+    localStorage.setItem(KEYS.CONFIG_GESTAO_PESSOAS, JSON.stringify(config));
   },
 };

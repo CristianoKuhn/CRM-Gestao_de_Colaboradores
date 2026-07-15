@@ -27,6 +27,11 @@ import {
   MetaLideranca,
   MetaSetor,
   AcompanhamentoRealizado,
+  Ferias,
+  DayOff,
+  Folga,
+  PeriodoAquisitivo,
+  ConfiguracaoGestaoPessoas,
 } from '../types';
 import { StorageAPI } from '../utils/storage';
 
@@ -122,6 +127,22 @@ export interface IDataService {
   getAcompanhamentos(): Promise<AcompanhamentoRealizado[]>;
   saveAcompanhamento(acomp: AcompanhamentoRealizado): Promise<void>;
   deleteAcompanhamento(id: string): Promise<void>;
+
+  // P6: Gestão de Pessoas
+  getFerias(): Promise<Ferias[]>;
+  saveFerias(ferias: Ferias): Promise<void>;
+  deleteFerias(id: string): Promise<void>;
+  getDayOffs(): Promise<DayOff[]>;
+  saveDayOff(dayoff: DayOff): Promise<void>;
+  deleteDayOff(id: string): Promise<void>;
+  getFolgas(): Promise<Folga[]>;
+  saveFolga(folga: Folga): Promise<void>;
+  deleteFolga(id: string): Promise<void>;
+  getPeriodosAquisitivos(): Promise<PeriodoAquisitivo[]>;
+  savePeriodoAquisitivo(periodo: PeriodoAquisitivo): Promise<void>;
+  deletePeriodoAquisitivo(id: string): Promise<void>;
+  getConfiguracaoGestaoPessoas(): Promise<ConfiguracaoGestaoPessoas>;
+  saveConfiguracaoGestaoPessoas(config: ConfiguracaoGestaoPessoas): Promise<void>;
 
   uploadFile(
     file: File,
@@ -296,6 +317,50 @@ export class LocalDataService implements IDataService {
   }
   async deleteAcompanhamento(id: string): Promise<void> {
     StorageAPI.deleteAcompanhamento(id);
+  }
+
+  // P6: Gestão de Pessoas
+  async getFerias(): Promise<Ferias[]> {
+    return StorageAPI.getFerias();
+  }
+  async saveFerias(ferias: Ferias): Promise<void> {
+    StorageAPI.saveFerias(ferias);
+  }
+  async deleteFerias(id: string): Promise<void> {
+    StorageAPI.deleteFerias(id);
+  }
+  async getDayOffs(): Promise<DayOff[]> {
+    return StorageAPI.getDayOffs();
+  }
+  async saveDayOff(dayoff: DayOff): Promise<void> {
+    StorageAPI.saveDayOff(dayoff);
+  }
+  async deleteDayOff(id: string): Promise<void> {
+    StorageAPI.deleteDayOff(id);
+  }
+  async getFolgas(): Promise<Folga[]> {
+    return StorageAPI.getFolgas();
+  }
+  async saveFolga(folga: Folga): Promise<void> {
+    StorageAPI.saveFolga(folga);
+  }
+  async deleteFolga(id: string): Promise<void> {
+    StorageAPI.deleteFolga(id);
+  }
+  async getPeriodosAquisitivos(): Promise<PeriodoAquisitivo[]> {
+    return StorageAPI.getPeriodosAquisitivos();
+  }
+  async savePeriodoAquisitivo(periodo: PeriodoAquisitivo): Promise<void> {
+    StorageAPI.savePeriodoAquisitivo(periodo);
+  }
+  async deletePeriodoAquisitivo(id: string): Promise<void> {
+    StorageAPI.deletePeriodoAquisitivo(id);
+  }
+  async getConfiguracaoGestaoPessoas(): Promise<ConfiguracaoGestaoPessoas> {
+    return StorageAPI.getConfiguracaoGestaoPessoas();
+  }
+  async saveConfiguracaoGestaoPessoas(config: ConfiguracaoGestaoPessoas): Promise<void> {
+    StorageAPI.saveConfiguracaoGestaoPessoas(config);
   }
 
   async uploadFile(
@@ -1603,6 +1668,50 @@ class DynamicDataService implements IDataService {
   }
   async deleteAcompanhamento(id: string): Promise<void> {
     await this.getService().deleteAcompanhamento(id);
+  }
+
+  // P6: Gestão de Pessoas
+  async getFerias(): Promise<Ferias[]> {
+    return this.localFallback.getFerias();
+  }
+  async saveFerias(ferias: Ferias): Promise<void> {
+    await this.localFallback.saveFerias(ferias);
+  }
+  async deleteFerias(id: string): Promise<void> {
+    await this.localFallback.deleteFerias(id);
+  }
+  async getDayOffs(): Promise<DayOff[]> {
+    return this.localFallback.getDayOffs();
+  }
+  async saveDayOff(dayoff: DayOff): Promise<void> {
+    await this.localFallback.saveDayOff(dayoff);
+  }
+  async deleteDayOff(id: string): Promise<void> {
+    await this.localFallback.deleteDayOff(id);
+  }
+  async getFolgas(): Promise<Folga[]> {
+    return this.localFallback.getFolgas();
+  }
+  async saveFolga(folga: Folga): Promise<void> {
+    await this.localFallback.saveFolga(folga);
+  }
+  async deleteFolga(id: string): Promise<void> {
+    await this.localFallback.deleteFolga(id);
+  }
+  async getPeriodosAquisitivos(): Promise<PeriodoAquisitivo[]> {
+    return this.localFallback.getPeriodosAquisitivos();
+  }
+  async savePeriodoAquisitivo(periodo: PeriodoAquisitivo): Promise<void> {
+    await this.localFallback.savePeriodoAquisitivo(periodo);
+  }
+  async deletePeriodoAquisitivo(id: string): Promise<void> {
+    await this.localFallback.deletePeriodoAquisitivo(id);
+  }
+  async getConfiguracaoGestaoPessoas(): Promise<ConfiguracaoGestaoPessoas> {
+    return this.localFallback.getConfiguracaoGestaoPessoas();
+  }
+  async saveConfiguracaoGestaoPessoas(config: ConfiguracaoGestaoPessoas): Promise<void> {
+    await this.localFallback.saveConfiguracaoGestaoPessoas(config);
   }
 
   async resetData(): Promise<void> {

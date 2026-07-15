@@ -314,3 +314,96 @@ export interface ResumoMetas {
   totalRealizado: number;
   percentualGeral: number;
 }
+
+// ========== P6: GESTÃO DE PESSOAS ==========
+
+// Período Aquisitivo de Férias
+export interface PeriodoAquisitivo {
+  id: string;
+  colaboradorId: string;
+  anoBase: number; // Ano de referência para o período aquisitivo
+  dataInicio: string; // Data de início do período
+  dataFim: string; // Data de fim do período (dataInicio + 12 meses)
+  diasDisponiveis: number; // Dias de férias disponíveis
+  diasUsados: number; // Dias já utilizados
+  status: 'ativo' | 'vencido' | 'futuro';
+}
+
+// Registro de Férias
+export interface Ferias {
+  id: string;
+  colaboradorId: string;
+  periodoAquisitivoId: string;
+  dataInicio: string;
+  dataFim: string;
+  dias: number;
+  status: 'planejada' | 'concluida' | 'cancelada';
+  observacoes?: string;
+  createdAt: string;
+}
+
+// DayOff - Folga pelo aniversário
+export interface DayOff {
+  id: string;
+  colaboradorId: string;
+  ano: number;
+  dataLimite: string; // Geralmente 30 dias após o aniversário
+  dataUtilizacao?: string;
+  status: 'disponivel' | 'utilizado' | 'vencido';
+  observacoes?: string;
+}
+
+// Folga Compensatória
+export interface Folga {
+  id: string;
+  colaboradorId: string;
+  data: string;
+  motivo: string;
+  status: 'aprovada' | 'pendente' | 'cancelada';
+  observacoes?: string;
+  createdAt: string;
+}
+
+// Configurações de Gestão de Pessoas
+export interface ConfiguracaoGestaoPessoas {
+  diasAntecedenciaFerias: number; // Dias de antecedência para planejar férias
+  permitirFeriasProlongadas: boolean; // Permitir férias > 30 dias
+  maximoDiasFolga: number; // Máximo de folgas por ano
+  obrigarPeriodoAquisitivo: boolean; // Exigir período aquisitivo completo
+  anteciparAniversario: boolean; // Permitir antecipar aniversário de empresa
+  notificacoes: {
+    ferias90dias: boolean;
+    feriasVencendo: boolean;
+    dayoffPendente: boolean;
+    folgasPendentes: boolean;
+    aniversarioProximo: boolean;
+    aniversarioEmpresaProximo: boolean;
+  };
+}
+
+// Ciclo de Vida do Colaborador (dados calculados)
+export interface CicloVidaColaborador {
+  colaboradorId: string;
+  tempoDeEmpresa: string; // Ex: "2 anos, 3 meses"
+  tempoDeEmpresaDias: number;
+  proximasFérias: {
+    dataInicio?: string;
+    dataFim?: string;
+    dias?: number;
+  };
+  prazoMaximoFerias: string; // Data limite para gozar férias
+  statusFerias: 'elegivel' | 'pendente' | 'vencido' | 'em_gozo';
+  proximoAniversario: string;
+  diasParaAniversario: number;
+  proximoAniversarioEmpresa: string;
+  diasParaAniversarioEmpresa: number;
+  dayOff: {
+    disponivel: boolean;
+    diasRestantes?: number;
+    dataLimite?: string;
+  };
+  ultimoFeedback?: string;
+  ultimaAvaliacao?: string;
+  ultimoPDI?: string;
+  ultimoReconhecimento?: string;
+}

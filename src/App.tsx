@@ -43,6 +43,7 @@ import CentralDocumentos from './components/CentralDocumentos';
 import SistemaReconhecimento from './components/SistemaReconhecimento';
 import MetasLideranca from './components/MetasLideranca';
 import SistemaNotificacoes from './components/SistemaNotificacoes';
+import GestaoPessoas from './components/GestaoPessoas';
 import { Users2, X, PlusCircle } from 'lucide-react';
 
 export default function App() {
@@ -740,6 +741,19 @@ export default function App() {
               onUpdateSetor={handleUpdateSetor}
               onUpdateCargo={handleUpdateCargo}
               onUpdateLider={handleUpdateLider}
+            />
+          )}
+
+          {activeTab === 'gestao-pessoas' && (
+            <GestaoPessoas
+              colaboradores={colaboradoresVisiveis}
+              setores={setoresVisiveis}
+              cargos={cargos}
+              timeline={timelineVisivel}
+              tarefas={tarefasVisiveis}
+              reconhecimentos={reconhecimentos}
+              avaliacoesExperiencia={avaliacoesExperiencia}
+              currentUserId={currentUser?.id || ''}
             />
           )}
         </div>

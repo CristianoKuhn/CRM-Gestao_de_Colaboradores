@@ -44,6 +44,12 @@ import {
   MapPin,
   ClipboardList,
   RefreshCw,
+  Palmtree,
+  Gift,
+  Cake,
+  PartyPopper,
+  CheckCircle2,
+  TrendingUp,
 } from 'lucide-react';
 
 interface ColaboradorProfileProps {
@@ -777,6 +783,201 @@ export default function ColaboradorProfile({
               </form>
             </div>
           )}
+
+          {/* CICLO DE VIDA */}
+          <div className="bg-white border border-slate-100 rounded-2xl p-6 shadow-sm">
+            <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2 mb-4">
+              <TrendingUp size={16} className="text-teal-500" />
+              Ciclo de Vida
+            </h3>
+            
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {/* Tempo de Empresa */}
+              <div className="bg-slate-50 rounded-xl p-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <Briefcase size={14} className="text-slate-400" />
+                  <span className="text-[10px] font-semibold text-slate-500 uppercase">Tempo de Empresa</span>
+                </div>
+                <p className="text-sm font-bold text-slate-900">{calcularTempoEmpresa(colaborador.dataAdmissao)}</p>
+                <p className="text-[10px] text-slate-400">Desde {new Date(colaborador.dataAdmissao).toLocaleDateString('pt-BR')}</p>
+              </div>
+
+              {/* Próximo Aniversário */}
+              {colaborador.dataNascimento && (
+                <div className="bg-pink-50 rounded-xl p-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Cake size={14} className="text-pink-500" />
+                    <span className="text-[10px] font-semibold text-pink-600 uppercase">Próximo Aniversário</span>
+                  </div>
+                  {(() => {
+                    const nasc = new Date(colaborador.dataNascimento!);
+                    const hoje = new Date();
+                    let proximoAniv = new Date(hoje.getFullYear(), nasc.getMonth(), nasc.getDate());
+                    if (proximoAniv < hoje) proximoAniv.setFullYear(hoje.getFullYear() + 1);
+                    const diff = Math.ceil((proximoAniv.getTime() - hoje.getTime()) / (1000 * 60 * 60 * 24));
+                    return (
+                      <>
+                        <p className="text-sm font-bold text-pink-700">{proximoAniv.toLocaleDateString('pt-BR', { day: 'numeric', month: 'short' })}</p>
+                        <p className="text-[10px] text-pink-500">Em {diff} dia{diff !== 1 ? 's' : ''}</p>
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
+
+              {/* Próximo Aniversário de Empresa */}
+              <div className="bg-blue-50 rounded-xl p-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <PartyPopper size={14} className="text-blue-500" />
+                  <span className="text-[10px] font-semibold text-blue-600 uppercase">Aniversário de Empresa</span>
+                </div>
+                {(() => {
+                  const admissao = new Date(colaborador.dataAdmissao);
+                  const hoje = new Date();
+                  let proximoAniv = new Date(hoje.getFullYear(), admissao.getMonth(), admissao.getDate());
+                  if (proximoAniv < hoje) proximoAniv.setFullYear(hoje.getFullYear() + 1);
+                  const diff = Math.ceil((proximoAniv.getTime() - hoje.getTime()) / (1000 * 60 * 60 * 24));
+                  return (
+                    <>
+                      <p className="text-sm font-bold text-blue-700">{proximoAniv.toLocaleDateString('pt-BR', { day: 'numeric', month: 'short' })}</p>
+                      <p className="text-[10px] text-blue-500">Em {diff} dia{diff !== 1 ? 's' : ''}</p>
+                    </>
+                  );
+                })()}
+              </div>
+
+              {/* Status de Férias */}
+              <div className="bg-emerald-50 rounded-xl p-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <Palmtree size={14} className="text-emerald-500" />
+                  <span className="text-[10px] font-semibold text-emerald-600 uppercase">Status de Férias</span>
+                </div>
+                {(() => {
+                  const admissao = new Date(colaborador.dataAdmissao);
+                  const hoje = new Date();
+                  const umAno = new Date(admissao);
+                  umAno.setFullYear(umAno.getFullYear() + 1);
+                  const doisAnos = new Date(admissao);
+                  doisAnos.setFullYear(doisAnos.getFullYear() + 2);
+                  
+                  const elegivel = hoje >= umAno;
+                  const prazoMax = doisAnos;
+                  const diff = Math.ceil((prazoMax.getTime() - hoje.getTime()) / (1000 * 60 * 60 * 24));
+                  
+                  if (!elegivel) {
+                    const paraElegibilidade = Math.ceil((umAno.getTime() - hoje.getTime()) / (1000 * 60 * 60 * 24));
+                    return (
+                      <>
+                        <p className="text-sm font-bold text-slate-600">Em período aquisitivo</p>
+                        <p className="text-[10px] text-slate-400">Elegível em {paraElegibilidade}d</p>
+                      </>
+                    );
+                  }
+                  
+                  return (
+                    <>
+                      <p className="text-sm font-bold text-emerald-700">Elegível</p>
+                      <p className="text-[10px] text-emerald-500">Prazo máximo: {diff > 0 ? `${diff}d` : 'Vencido'}</p>
+                    </>
+                  );
+                })()}
+              </div>
+
+              {/* DayOff */}
+              <div className="bg-violet-50 rounded-xl p-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <Gift size={14} className="text-violet-500" />
+                  <span className="text-[10px] font-semibold text-violet-600 uppercase">DayOff</span>
+                </div>
+                <p className="text-sm font-bold text-violet-700">Disponível</p>
+                <p className="text-[10px] text-violet-500">No mês do aniversário</p>
+              </div>
+
+              {/* Último Feedback */}
+              <div className="bg-orange-50 rounded-xl p-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <MessageSquare size={14} className="text-orange-500" />
+                  <span className="text-[10px] font-semibold text-orange-600 uppercase">Último Feedback</span>
+                </div>
+                {(() => {
+                  const feedbacks = timeline.filter(r => r.colaboradorId === colaborador.id && r.tipo.includes('Feedback')).sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime());
+                  if (feedbacks.length === 0) {
+                    return <p className="text-sm text-slate-400">Nenhum registro</p>;
+                  }
+                  const ultimo = feedbacks[0];
+                  return (
+                    <>
+                      <p className="text-sm font-bold text-orange-700 truncate">{ultimo.tipo.replace('Feedback ', '')}</p>
+                      <p className="text-[10px] text-orange-500">{new Date(ultimo.data).toLocaleDateString('pt-BR')}</p>
+                    </>
+                  );
+                })()}
+              </div>
+
+              {/* Última Avaliação */}
+              <div className="bg-red-50 rounded-xl p-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <CheckCircle2 size={14} className="text-red-500" />
+                  <span className="text-[10px] font-semibold text-red-600 uppercase">Última Avaliação</span>
+                </div>
+                {(() => {
+                  const avs = (colaborador.avaliacoesCompletas || []).slice().sort().reverse();
+                  if (avs.length === 0) {
+                    return <p className="text-sm text-slate-400">Em período de experiência</p>;
+                  }
+                  const ultima = avs[0];
+                  return (
+                    <>
+                      <p className="text-sm font-bold text-red-700">{ultima} dias</p>
+                      <p className="text-[10px] text-red-500">Avaliação concluída</p>
+                    </>
+                  );
+                })()}
+              </div>
+
+              {/* Último PDI */}
+              <div className="bg-indigo-50 rounded-xl p-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <BookOpen size={14} className="text-indigo-500" />
+                  <span className="text-[10px] font-semibold text-indigo-600 uppercase">Último PDI</span>
+                </div>
+                {(() => {
+                  const pdis = timeline.filter(r => r.colaboradorId === colaborador.id && r.tipo === 'Plano de Desenvolvimento Individual (PDI)').sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime());
+                  if (pdis.length === 0) {
+                    return <p className="text-sm text-slate-400">Nenhum PDI</p>;
+                  }
+                  const ultimo = pdis[0];
+                  return (
+                    <>
+                      <p className="text-sm font-bold text-indigo-700 truncate">{ultimo.titulo}</p>
+                      <p className="text-[10px] text-indigo-500">{new Date(ultimo.data).toLocaleDateString('pt-BR')}</p>
+                    </>
+                  );
+                })()}
+              </div>
+
+              {/* Último Reconhecimento */}
+              <div className="bg-amber-50 rounded-xl p-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <Award size={14} className="text-amber-500" />
+                  <span className="text-[10px] font-semibold text-amber-600 uppercase">Último Reconhecimento</span>
+                </div>
+                {(() => {
+                  const recs = timeline.filter(r => r.colaboradorId === colaborador.id && (r.tipo === 'Reconhecimento' || r.tipo === 'Elogio de Cliente')).sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime());
+                  if (recs.length === 0) {
+                    return <p className="text-sm text-slate-400">Nenhum registro</p>;
+                  }
+                  const ultimo = recs[0];
+                  return (
+                    <>
+                      <p className="text-sm font-bold text-amber-700 truncate">{ultimo.titulo}</p>
+                      <p className="text-[10px] text-amber-500">{new Date(ultimo.data).toLocaleDateString('pt-BR')}</p>
+                    </>
+                  );
+                })()}
+              </div>
+            </div>
+          </div>
 
           {/* CHRONOLOGICAL TIMELINE STREAM */}
           <div className="space-y-4">

@@ -18,6 +18,8 @@ import {
   GoogleScriptConfig,
   DataSourceProvider,
   Usuario,
+  OnboardingItem,
+  OnboardingChecklist,
 } from './types';
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
@@ -80,6 +82,8 @@ export default function App() {
     isConnected: false,
   });
   const [activeProvider, setActiveProvider] = useState<DataSourceProvider>('local');
+  const [onboardingItems, setOnboardingItems] = useState<OnboardingItem[]>([]);
+  const [onboardingChecklists, setOnboardingChecklists] = useState<OnboardingChecklist[]>([]);
 
   // Estado para colaborador selecionado (CRM detalhado)
   const [selectedColaboradorId, setSelectedColaboradorId] = useState<string | null>(null);
@@ -93,7 +97,7 @@ export default function App() {
   // Carregar dados de forma reativa do serviço ativo
   const loadAllData = async () => {
     try {
-      const [cols, timelineData, tarefasData, setoresData, cargosData, lideresData, empresasData, usuariosData] = await Promise.all([
+      const [cols, timelineData, tarefasData, setoresData, cargosData, lideresData, empresasData, usuariosData, onbItems, onbChecklists] = await Promise.all([
         DataService.getColaboradores(),
         DataService.getTimeline(),
         DataService.getTarefas(),
@@ -102,6 +106,8 @@ export default function App() {
         DataService.getLideres(),
         DataService.getEmpresas(),
         DataService.getUsuarios(),
+        DataService.getOnboardingItems(),
+        DataService.getOnboardingChecklists(),
       ]);
 
       setColaboradores(cols);
@@ -112,6 +118,8 @@ export default function App() {
       setLideres(lideresData);
       setEmpresas(empresasData);
       setUsuarios(usuariosData);
+      setOnboardingItems(onbItems);
+      setOnboardingChecklists(onbChecklists);
       
       setSupabaseConfig(StorageAPI.getSupabaseConfig());
       setGoogleScriptConfig(StorageAPI.getGoogleScriptConfig());
@@ -151,6 +159,21 @@ export default function App() {
 
   const handleAddLider = async (lider: Lider) => {
     await DataService.saveLider(lider);
+    loadAllData();
+  };
+
+  const handleAddOnboardingItem = async (item: OnboardingItem) => {
+    await DataService.saveOnboardingItem(item);
+    loadAllData();
+  };
+
+  const handleDeleteOnboardingItem = async (id: string) => {
+    await DataService.deleteOnboardingItem(id);
+    loadAllData();
+  };
+
+  const handleSaveOnboardingChecklist = async (checklist: OnboardingChecklist) => {
+    await DataService.saveOnboardingChecklist(checklist);
     loadAllData();
   };
 
@@ -331,16 +354,19 @@ export default function App() {
         <div className="flex-1 overflow-y-auto bg-slate-50/50">
           {/* Renders Selected View */}
           {activeTab === 'dashboard' && (
-            <Dashboard
-              colaboradores={colaboradoresVisiveis}
-              timeline={timelineVisivel}
-              tarefas={tarefasVisiveis}
-              onNavigateToList={handleNavigateFromDashboard}
-              onSelectColaborador={handleSelectColaborador}
-              onOpenNewRegistroModal={handleQuickFeedbackTrigger}
-              currentUser={currentUser}
-              onUpdateColaborador={handleUpdateColaborador}
-            />
+              <Dashboard
+                colaboradores={colaboradoresVisiveis}
+                timeline={timelineVisivel}
+                tarefas={tarefasVisiveis}
+                onNavigateToList={handleNavigateFromDashboard}
+                onSelectColaborador={handleSelectColaborador}
+                onOpenNewRegistroModal={handleQuickFeedbackTrigger}
+                currentUser={currentUser}
+                onUpdateColaborador={handleUpdateColaborador}
+                onboardingItems={onboardingItems}
+                onboardingChecklists={onboardingChecklists}
+                onSaveOnboardingChecklist={handleSaveOnboardingChecklist}
+              />
           )}
 
           {activeTab === 'colaboradores' && (
@@ -406,11 +432,16 @@ export default function App() {
           {activeTab === 'config' && (
             <Config
               config={supabaseConfig}
-              onSaveConfig={handleSaveSupabaseConfig}
+              onSaveConfig={setSupabaseConfig}
               googleConfig={googleScriptConfig}
-              onSaveGoogleConfig={handleSaveGoogleScriptConfig}
+              onSaveGoogleConfig={setGoogleScriptConfig}
               activeProvider={activeProvider}
-              onChangeProvider={handleChangeProvider}
+              onChangeProvider={setActiveProvider}
+              setores={setores}
+              onboardingItems={onboardingItems}
+              onAddOnboardingItem={handleAddOnboardingItem}
+              onDeleteOnboardingItem={handleDeleteOnboardingItem}
+              currentUser={currentUser!}
             />
           )}
         </div>

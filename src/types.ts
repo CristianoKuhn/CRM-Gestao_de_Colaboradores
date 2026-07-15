@@ -45,6 +45,7 @@ export interface Colaborador {
   prazoAvaliacao180?: number;
   realizarExperiencia?: boolean;
   avaliacoesCompletas?: string[];
+  dataNascimento?: string;
 }
 
 export type TipoRegistro =
@@ -87,6 +88,20 @@ export interface TimelineRegistro {
   gerarTarefaFutura: boolean;
   tarefaId?: string;
   anexos: Anexo[];
+}
+
+export interface OnboardingItem {
+  id: string;
+  setorId: string;
+  titulo: string;
+  descricao: string;
+}
+
+export interface OnboardingChecklist {
+  id: string;
+  colaboradorId: string;
+  itemsConcluidos: string[]; // IDs dos OnboardingItem
+  dataCriacao: string;
 }
 
 export interface Tarefa {

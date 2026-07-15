@@ -97,6 +97,13 @@ export default function App() {
   const [activeProvider, setActiveProvider] = useState<DataSourceProvider>('local');
   const [onboardingItems, setOnboardingItems] = useState<OnboardingItem[]>([]);
   const [onboardingChecklists, setOnboardingChecklists] = useState<OnboardingChecklist[]>([]);
+  const [avaliacoesExperiencia, setAvaliacoesExperiencia] = useState<AvaliacaoExperiencia[]>([]);
+  const [configuracaoAlertas, setConfiguracaoAlertas] = useState<ConfiguracaoAlertas>({
+    diasSemInteracao: 30,
+    antecedenciaAniversario: 15,
+    antecedenciaAvaliacao180: 30,
+    habilitado: true,
+  });
 
   // P3: Documentos
   const [documentos, setDocumentos] = useState<Documento[]>([]);
@@ -136,7 +143,7 @@ export default function App() {
   // Carregar dados de forma reativa do serviço ativo
   const loadAllData = async () => {
     try {
-      const [cols, timelineData, tarefasData, setoresData, cargosData, lideresData, empresasData, usuariosData, onbItems, onbChecklists, docsData, recsData, configRecData, metasLidData, metasSetData, acompData] = await Promise.all([
+      const [cols, timelineData, tarefasData, setoresData, cargosData, lideresData, empresasData, usuariosData, onbItems, onbChecklists, avaliacoesExpData, docsData, recsData, configRecData, metasLidData, metasSetData, acompData] = await Promise.all([
         DataService.getColaboradores(),
         DataService.getTimeline(),
         DataService.getTarefas(),
@@ -147,6 +154,8 @@ export default function App() {
         DataService.getUsuarios(),
         DataService.getOnboardingItems(),
         DataService.getOnboardingChecklists(),
+        // Avaliações de Experiência
+        DataService.getAvaliacoesExperiencia(),
         // P3: Documentos
         DataService.getDocumentos(),
         // P4: Reconhecimento
@@ -171,6 +180,7 @@ export default function App() {
       setUsuarios(usuariosData);
       setOnboardingItems(onbItems);
       setOnboardingChecklists(onbChecklists);
+      setAvaliacoesExperiencia(avaliacoesExpData);
 
       // P3: Documentos
       setDocumentos(docsData);
@@ -296,6 +306,16 @@ export default function App() {
   const handleSaveOnboardingChecklist = async (checklist: OnboardingChecklist) => {
     await DataService.saveOnboardingChecklist(checklist);
     loadAllData();
+  };
+
+  const handleUpdateAvaliacaoExperiencia = async (avaliacao: AvaliacaoExperiencia) => {
+    await DataService.saveAvaliacaoExperiencia(avaliacao);
+    loadAllData();
+  };
+
+  const handleSaveConfiguracaoAlertas = async (config: ConfiguracaoAlertas) => {
+    await DataService.saveConfiguracaoAlertas(config);
+    setConfiguracaoAlertas(config);
   };
 
   // Tratar Toggle e Criação de Tarefas
@@ -587,6 +607,9 @@ export default function App() {
                 onboardingItems={onboardingItems}
                 onboardingChecklists={onboardingChecklists}
                 onSaveOnboardingChecklist={handleSaveOnboardingChecklist}
+                avaliacoesExperiencia={avaliacoesExperiencia}
+                onUpdateAvaliacaoExperiencia={handleUpdateAvaliacaoExperiencia}
+                configuracaoAlertas={configuracaoAlertas}
               />
           )}
 

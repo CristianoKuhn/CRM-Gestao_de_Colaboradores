@@ -11,6 +11,7 @@ import {
   Usuario,
   AlertaInteligente,
   ConfiguracaoAlertas,
+  AvaliacaoExperiencia,
 } from '../types';
 import {
   MessageSquare,
@@ -53,6 +54,11 @@ interface DashboardProps {
   onboardingItems: OnboardingItem[];
   onboardingChecklists: OnboardingChecklist[];
   onSaveOnboardingChecklist: (checklist: OnboardingChecklist) => void;
+  // Avaliações de Experiência
+  avaliacoesExperiencia?: AvaliacaoExperiencia[];
+  onUpdateAvaliacaoExperiencia?: (avaliacao: AvaliacaoExperiencia) => void;
+  // Configuração de Alertas
+  configuracaoAlertas?: ConfiguracaoAlertas;
 }
 
 // Função para obter a data atual real

@@ -17,6 +17,8 @@ import {
   Usuario,
   OnboardingItem,
   OnboardingChecklist,
+  AlertaInteligente,
+  ConfiguracaoAlertas,
 } from '../types';
 
 // Chaves para o LocalStorage
@@ -34,6 +36,8 @@ const KEYS = {
   PROVIDER: 'gc_datasource_provider',
   ONBOARDING_ITEMS: 'gc_onboarding_items',
   ONBOARDING_CHECKLISTS: 'gc_onboarding_checklists',
+  ALERTAS: 'gc_alertas_inteligentes',
+  CONFIG_ALERTAS: 'gc_config_alertas',
 };
 
 // Dados Iniciais para o Seed
@@ -587,5 +591,60 @@ export const StorageAPI = {
     localStorage.removeItem(KEYS.TAREFAS);
     localStorage.removeItem(KEYS.USUARIOS);
     initializeStorage();
-  }
+  },
+
+  // ========== ALERTAS INTELIGENTES ==========
+  
+  // Configuração padrão de alertas
+  getConfiguracaoAlertas: (): ConfiguracaoAlertas => {
+    initializeStorage();
+    const config = localStorage.getItem(KEYS.CONFIG_ALERTAS);
+    if (config) {
+      return JSON.parse(config);
+    }
+    // Valores padrão
+    return {
+      diasSemInteracao: 14,
+      diasAntecedenciaAniversario: 15,
+      diasAntecedenciaAvaliacao180: 30,
+      alertasPersistentes: true,
+    };
+  },
+
+  saveConfiguracaoAlertas: (config: ConfiguracaoAlertas) => {
+    localStorage.setItem(KEYS.CONFIG_ALERTAS, JSON.stringify(config));
+  },
+
+  getAlertasInteligentes: (): AlertaInteligente[] => {
+    initializeStorage();
+    const alertas = localStorage.getItem(KEYS.ALERTAS);
+    return alertas ? JSON.parse(alertas) : [];
+  },
+
+  saveAlertaInteligente: (alerta: AlertaInteligente) => {
+    const alertas = StorageAPI.getAlertasInteligentes();
+    const index = alertas.findIndex(a => a.id === alerta.id);
+    if (index >= 0) {
+      alertas[index] = alerta;
+    } else {
+      alertas.push(alerta);
+    }
+    localStorage.setItem(KEYS.ALERTAS, JSON.stringify(alertas));
+  },
+
+  deleteAlertaInteligente: (id: string) => {
+    const alertas = StorageAPI.getAlertasInteligentes();
+    const filtrados = alertas.filter(a => a.id !== id);
+    localStorage.setItem(KEYS.ALERTAS, JSON.stringify(filtrados));
+  },
+
+  limparAlertasResolvidos: () => {
+    const alertas = StorageAPI.getAlertasInteligentes();
+    const ativos = alertas.filter(a => a.status !== 'resolvido');
+    localStorage.setItem(KEYS.ALERTAS, JSON.stringify(ativos));
+  },
+
+  gerarIdAlerta: (): string => {
+    return `alerta-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  },
 };

@@ -28,6 +28,8 @@ import {
   UserCheck,
   Upload,
   RefreshCw,
+  Pencil,
+  Trash2,
 } from 'lucide-react';
 
 interface ColaboradoresProps {
@@ -94,6 +96,9 @@ export default function Colaboradores({
 
   const photoInputRef = React.useRef<HTMLInputElement>(null);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  
+  // Estado para confirmação de exclusão
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   const handleUploadPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -119,7 +124,7 @@ export default function Colaboradores({
   // Função para calcular o tempo de empresa de forma legível
   function calcularTempoEmpresa(dataAdmissaoStr: string): string {
     const admissao = new Date(dataAdmissaoStr);
-    const hoje = new Date('2026-07-13'); // Tempo de referência congelado
+    const hoje = new Date();
 
     let anos = hoje.getFullYear() - admissao.getFullYear();
     let meses = hoje.getMonth() - admissao.getMonth();
@@ -216,6 +221,22 @@ export default function Colaboradores({
     setNewPrazoAvaliacao180(6);
     setNewRealizarExperiencia(true);
     setNewColNascimento('');
+  };
+
+  // Funções para deletar colaborador
+  const handleDeleteClick = (id: string) => {
+    setDeleteConfirmId(id);
+  };
+
+  const confirmDelete = () => {
+    if (deleteConfirmId) {
+      onDeleteColaborador(deleteConfirmId);
+      setDeleteConfirmId(null);
+    }
+  };
+
+  const cancelDelete = () => {
+    setDeleteConfirmId(null);
   };
 
   const handleCreateAux = (e: React.FormEvent) => {
@@ -457,15 +478,35 @@ export default function Colaboradores({
                       </td>
 
                       {/* Ação */}
-                      <td className="p-4 pr-6 text-right">
-                        <button
-                          id={`btn-view-profile-${col.id}`}
-                          onClick={() => onSelectColaborador(col.id)}
-                          className="inline-flex items-center gap-1 text-xs font-bold text-teal-600 bg-teal-50 hover:bg-teal-100 px-3 py-1.5 rounded-xl cursor-pointer transition"
-                        >
-                          CRM & Timeline
-                          <ChevronRight size={14} />
-                        </button>
+                      <td className="p-4 pr-6">
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            id={`btn-edit-colab-${col.id}`}
+                            onClick={() => openEditModal(col)}
+                            className="inline-flex items-center gap-1 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-xl cursor-pointer transition"
+                            title="Editar colaborador"
+                          >
+                            <Pencil size={14} />
+                            Editar
+                          </button>
+                          <button
+                            id={`btn-delete-colab-${col.id}`}
+                            onClick={() => handleDeleteClick(col.id)}
+                            className="inline-flex items-center gap-1 text-xs font-bold text-rose-600 bg-rose-50 hover:bg-rose-100 px-3 py-1.5 rounded-xl cursor-pointer transition"
+                            title="Excluir colaborador"
+                          >
+                            <Trash2 size={14} />
+                            Excluir
+                          </button>
+                          <button
+                            id={`btn-view-profile-${col.id}`}
+                            onClick={() => onSelectColaborador(col.id)}
+                            className="inline-flex items-center gap-1 text-xs font-bold text-teal-600 bg-teal-50 hover:bg-teal-100 px-3 py-1.5 rounded-xl cursor-pointer transition"
+                          >
+                            CRM & Timeline
+                            <ChevronRight size={14} />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -476,14 +517,45 @@ export default function Colaboradores({
         </div>
       </div>
 
+      {/* MODAL: CONFIRMAÇÃO DE EXCLUSÃO */}
+      {deleteConfirmId && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-6 animate-scale-up border border-slate-100">
+            <div className="text-center mb-6">
+              <div className="w-16 h-16 bg-rose-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Trash2 size={32} className="text-rose-600" />
+              </div>
+              <h3 className="text-lg font-bold text-slate-900 mb-2">Confirmar Exclusão</h3>
+              <p className="text-sm text-slate-500">
+                Tem certeza que deseja excluir este colaborador? Esta ação não pode ser desfeita e todos os dados associados serão removidos.
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={cancelDelete}
+                className="flex-1 px-4 py-3 border border-slate-200 text-slate-600 bg-slate-50 rounded-xl text-sm font-semibold hover:bg-slate-100 transition cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmDelete}
+                className="flex-1 px-4 py-3 bg-rose-500 text-white font-bold rounded-xl text-sm hover:bg-rose-600 transition cursor-pointer"
+              >
+                Sim, Excluir
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* MODAL: NOVO COLABORADOR */}
       {isColModalOpen && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6 animate-scale-up border border-slate-100">
             <div className="flex justify-between items-center border-b border-slate-100 pb-4 mb-5">
               <div>
-                <h3 className="text-lg font-bold text-slate-900">Novo Colaborador</h3>
-                <p className="text-xs text-slate-400 mt-0.5">Cadastre o colaborador vinculando-o ao líder e setor correspondente.</p>
+                <h3 className="text-lg font-bold text-slate-900">{editingColaboradorId ? 'Editar Colaborador' : 'Novo Colaborador'}</h3>
+                <p className="text-xs text-slate-400 mt-0.5">{editingColaboradorId ? 'Atualize os dados do colaborador.' : 'Cadastre o colaborador vinculando-o ao líder e setor correspondente.'}</p>
               </div>
               <button
                 onClick={() => setIsColModalOpen(false)}

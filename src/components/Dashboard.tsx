@@ -3,12 +3,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   Colaborador,
   TimelineRegistro,
   Tarefa,
   Usuario,
+  AlertaInteligente,
+  ConfiguracaoAlertas,
 } from '../types';
 import {
   MessageSquare,
@@ -26,8 +28,18 @@ import {
   Sparkles,
   Cake,
   ClipboardCheck,
+  Bell,
+  BellOff,
+  X,
+  Settings,
+  CalendarClock,
+  UserX,
+  Gift,
+  Target,
+  Check,
 } from 'lucide-react';
 import { OnboardingItem, OnboardingChecklist } from '../types';
+import { DataService } from '../services/DataService';
 
 interface DashboardProps {
   colaboradores: Colaborador[];
@@ -43,6 +55,33 @@ interface DashboardProps {
   onSaveOnboardingChecklist: (checklist: OnboardingChecklist) => void;
 }
 
+// Função para obter a data atual real
+function getDataAtual(): Date {
+  return new Date();
+}
+
+// Função para formatar data para comparison (YYYY-MM-DD)
+function formatarDataISO(date: Date): string {
+  return date.toISOString().split('T')[0];
+}
+
+// Função para calcular diferença em dias
+function calcularDiasRestantes(dataFutura: Date, hoje: Date): number {
+  const diffTime = dataFutura.getTime() - hoje.getTime();
+  return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+}
+
+// Função para calcular próxima ocorrência de uma data no ano atual/seguinte
+function proximaOcorrencia(dataAniversario: Date, anoAtual: number, hoje: Date): Date {
+  const esteAno = new Date(anoAtual, dataAniversario.getMonth(), dataAniversario.getDate());
+  const proximoAno = new Date(anoAtual + 1, dataAniversario.getMonth(), dataAniversario.getDate());
+  
+  if (esteAno >= hoje) {
+    return esteAno;
+  }
+  return proximoAno;
+}
+
 export default function Dashboard({
   colaboradores,
   timeline,
@@ -56,9 +95,276 @@ export default function Dashboard({
   onboardingChecklists,
   onSaveOnboardingChecklist,
 }: DashboardProps) {
-  const HOJE = new Date('2026-07-13');
+  const HOJE = getDataAtual();
+  const ANO_ATUAL = HOJE.getFullYear();
 
-  // Calcular lembretes de avaliação e período de experiência para o líder direto (ou todos, se Admin/Supervisor/Coordenador)
+  // Estados para alertas inteligentes
+  const [alertas, setAlertas] = useState<AlertaInteligente[]>([]);
+  const [configAlertas, setConfigAlertas] = useState<ConfiguracaoAlertas>({
+    diasSemInteracao: 14,
+    diasAntecedenciaAniversario: 15,
+    diasAntecedenciaAvaliacao180: 30,
+    alertasPersistentes: true,
+  });
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showAlertasModal, setShowAlertasModal] = useState(false);
+
+  // Carregar alertas e configurações
+  useEffect(() => {
+    const carregarDados = async () => {
+      try {
+        const [alertasData, configData] = await Promise.all([
+          DataService.getAlertasInteligentes(),
+          DataService.getConfiguracaoAlertas(),
+        ]);
+        setAlertas(alertasData);
+        setConfigAlertas(configData);
+      } catch (error) {
+        console.error('Erro ao carregar alertas:', error);
+      }
+    };
+    carregarDados();
+  }, []);
+
+  // Gerar ID único para alertas
+  const gerarIdUnico = (): string => {
+    return `alerta-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  };
+
+  // Gerar alertas automaticamente
+  const gerarAlertas = useCallback(async () => {
+    const novosAlertas: AlertaInteligente[] = [];
+
+    // 1. Alertas de Dias Sem Interação
+    for (const col of colaboradores) {
+      if (col.situacao === 'Desligado') continue;
+
+      const registrosColaborador = timeline.filter(r => r.colaboradorId === col.id);
+      if (registrosColaborador.length === 0) continue;
+
+      // Encontrar o registro mais recente
+      const ultimoRegistro = registrosColaborador
+        .map(r => new Date(r.data))
+        .sort((a, b) => b.getTime() - a.getTime())[0];
+
+      const diasSemInteracao = calcularDiasRestantes(HOJE, ultimoRegistro) * -1;
+
+      if (diasSemInteracao >= configAlertas.diasSemInteracao) {
+        // Verificar se já existe alerta similar pendente
+        const alertaExistente = alertas.find(
+          a => a.colaboradorId === col.id && a.tipo === 'sem_interacao' && a.status !== 'resolvido'
+        );
+
+        if (!alertaExistente) {
+          novosAlertas.push({
+            id: gerarIdUnico(),
+            tipo: 'sem_interacao',
+            colaboradorId: col.id,
+            titulo: 'Sem interação há muito tempo',
+            descricao: `${col.nome} não tem interação registrada há ${diasSemInteracao} dias. Última interação em ${ultimoRegistro.toLocaleDateString('pt-BR')}.`,
+            dataReferencia: formatarDataISO(ultimoRegistro),
+            diasRestantes: diasSemInteracao,
+            status: 'pendente',
+            dataCriacao: formatarDataISO(HOJE),
+            parametroDias: configAlertas.diasSemInteracao,
+          });
+        }
+      }
+    }
+
+    // 2. Alertas de Aniversário de Nascimento
+    for (const col of colaboradores) {
+      if (!col.dataNascimento || col.situacao === 'Desligado') continue;
+
+      const dataNasc = new Date(col.dataNascimento);
+      const proximoAniversario = proximaOcorrencia(dataNasc, ANO_ATUAL, HOJE);
+      const diasRestantes = calcularDiasRestantes(proximoAniversario, HOJE);
+
+      if (diasRestantes >= 0 && diasRestantes <= configAlertas.diasAntecedenciaAniversario) {
+        const alertaExistente = alertas.find(
+          a => a.colaboradorId === col.id && a.tipo === 'aniversario_nascimento' && a.status !== 'resolvido'
+        );
+
+        if (!alertaExistente) {
+          novosAlertas.push({
+            id: gerarIdUnico(),
+            tipo: 'aniversario_nascimento',
+            colaboradorId: col.id,
+            titulo: `Aniversário de ${col.nome} em breve!`,
+            descricao: `${col.nome} faz aniversário no dia ${proximoAniversario.toLocaleDateString('pt-BR', { day: 'numeric', month: 'long' })}. Faltam ${diasRestantes} dia(s).`,
+            dataReferencia: formatarDataISO(proximoAniversario),
+            diasRestantes: diasRestantes,
+            status: 'pendente',
+            dataCriacao: formatarDataISO(HOJE),
+            parametroDias: configAlertas.diasAntecedenciaAniversario,
+          });
+        }
+      }
+    }
+
+    // 3. Alertas de Aniversário de Casa (Admissão)
+    for (const col of colaboradores) {
+      if (col.situacao === 'Desligado') continue;
+
+      const dataAdmissao = new Date(col.dataAdmissao);
+      const proximoAniversario = proximaOcorrencia(dataAdmissao, ANO_ATUAL, HOJE);
+      const diasRestantes = calcularDiasRestantes(proximoAniversario, HOJE);
+
+      if (diasRestantes >= 0 && diasRestantes <= configAlertas.diasAntecedenciaAniversario) {
+        const alertaExistente = alertas.find(
+          a => a.colaboradorId === col.id && a.tipo === 'aniversario_casa' && a.status !== 'resolvido'
+        );
+
+        if (!alertaExistente) {
+          novosAlertas.push({
+            id: gerarIdUnico(),
+            tipo: 'aniversario_casa',
+            colaboradorId: col.id,
+            titulo: `Aniversário de casa: ${col.nome}`,
+            descricao: `${col.nome} completa ${proximoAniversario.getFullYear() - dataAdmissao.getFullYear()} ano(s) de empresa em ${proximoAniversario.toLocaleDateString('pt-BR', { day: 'numeric', month: 'long' })}. Faltam ${diasRestantes} dia(s).`,
+            dataReferencia: formatarDataISO(proximoAniversario),
+            diasRestantes: diasRestantes,
+            status: 'pendente',
+            dataCriacao: formatarDataISO(HOJE),
+            parametroDias: configAlertas.diasAntecedenciaAniversario,
+          });
+        }
+      }
+    }
+
+    // 4. Alertas de Avaliação 180º
+    for (const col of colaboradores) {
+      if (col.situacao === 'Desligado' || col.realizarExperiencia === false) continue;
+
+      const dataAdmissao = new Date(col.dataAdmissao);
+      const prazoMeses = col.prazoAvaliacao180 || 6;
+      const dataAvaliacao180 = new Date(dataAdmissao);
+      dataAvaliacao180.setMonth(dataAvaliacao180.getMonth() + prazoMeses);
+
+      // Verificar se já não foi feita
+      if (col.avaliacoesCompletas?.includes('180')) continue;
+
+      const diasRestantes = calcularDiasRestantes(dataAvaliacao180, HOJE);
+
+      if (diasRestantes >= 0 && diasRestantes <= configAlertas.diasAntecedenciaAvaliacao180) {
+        const alertaExistente = alertas.find(
+          a => a.colaboradorId === col.id && a.tipo === 'avaliacao_180' && a.status !== 'resolvido'
+        );
+
+        if (!alertaExistente) {
+          novosAlertas.push({
+            id: gerarIdUnico(),
+            tipo: 'avaliacao_180',
+            colaboradorId: col.id,
+            titulo: `Avaliação 180º pendente: ${col.nome}`,
+            descricao: `A avaliação de ${prazoMeses} meses de ${col.nome} vence em ${dataAvaliacao180.toLocaleDateString('pt-BR')}. Faltam ${diasRestantes} dia(s).`,
+            dataReferencia: formatarDataISO(dataAvaliacao180),
+            diasRestantes: diasRestantes,
+            status: 'pendente',
+            dataCriacao: formatarDataISO(HOJE),
+            parametroDias: configAlertas.diasAntecedenciaAvaliacao180,
+          });
+        }
+      }
+    }
+
+    // Salvar novos alertas
+    for (const alerta of novosAlertas) {
+      await DataService.saveAlertaInteligente(alerta);
+    }
+
+    // Atualizar estado local
+    if (novosAlertas.length > 0) {
+      setAlertas(prev => [...prev, ...novosAlertas]);
+    }
+  }, [colaboradores, timeline, alertas, configAlertas, HOJE, ANO_ATUAL]);
+
+  // Gerar alertas ao carregar e periodicamente
+  useEffect(() => {
+    gerarAlertas();
+    const interval = setInterval(gerarAlertas, 60000); // A cada minuto
+    return () => clearInterval(interval);
+  }, [gerarAlertas]);
+
+  // Funções para gerenciar alertas
+  const reconhecerAlerta = async (id: string) => {
+    const alerta = alertas.find(a => a.id === id);
+    if (!alerta) return;
+
+    const alertaAtualizado: AlertaInteligente = {
+      ...alerta,
+      status: 'reconhecido',
+      dataReconhecimento: formatarDataISO(HOJE),
+    };
+
+    await DataService.saveAlertaInteligente(alertaAtualizado);
+    setAlertas(prev => prev.map(a => a.id === id ? alertaAtualizado : a));
+  };
+
+  const resolverAlerta = async (id: string) => {
+    const alerta = alertas.find(a => a.id === id);
+    if (!alerta) return;
+
+    const alertaAtualizado: AlertaInteligente = {
+      ...alerta,
+      status: 'resolvido',
+      dataResolucao: formatarDataISO(HOJE),
+    };
+
+    await DataService.saveAlertaInteligente(alertaAtualizado);
+    setAlertas(prev => prev.map(a => a.id === id ? alertaAtualizado : a));
+  };
+
+  const ignorarAlerta = async (id: string) => {
+    await DataService.deleteAlertaInteligente(id);
+    setAlertas(prev => prev.filter(a => a.id !== id));
+  };
+
+  // Salvar configurações de alertas
+  const salvarConfigAlertas = async (novaConfig: ConfiguracaoAlertas) => {
+    await DataService.saveConfiguracaoAlertas(novaConfig);
+    setConfigAlertas(novaConfig);
+    setShowSettingsModal(false);
+  };
+
+  // Filtrar alertas pendentes/reconhecidos
+  const alertasPendentes = alertas.filter(a => a.status === 'pendente');
+  const alertasReconhecidos = alertas.filter(a => a.status === 'reconhecido');
+  const todosAlertasAtivos = [...alertasPendentes, ...alertasReconhecidos].sort((a, b) => a.diasRestantes - b.diasRestantes);
+
+  // Obter ícone do tipo de alerta
+  const getIconeAlerta = (tipo: string) => {
+    switch (tipo) {
+      case 'sem_interacao':
+        return <UserX size={18} className="text-orange-500" />;
+      case 'aniversario_nascimento':
+        return <Cake size={18} className="text-pink-500" />;
+      case 'aniversario_casa':
+        return <Gift size={18} className="text-amber-500" />;
+      case 'avaliacao_180':
+        return <Target size={18} className="text-indigo-500" />;
+      default:
+        return <Bell size={18} className="text-slate-500" />;
+    }
+  };
+
+  // Obter cor do badge de status
+  const getBadgeColor = (tipo: string) => {
+    switch (tipo) {
+      case 'sem_interacao':
+        return 'bg-orange-100 text-orange-700 border-orange-200';
+      case 'aniversario_nascimento':
+        return 'bg-pink-100 text-pink-700 border-pink-200';
+      case 'aniversario_casa':
+        return 'bg-amber-100 text-amber-700 border-amber-200';
+      case 'avaliacao_180':
+        return 'bg-indigo-100 text-indigo-700 border-indigo-200';
+      default:
+        return 'bg-slate-100 text-slate-700 border-slate-200';
+    }
+  };
+
+  // Calcular lembretes de avaliação e período de experiência para o líder direto
   const calculateReminders = () => {
     const list: {
       id: string;
@@ -71,26 +377,22 @@ export default function Dashboard({
     }[] = [];
 
     colaboradores.forEach((col) => {
-      // Ocultar pendências de colaboradores desligados
       if (col.situacao === 'Desligado') return;
 
-      // Filtrar se o usuário logado é o líder direto deste colaborador
-      // Se for Admin, Coordenador, Supervisor, pode ver os lembretes de todos.
-      // Se for Lider, apenas os dele.
       const isMyColaborador =
         currentUser.perfil === 'Administrador' ||
         currentUser.perfil === 'Coordenador' ||
         currentUser.perfil === 'Supervisor' ||
         col.liderId === currentUser.id ||
         col.liderId?.replace('lid-', 'usu-') === currentUser.id ||
-        (col.liderId === 'lid-1' && currentUser.nome.includes('Carlos')); // Demo mapping for seed data
+        (col.liderId === 'lid-1' && currentUser.nome.includes('Carlos'));
 
       if (!isMyColaborador) return;
 
       const admissao = new Date(col.dataAdmissao);
       if (isNaN(admissao.getTime())) return;
 
-      // 1. Período de Experiência (15, 30, 60, 90 dias)
+      // Período de Experiência (15, 30, 60, 90 dias)
       if (col.realizarExperiencia !== false) {
         const milestones = [15, 30, 60, 90];
         milestones.forEach((days) => {
@@ -103,7 +405,6 @@ export default function Dashboard({
           const diffTime = dueDate.getTime() - HOJE.getTime();
           const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-          // Mostramos o lembrete se o prazo já passou (atrasado) ou se falta menos de 15 dias
           if (diffDays <= 15) {
             list.push({
               id: `${col.id}-exp-${days}`,
@@ -118,7 +419,7 @@ export default function Dashboard({
         });
       }
 
-      // 2. Avaliação 180º (padrão de 6 meses)
+      // Avaliação 180º
       const prazoMeses = col.prazoAvaliacao180 || 6;
       const completed180 = col.avaliacoesCompletas?.includes('180');
       if (!completed180) {
@@ -128,7 +429,6 @@ export default function Dashboard({
         const diffTime180 = dueDate180.getTime() - HOJE.getTime();
         const diffDays180 = Math.ceil(diffTime180 / (1000 * 60 * 60 * 24));
 
-        // Mostramos se já passou ou se faltam menos de 30 dias
         if (diffDays180 <= 30) {
           list.push({
             id: `${col.id}-180`,
@@ -162,14 +462,14 @@ export default function Dashboard({
     onUpdateColaborador(colAtualizado);
   };
 
-  // 1. Feedbacks Pendentes: Feedbacks em andamento/pendente
+  // Feedbacks Pendentes
   const feedbacksPendentes = timeline.filter(
     (r) =>
       (r.tipo === 'Feedback Corretivo' || r.tipo === 'Feedback Positivo') &&
       r.status !== 'Concluído'
   );
 
-  // 2. Feedbacks Vencidos: Feedbacks com prazo vencido e não concluídos
+  // Feedbacks Vencidos
   const feedbacksVencidos = timeline.filter((r) => {
     if ((r.tipo === 'Feedback Corretivo' || r.tipo === 'Feedback Positivo') && r.status !== 'Concluído' && r.prazoAcompanhamento) {
       const prazo = new Date(r.prazoAcompanhamento);
@@ -178,12 +478,12 @@ export default function Dashboard({
     return false;
   });
 
-  // 3. PDIs Ativos
+  // PDIs Ativos
   const pdisAtivos = timeline.filter(
     (r) => r.tipo === 'Plano de Desenvolvimento Individual (PDI)' && r.status !== 'Concluído'
   );
 
-  // 4. PDIs Vencidos
+  // PDIs Vencidos
   const pdisVencidos = timeline.filter((r) => {
     if (r.tipo === 'Plano de Desenvolvimento Individual (PDI)' && r.status !== 'Concluído' && r.prazoAcompanhamento) {
       const prazo = new Date(r.prazoAcompanhamento);
@@ -192,40 +492,40 @@ export default function Dashboard({
     return false;
   });
 
-  // 5. Reconhecimentos do Mês (Julho 2026)
+  // Reconhecimentos do Mês
   const reconhecimentosMes = timeline.filter((r) => {
     const isReconhecimento =
       r.tipo === 'Reconhecimento' || r.tipo === 'Elogio de Cliente' || r.tipo === 'Feedback Positivo';
     if (!isReconhecimento) return false;
     const dataReg = new Date(r.data);
-    return dataReg.getFullYear() === 2026 && dataReg.getMonth() === 6; // Julho é mês 6 (0-indexed)
+    return dataReg.getFullYear() === ANO_ATUAL && dataReg.getMonth() === HOJE.getMonth();
   });
 
-  // 6. Advertências e Suspensões acumuladas
+  // Advertências e Suspensões
   const advertencias = timeline.filter(
     (r) => r.tipo === 'Advertência' || r.tipo === 'Suspensão'
   );
 
-  // 7. Aniversários de admissão do mês (Julho)
+  // Aniversários de admissão do mês
   const aniversariosMes = colaboradores.filter((c) => {
     const dataAdmissao = new Date(c.dataAdmissao);
-    return dataAdmissao.getMonth() === 6; // Julho
+    return dataAdmissao.getMonth() === HOJE.getMonth();
   });
 
-  // 7b. Aniversários de nascimento do mês (Julho)
+  // Aniversários de nascimento do mês
   const aniversariantesNascimento = colaboradores.filter((c) => {
     if (!c.dataNascimento) return false;
     const dataNasc = new Date(c.dataNascimento);
-    return dataNasc.getMonth() === 6; // Julho
+    return dataNasc.getMonth() === HOJE.getMonth();
   });
 
-  // 8. Colaboradores em Acompanhamento
+  // Colaboradores em Acompanhamento
   const colAcompanhamento = colaboradores.filter((c) => c.situacao === 'Em Acompanhamento');
 
-  // 9. Tarefas Pendentes
+  // Tarefas Pendentes
   const tarefasPendentes = tarefas.filter((t) => !t.concluida);
 
-  // 10. Onboarding Automático (primeiros 60 dias)
+  // Onboarding Automático
   const calculateOnboardingReminders = () => {
     const list: {
       colaborador: Colaborador;
@@ -240,415 +540,364 @@ export default function Dashboard({
       const diffTime = HOJE.getTime() - admissao.getTime();
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
       
-      // Apenas colaboradores nos primeiros 60 dias
-      if (diffDays >= 0 && diffDays <= 60) {
-        const itemsSetor = onboardingItems.filter(i => i.setorId === col.setorId);
-        if (itemsSetor.length === 0) return;
-
-        let checklist = onboardingChecklists.find(c => c.colaboradorId === col.id);
-        if (!checklist) {
-          checklist = {
-            id: `obc-${col.id}`,
-            colaboradorId: col.id,
-            itemsConcluidos: [],
-            dataCriacao: HOJE.toISOString().split('T')[0]
-          };
-        }
-
-        const pendentes = itemsSetor.filter(i => !checklist?.itemsConcluidos.includes(i.id));
-        if (pendentes.length > 0) {
-          list.push({ colaborador: col, checklist, itemsPendentes: pendentes });
-        }
+      if (diffDays > 60) return; // Só mostra nos primeiros 60 dias
+      
+      const setoresDoColaborador = [col.setorId];
+      const itensRelevantes = onboardingItems.filter(item => 
+        item.setorIds.some(s => setoresDoColaborador.includes(s))
+      );
+      
+      let checklist = onboardingChecklists.find(c => c.colaboradorId === col.id);
+      
+      if (!checklist) {
+        checklist = {
+          id: `checklist-${col.id}-${Date.now()}`,
+          colaboradorId: col.id,
+          itemsConcluidos: [],
+          dataCriacao: formatarDataISO(admissao),
+        };
+        onSaveOnboardingChecklist(checklist);
+      }
+      
+      const itemsPendentes = itensRelevantes.filter(item => 
+        !checklist.itemsConcluidos.includes(item.id)
+      );
+      
+      if (itemsPendentes.length > 0) {
+        list.push({ colaborador: col, checklist, itemsPendentes });
       }
     });
-
+    
     return list;
   };
 
   const onboardingReminders = calculateOnboardingReminders();
 
-  const handleToggleOnboardingItem = (checklist: OnboardingChecklist, itemId: string) => {
-    const novosConcluidos = checklist.itemsConcluidos.includes(itemId)
-      ? checklist.itemsConcluidos.filter(id => id !== itemId)
-      : [...checklist.itemsConcluidos, itemId];
-    
-    onSaveOnboardingChecklist({
-      ...checklist,
-      itemsConcluidos: novosConcluidos
-    });
-  };
-  const tarefasAtrasadas = tarefas.filter((t) => {
-    if (t.concluida) return false;
-    const limite = new Date(t.vencimento);
-    return limite < HOJE;
-  });
+  // Últimos eventos da timeline
+  const ultimosEventos = [...timeline]
+    .sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime())
+    .slice(0, 5);
 
-  // Feedbacks mais recentes para lista rápida
-  const ultimosEventos = timeline.slice(0, 4);
+  // Cálculos para cards
+  const totalAtivos = colaboradores.filter(c => c.situacao !== 'Desligado').length;
+  const totalNovos = colaboradores.filter(c => {
+    const admissao = new Date(c.dataAdmissao);
+    const diffTime = HOJE.getTime() - admissao.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays <= 30;
+  }).length;
 
   return (
-    <div className="space-y-8 max-w-7xl mx-auto p-4 animate-fade-in">
-      {/* Top Welcome Panel */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
+    <div className="space-y-8 animate-fade-in p-6 max-w-[1600px] mx-auto">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Gestão de Equipes</h1>
+          <h1 className="text-3xl font-bold text-slate-900 tracking-tight">
+            Olá, {currentUser.nome.split(' ')[0]}! 👋
+          </h1>
           <p className="text-sm text-slate-500 mt-1">
-            Olá, <span className="font-semibold text-teal-600">Líder</span>. Aqui está o resumo das ações de liderança para hoje, 13 de Julho de 2026.
+            {HOJE.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
           </p>
         </div>
-        <div className="flex gap-3">
+
+        <div className="flex items-center gap-3">
+          {/* Botão de Alertas */}
           <button
-            id="btn-quick-new-feedback"
+            onClick={() => setShowAlertasModal(true)}
+            className={`relative flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm transition cursor-pointer ${
+              todosAlertasAtivos.length > 0
+                ? 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100'
+                : 'bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100'
+            }`}
+          >
+            {todosAlertasAtivos.length > 0 ? (
+              <Bell size={18} className="text-amber-600" />
+            ) : (
+              <BellOff size={18} />
+            )}
+            Alertas
+            {todosAlertasAtivos.length > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-rose-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                {todosAlertasAtivos.length}
+              </span>
+            )}
+          </button>
+
+          {/* Botão de Configurações */}
+          <button
+            onClick={() => setShowSettingsModal(true)}
+            className="flex items-center gap-2 px-4 py-2.5 bg-slate-50 text-slate-600 border border-slate-200 rounded-xl font-semibold text-sm hover:bg-slate-100 transition cursor-pointer"
+          >
+            <Settings size={18} />
+            Configurar Alertas
+          </button>
+
+          <button
+            id="btn-new-registro-top"
             onClick={() => onOpenNewRegistroModal()}
-            className="flex items-center gap-2 px-4 py-2.5 bg-teal-500 text-slate-950 rounded-xl text-sm font-semibold hover:bg-teal-400 shadow-md shadow-teal-500/10 cursor-pointer transition-all"
+            className="flex items-center gap-2 px-4 py-2.5 bg-teal-500 text-slate-950 font-bold rounded-xl text-sm hover:bg-teal-400 shadow-md shadow-teal-500/10 transition cursor-pointer"
           >
-            <PlusCircle size={16} />
-            Lançar Feedback
-          </button>
-          <button
-            id="btn-quick-view-colab"
-            onClick={() => onNavigateToList('colaboradores')}
-            className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 text-slate-700 bg-slate-50 rounded-xl text-sm font-semibold hover:bg-slate-100 cursor-pointer transition-all"
-          >
-            Ver Colaboradores
-            <ArrowRight size={16} />
+            <PlusCircle size={18} />
+            Novo Registro
           </button>
         </div>
       </div>
 
-      {/* Grid de Indicadores Clícaveis (Material Design 3 Cards) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {/* Card 1: Feedbacks Pendentes */}
-        <div
-          id="metric-feedbacks-pendentes"
-          onClick={() => onNavigateToList('colaboradores', { feedbackStatus: 'Pendente' })}
-          className="bg-white border border-slate-100 rounded-3xl p-5 hover:shadow-lg hover:border-teal-100 cursor-pointer group transition-all duration-300 flex items-start gap-4"
-        >
-          <div className="p-3 bg-teal-50 rounded-2xl text-teal-600 group-hover:bg-teal-500 group-hover:text-white transition-all">
-            <MessageSquare size={22} />
-          </div>
-          <div>
-            <h3 className="text-sm font-medium text-slate-500">Feedbacks Pendentes</h3>
-            <div className="flex items-baseline gap-2 mt-1">
-              <span className="text-2xl font-extrabold text-slate-900">{feedbacksPendentes.length}</span>
-              {feedbacksVencidos.length > 0 && (
-                <span className="text-[11px] px-1.5 py-0.5 font-medium rounded bg-rose-50 text-rose-600 flex items-center gap-1">
-                  <Clock size={10} /> {feedbacksVencidos.length} atrasados
-                </span>
-              )}
-            </div>
-            <p className="text-xs text-slate-400 mt-2 flex items-center gap-1">
-              Ver lista de feedbacks pendentes <ArrowRight size={12} className="opacity-0 group-hover:opacity-100 transition-opacity" />
-            </p>
-          </div>
-        </div>
-
-        {/* Card 2: PDIs Ativos */}
-        <div
-          id="metric-pdis-ativos"
-          onClick={() => onNavigateToList('analytics', { pdiStatus: 'Ativos' })}
-          className="bg-white border border-slate-100 rounded-3xl p-5 hover:shadow-lg hover:border-indigo-100 cursor-pointer group transition-all duration-300 flex items-start gap-4"
-        >
-          <div className="p-3 bg-indigo-50 rounded-2xl text-indigo-600 group-hover:bg-indigo-500 group-hover:text-white transition-all">
-            <TrendingUp size={22} />
-          </div>
-          <div>
-            <h3 className="text-sm font-medium text-slate-500">PDIs Ativos</h3>
-            <div className="flex items-baseline gap-2 mt-1">
-              <span className="text-2xl font-extrabold text-slate-900">{pdisAtivos.length}</span>
-              {pdisVencidos.length > 0 && (
-                <span className="text-[11px] px-1.5 py-0.5 font-medium rounded bg-rose-50 text-rose-600 flex items-center gap-1">
-                  {pdisVencidos.length} vencidos
-                </span>
-              )}
-            </div>
-            <p className="text-xs text-slate-400 mt-2 flex items-center gap-1">
-              Acompanhar planos de carreira <ArrowRight size={12} className="opacity-0 group-hover:opacity-100 transition-opacity" />
-            </p>
-          </div>
-        </div>
-
-        {/* Card 3: Reconhecimentos do Mês */}
-        <div
-          id="metric-reconhecimentos"
-          onClick={() => onNavigateToList('analytics', { view: 'reconhecimentos' })}
-          className="bg-white border border-slate-100 rounded-3xl p-5 hover:shadow-lg hover:border-amber-100 cursor-pointer group transition-all duration-300 flex items-start gap-4"
-        >
-          <div className="p-3 bg-amber-50 rounded-2xl text-amber-600 group-hover:bg-amber-500 group-hover:text-white transition-all">
-            <Award size={22} />
-          </div>
-          <div>
-            <h3 className="text-sm font-medium text-slate-500">Reconhecimentos (Mês)</h3>
-            <div className="flex items-baseline gap-2 mt-1">
-              <span className="text-2xl font-extrabold text-slate-900">{reconhecimentosMes.length}</span>
-              <span className="text-[10px] text-emerald-600 font-medium">+15% vs prev</span>
-            </div>
-            <p className="text-xs text-slate-400 mt-2 flex items-center gap-1">
-              Visualizar destaques de Julho <ArrowRight size={12} className="opacity-0 group-hover:opacity-100 transition-opacity" />
-            </p>
-          </div>
-        </div>
-
-        {/* Card 4: Advertências */}
-        <div
-          id="metric-advertencias"
-          onClick={() => onNavigateToList('analytics', { view: 'incidentes' })}
-          className="bg-white border border-slate-100 rounded-3xl p-5 hover:shadow-lg hover:border-rose-100 cursor-pointer group transition-all duration-300 flex items-start gap-4"
-        >
-          <div className="p-3 bg-rose-50 rounded-2xl text-rose-600 group-hover:bg-rose-500 group-hover:text-white transition-all">
-            <AlertTriangle size={22} />
-          </div>
-          <div>
-            <h3 className="text-sm font-medium text-slate-500">Advertências / Alertas</h3>
-            <div className="flex items-baseline gap-2 mt-1">
-              <span className="text-2xl font-extrabold text-slate-900">{advertencias.length}</span>
-            </div>
-            <p className="text-xs text-slate-400 mt-2 flex items-center gap-1">
-              Análise de incidentes críticos <ArrowRight size={12} className="opacity-0 group-hover:opacity-100 transition-opacity" />
-            </p>
-          </div>
-        </div>
-
-        {/* Card 5: Colaboradores em Acompanhamento */}
-        <div
-          id="metric-colaboradores-acompanhamento"
-          onClick={() => onNavigateToList('colaboradores', { situacao: 'Em Acompanhamento' })}
-          className="bg-white border border-slate-100 rounded-3xl p-5 hover:shadow-lg hover:border-orange-100 cursor-pointer group transition-all duration-300 flex items-start gap-4"
-        >
-          <div className="p-3 bg-orange-50 rounded-2xl text-orange-600 group-hover:bg-orange-500 group-hover:text-white transition-all">
-            <Users2 size={22} />
-          </div>
-          <div>
-            <h3 className="text-sm font-medium text-slate-500">Em Acompanhamento</h3>
-            <div className="flex items-baseline gap-2 mt-1">
-              <span className="text-2xl font-extrabold text-slate-900">{colAcompanhamento.length}</span>
-              <span className="text-[10px] text-orange-600 font-medium">Atenção líder</span>
-            </div>
-            <p className="text-xs text-slate-400 mt-2 flex items-center gap-1">
-              Ver colaboradores em foco <ArrowRight size={12} className="opacity-0 group-hover:opacity-100 transition-opacity" />
-            </p>
-          </div>
-        </div>
-
-        {/* Card 6: Aniversários de Empresa */}
-        <div
-          id="metric-aniversarios"
-          onClick={() => onNavigateToList('colaboradores', { month: 'Julho' })}
-          className="bg-white border border-slate-100 rounded-3xl p-5 hover:shadow-lg hover:border-blue-100 cursor-pointer group transition-all duration-300 flex items-start gap-4"
-        >
-          <div className="p-3 bg-blue-50 rounded-2xl text-blue-600 group-hover:bg-blue-500 group-hover:text-white transition-all">
-            <Calendar size={22} />
-          </div>
-          <div>
-            <h3 className="text-sm font-medium text-slate-500">Aniversários de Admissão</h3>
-            <div className="flex items-baseline gap-2 mt-1">
-              <span className="text-2xl font-extrabold text-slate-900">{aniversariosMes.length}</span>
-              <span className="text-[10px] text-blue-600 font-medium">Em Julho</span>
-            </div>
-            <p className="text-xs text-slate-400 mt-2 flex items-center gap-1">
-              Ver aniversariantes de admissão <ArrowRight size={12} className="opacity-0 group-hover:opacity-100 transition-opacity" />
-            </p>
-          </div>
-        </div>
-
-        {/* Card 7: Tarefas Pendentes */}
-        <div
-          id="metric-tarefas-pendentes"
-          onClick={() => onNavigateToList('tarefas', { status: 'Pendentes' })}
-          className="bg-white border border-slate-100 rounded-3xl p-5 hover:shadow-lg hover:border-slate-300 cursor-pointer group transition-all duration-300 flex items-start gap-4"
-        >
-          <div className="p-3 bg-slate-50 rounded-2xl text-slate-600 group-hover:bg-slate-700 group-hover:text-white transition-all">
-            <ListTodo size={22} />
-          </div>
-          <div>
-            <h3 className="text-sm font-medium text-slate-500">Tarefas Pendentes</h3>
-            <div className="flex items-baseline gap-2 mt-1">
-              <span className="text-2xl font-extrabold text-slate-900">{tarefasPendentes.length}</span>
-              {tarefasAtrasadas.length > 0 && (
-                <span className="text-[11px] px-1.5 py-0.5 font-medium rounded bg-rose-50 text-rose-600">
-                  {tarefasAtrasadas.length} atrasadas
-                </span>
-              )}
-            </div>
-            <p className="text-xs text-slate-400 mt-2 flex items-center gap-1">
-              Ir para quadro de tarefas <ArrowRight size={12} className="opacity-0 group-hover:opacity-100 transition-opacity" />
-            </p>
-          </div>
-        </div>
-
-        {/* Card 8: Taxa de Resolução */}
-        <div
-          id="metric-taxa-resolucao"
-          onClick={() => onNavigateToList('analytics')}
-          className="bg-white border border-slate-100 rounded-3xl p-5 hover:shadow-lg hover:border-emerald-100 cursor-pointer group transition-all duration-300 flex items-start gap-4"
-        >
-          <div className="p-3 bg-emerald-50 rounded-2xl text-emerald-600 group-hover:bg-emerald-500 group-hover:text-white transition-all">
-            <CheckCircle2 size={22} />
-          </div>
-          <div>
-            <h3 className="text-sm font-medium text-slate-500">Conclusão de Ações</h3>
-            <div className="flex items-baseline gap-2 mt-1">
-              <span className="text-2xl font-extrabold text-slate-900">
-                {tarefas.length > 0
-                  ? Math.round(((tarefas.length - tarefasPendentes.length) / tarefas.length) * 100)
-                  : 100}
-                %
-              </span>
-            </div>
-            <p className="text-xs text-slate-400 mt-2 flex items-center gap-1">
-              Visualizar performance de acompanhamento <ArrowRight size={12} className="opacity-0 group-hover:opacity-100 transition-opacity" />
-            </p>
-          </div>
-        </div>
-
-        {/* Card 9: Aniversariantes do Mês */}
-        <div
-          id="metric-aniversariantes-nascimento"
-          onClick={() => onNavigateToList('colaboradores', { month: 'Julho' })}
-          className="bg-white border border-slate-100 rounded-3xl p-5 hover:shadow-lg hover:border-pink-100 cursor-pointer group transition-all duration-300 flex items-start gap-4"
-        >
-          <div className="p-3 bg-pink-50 rounded-2xl text-pink-600 group-hover:bg-pink-500 group-hover:text-white transition-all">
-            <Cake size={22} />
-          </div>
-          <div>
-            <h3 className="text-sm font-medium text-slate-500">Aniversariantes</h3>
-            <div className="flex items-baseline gap-2 mt-1">
-              <span className="text-2xl font-extrabold text-slate-900">{aniversariantesNascimento.length}</span>
-              <span className="text-[10px] text-pink-600 font-medium">Em Julho</span>
-            </div>
-            <p className="text-xs text-slate-400 mt-2 flex items-center gap-1">
-              Celebrar com a equipe <ArrowRight size={12} className="opacity-0 group-hover:opacity-100 transition-opacity" />
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Onboarding Checklist Section */}
-      {onboardingReminders.length > 0 && (
-        <div className="bg-teal-50/30 border border-teal-100 rounded-3xl p-6 space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="p-1.5 bg-teal-100 text-teal-700 rounded-lg">
-                <ClipboardCheck size={16} />
-              </span>
-              <div>
-                <h2 className="text-md font-bold text-slate-900">Check-in de Onboarding (Primeiros 60 Dias)</h2>
-                <p className="text-xs text-slate-500">Garanta a melhor integração para os novos talentos da sua equipe.</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {onboardingReminders.map((rem) => (
-              <div key={rem.colaborador.id} className="bg-white p-4 rounded-2xl border border-slate-150 shadow-xs">
-                <div className="flex items-center gap-3 mb-3 pb-3 border-b border-slate-50">
-                  <img src={rem.colaborador.fotoUrl} className="w-8 h-8 rounded-full object-cover" />
-                  <div className="min-w-0">
-                    <p className="text-xs font-bold text-slate-800 truncate">{rem.colaborador.nome}</p>
-                    <p className="text-[10px] text-slate-400">Início: {new Date(rem.colaborador.dataAdmissao).toLocaleDateString('pt-BR')}</p>
-                  </div>
+      {/* Modal de Alertas */}
+      {showAlertasModal && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-50 flex items-start justify-center p-4 pt-12 overflow-y-auto">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full animate-scale-up border border-slate-100">
+            <div className="flex justify-between items-center border-b border-slate-100 p-6">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-amber-100 rounded-2xl flex items-center justify-center">
+                  <Bell size={20} className="text-amber-600" />
                 </div>
-                <div className="space-y-2">
-                  {rem.itemsPendentes.map(item => (
-                    <div 
-                      key={item.id} 
-                      onClick={() => handleToggleOnboardingItem(rem.checklist, item.id)}
-                      className="flex items-start gap-2 p-2 rounded-xl hover:bg-slate-50 cursor-pointer transition group"
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">Central de Alertas</h3>
+                  <p className="text-xs text-slate-500">{todosAlertasAtivos.length} alerta(s) pendente(s)</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowAlertasModal(false)}
+                className="text-slate-400 hover:text-slate-600 cursor-pointer font-bold text-2xl"
+              >
+                &times;
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4 max-h-[60vh] overflow-y-auto">
+              {todosAlertasAtivos.length === 0 ? (
+                <div className="text-center py-12 text-slate-400">
+                  <CheckCircle2 size={48} className="mx-auto text-emerald-500 mb-3" />
+                  <p className="text-lg font-semibold text-slate-600">Tudo em dia!</p>
+                  <p className="text-sm">Não há alertas pendentes no momento.</p>
+                </div>
+              ) : (
+                todosAlertasAtivos.map((alerta) => {
+                  const col = colaboradores.find(c => c.id === alerta.colaboradorId);
+                  return (
+                    <div
+                      key={alerta.id}
+                      className={`p-4 rounded-2xl border transition ${
+                        alerta.status === 'pendente'
+                          ? 'bg-amber-50 border-amber-200'
+                          : 'bg-slate-50 border-slate-200'
+                      }`}
                     >
-                      <div className="mt-0.5 w-4 h-4 border-2 border-slate-200 rounded flex items-center justify-center group-hover:border-teal-500 transition-colors">
-                        <div className="w-2 h-2 bg-teal-500 rounded-xs opacity-0 group-hover:opacity-30"></div>
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-[11px] font-bold text-slate-700 line-clamp-1">{item.titulo}</p>
-                        <p className="text-[9px] text-slate-400 line-clamp-1">{item.descricao}</p>
+                      <div className="flex items-start gap-3">
+                        <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center border border-slate-100 shrink-0">
+                          {getIconeAlerta(alerta.tipo)}
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <h4 className="font-bold text-slate-900 text-sm">{alerta.titulo}</h4>
+                            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded border ${getBadgeColor(alerta.tipo)}`}>
+                              {alerta.diasRestantes === 0 ? 'HOJE' : alerta.diasRestantes < 0 ? 'ATRASADO' : `${alerta.diasRestantes}d`}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-600 mb-2">{alerta.descricao}</p>
+                          {col && (
+                            <div className="flex items-center gap-2 mb-3">
+                              <img src={col.fotoUrl} alt={col.nome} className="w-5 h-5 rounded-full" />
+                              <span className="text-xs font-medium text-slate-500">{col.nome}</span>
+                            </div>
+                          )}
+                          <div className="flex items-center gap-2">
+                            {alerta.status === 'pendente' && (
+                              <button
+                                onClick={() => reconhecerAlerta(alerta.id)}
+                                className="px-3 py-1.5 bg-blue-100 text-blue-700 text-xs font-semibold rounded-lg hover:bg-blue-200 transition cursor-pointer"
+                              >
+                                Reconhecer
+                              </button>
+                            )}
+                            <button
+                              onClick={() => {
+                                onSelectColaborador(alerta.colaboradorId);
+                                setShowAlertasModal(false);
+                              }}
+                              className="px-3 py-1.5 bg-teal-100 text-teal-700 text-xs font-semibold rounded-lg hover:bg-teal-200 transition cursor-pointer"
+                            >
+                              Ver Colaborador
+                            </button>
+                            <button
+                              onClick={() => ignorarAlerta(alerta.id)}
+                              className="px-3 py-1.5 bg-slate-100 text-slate-600 text-xs font-semibold rounded-lg hover:bg-slate-200 transition cursor-pointer"
+                            >
+                              Ignorar
+                            </button>
+                          </div>
+                        </div>
                       </div>
                     </div>
-                  ))}
-                </div>
-              </div>
-            ))}
+                  );
+                })
+              )}
+            </div>
+
+            <div className="border-t border-slate-100 p-4 flex justify-end">
+              <button
+                onClick={() => setShowAlertasModal(false)}
+                className="px-4 py-2 bg-slate-100 text-slate-700 font-semibold rounded-xl text-sm hover:bg-slate-200 transition cursor-pointer"
+              >
+                Fechar
+              </button>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Lembretes de Avaliação / Período de Experiência */}
-      {lembretesAcompanhamento.length > 0 && (
-        <div className="bg-amber-50/30 border border-amber-100 rounded-3xl p-6 space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="p-1.5 bg-amber-100 text-amber-700 rounded-lg">
-                <AlertTriangle size={16} />
-              </span>
-              <div>
-                <h2 className="text-md font-bold text-slate-900">Pendências de Avaliações (Líder Direto)</h2>
-                <p className="text-xs text-slate-500">Há colaboradores sob sua gestão com prazos de experiência ou avaliação 180º pendentes.</p>
+      {/* Modal de Configurações */}
+      {showSettingsModal && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-lg w-full animate-scale-up border border-slate-100">
+            <div className="flex justify-between items-center border-b border-slate-100 p-6">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-slate-100 rounded-2xl flex items-center justify-center">
+                  <Settings size={20} className="text-slate-600" />
+                </div>
+                <h3 className="text-lg font-bold text-slate-900">Configurar Alertas Inteligentes</h3>
               </div>
+              <button
+                onClick={() => setShowSettingsModal(false)}
+                className="text-slate-400 hover:text-slate-600 cursor-pointer font-bold text-2xl"
+              >
+                &times;
+              </button>
             </div>
-            <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-800">
-              {lembretesAcompanhamento.length} {lembretesAcompanhamento.length === 1 ? 'pendência' : 'pendências'}
-            </span>
-          </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {lembretesAcompanhamento.map((lembrete) => {
-              const col = lembrete.colaborador;
-              return (
-                <div
-                  key={lembrete.id}
-                  className={`p-4 rounded-2xl border bg-white flex items-start gap-3.5 shadow-xs hover:shadow-md transition duration-200 ${
-                    lembrete.atrasado ? 'border-rose-100 bg-rose-50/5' : 'border-slate-150'
+            <div className="p-6 space-y-6">
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-2">
+                  <div className="flex items-center gap-2">
+                    <CalendarClock size={16} className="text-orange-500" />
+                    Dias sem interação para alertar
+                  </div>
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="90"
+                  value={configAlertas.diasSemInteracao}
+                  onChange={(e) => setConfigAlertas(prev => ({ ...prev, diasSemInteracao: parseInt(e.target.value) || 14 }))}
+                  className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                />
+                <p className="text-xs text-slate-400 mt-1">Alerta quando um colaborador não tem interação registrada por X dias</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-2">
+                  <div className="flex items-center gap-2">
+                    <Cake size={16} className="text-pink-500" />
+                    Dias de antecedência para aniversários
+                  </div>
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="30"
+                  value={configAlertas.diasAntecedenciaAniversario}
+                  onChange={(e) => setConfigAlertas(prev => ({ ...prev, diasAntecedenciaAniversario: parseInt(e.target.value) || 15 }))}
+                  className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                />
+                <p className="text-xs text-slate-400 mt-1">Alerta X dias antes de aniversários de nascimento e casa</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-2">
+                  <div className="flex items-center gap-2">
+                    <Target size={16} className="text-indigo-500" />
+                    Dias de antecedência para avaliação 180º
+                  </div>
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="60"
+                  value={configAlertas.diasAntecedenciaAvaliacao180}
+                  onChange={(e) => setConfigAlertas(prev => ({ ...prev, diasAntecedenciaAvaliacao180: parseInt(e.target.value) || 30 }))}
+                  className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                />
+                <p className="text-xs text-slate-400 mt-1">Alerta X dias antes do vencimento da avaliação de 180º</p>
+              </div>
+
+              <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl">
+                <div>
+                  <p className="font-bold text-slate-700 text-sm">Alertas Persistentes</p>
+                  <p className="text-xs text-slate-400">Manter alertas até serem resolvidos</p>
+                </div>
+                <button
+                  onClick={() => setConfigAlertas(prev => ({ ...prev, alertasPersistentes: !prev.alertasPersistentes }))}
+                  className={`w-12 h-6 rounded-full transition cursor-pointer ${
+                    configAlertas.alertasPersistentes ? 'bg-teal-500' : 'bg-slate-300'
                   }`}
                 >
-                  <img
-                    src={col.fotoUrl}
-                    alt={col.nome}
-                    className="w-10 h-10 rounded-full object-cover shrink-0 border border-slate-200 mt-0.5"
-                  />
-                  <div className="flex-1 min-w-0 space-y-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-[10px] font-bold tracking-wider text-teal-600 uppercase">
-                        {lembrete.titulo}
-                      </span>
-                      {lembrete.atrasado ? (
-                        <span className="text-[9px] font-extrabold bg-rose-50 text-rose-650 px-1.5 py-0.5 rounded-md uppercase">
-                          Vencido
-                        </span>
-                      ) : (
-                        <span className="text-[9px] font-extrabold bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded-md uppercase">
-                          Próximo
-                        </span>
-                      )}
-                    </div>
-                    
-                    <h4 className="text-sm font-bold text-slate-800 truncate">
-                      {col.nome}
-                    </h4>
-                    
-                    <div className="text-[11px] text-slate-500 flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3">
-                      <span><strong>Cidade Base:</strong> {col.cidadeBase || 'Não informada'}</span>
-                      <span className="hidden sm:inline">&middot;</span>
-                      <span><strong>Admissão:</strong> {new Date(col.dataAdmissao).toLocaleDateString('pt-BR')}</span>
-                    </div>
+                  <div className={`w-5 h-5 bg-white rounded-full shadow-sm transition transform ${
+                    configAlertas.alertasPersistentes ? 'translate-x-6' : 'translate-x-0.5'
+                  }`} />
+                </button>
+              </div>
+            </div>
 
-                    <p className="text-[11px] text-slate-400">
-                      Prazo limite: <strong className="text-slate-600">{new Date(lembrete.prazoData).toLocaleDateString('pt-BR')}</strong> ({lembrete.atrasado ? `${Math.abs(lembrete.diasRestantes)} dias atrás` : `em ${lembrete.diasRestantes} dias`})
-                    </p>
+            <div className="border-t border-slate-100 p-4 flex justify-end gap-3">
+              <button
+                onClick={() => setShowSettingsModal(false)}
+                className="px-4 py-2 border border-slate-200 text-slate-600 bg-slate-50 rounded-xl text-sm font-semibold hover:bg-slate-100 transition cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => salvarConfigAlertas(configAlertas)}
+                className="px-4 py-2 bg-teal-500 text-slate-950 font-bold rounded-xl text-sm hover:bg-teal-400 transition cursor-pointer"
+              >
+                Salvar Configurações
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
-                    <div className="flex gap-2 pt-2">
-                      <button
-                        onClick={() => handleCompleteMilestone(col, lembrete.milestone)}
-                        className="px-2.5 py-1 border border-teal-200 text-teal-600 text-[10px] font-bold rounded-lg hover:bg-teal-50 cursor-pointer transition"
-                      >
-                        ✓ Marcar Concluída
-                      </button>
-                      <button
-                        onClick={() => onOpenNewRegistroModal(col.id)}
-                        className="px-2.5 py-1 bg-slate-150 hover:bg-slate-200 text-slate-700 text-[10px] font-bold rounded-lg cursor-pointer transition"
-                      >
-                        Lançar Feedback
-                      </button>
-                    </div>
+      {/* Seção de Alertas Rápidos (Cards de Resumo) */}
+      {todosAlertasAtivos.length > 0 && (
+        <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-3xl p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Bell size={20} className="text-amber-600" />
+              <h2 className="text-lg font-bold text-amber-900">Alertas Pendentes</h2>
+            </div>
+            <button
+              onClick={() => setShowAlertasModal(true)}
+              className="text-xs font-semibold text-amber-700 hover:text-amber-800 cursor-pointer"
+            >
+              Ver todos ({todosAlertasAtivos.length})
+            </button>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+            {todosAlertasAtivos.slice(0, 4).map((alerta) => {
+              const col = colaboradores.find(c => c.id === alerta.colaboradorId);
+              return (
+                <div
+                  key={alerta.id}
+                  onClick={() => {
+                    onSelectColaborador(alerta.colaboradorId);
+                  }}
+                  className={`bg-white rounded-xl p-4 border cursor-pointer hover:shadow-md transition ${
+                    alerta.status === 'pendente' ? 'border-amber-200' : 'border-slate-200'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 mb-2">
+                    {getIconeAlerta(alerta.tipo)}
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                      {alerta.diasRestantes === 0 ? 'HOJE' : alerta.diasRestantes < 0 ? 'ATRASADO' : `${alerta.diasRestantes} dias`}
+                    </span>
                   </div>
+                  <p className="text-sm font-bold text-slate-800 truncate">{alerta.titulo}</p>
+                  {col && (
+                    <div className="flex items-center gap-1.5 mt-2">
+                      <img src={col.fotoUrl} alt={col.nome} className="w-4 h-4 rounded-full" />
+                      <span className="text-xs text-slate-500 truncate">{col.nome}</span>
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -656,9 +905,104 @@ export default function Dashboard({
         </div>
       )}
 
-      {/* Main Sections: Left (Urgent Tasks), Right (Recent Timeline) */}
+      {/* Cards de Estatísticas Rápidas */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="bg-white border border-slate-100 p-5 rounded-2xl shadow-sm">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-9 h-9 bg-emerald-50 rounded-xl flex items-center justify-center">
+              <Users2 size={18} className="text-emerald-500" />
+            </div>
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Ativos</span>
+          </div>
+          <p className="text-3xl font-extrabold text-slate-900">{totalAtivos}</p>
+        </div>
+
+        <div className="bg-white border border-slate-100 p-5 rounded-2xl shadow-sm">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-9 h-9 bg-blue-50 rounded-xl flex items-center justify-center">
+              <TrendingUp size={18} className="text-blue-500" />
+            </div>
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Novos (30d)</span>
+          </div>
+          <p className="text-3xl font-extrabold text-slate-900">{totalNovos}</p>
+        </div>
+
+        <div className="bg-white border border-slate-100 p-5 rounded-2xl shadow-sm">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-9 h-9 bg-rose-50 rounded-xl flex items-center justify-center">
+              <AlertTriangle size={18} className="text-rose-500" />
+            </div>
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Acompanhamento</span>
+          </div>
+          <p className="text-3xl font-extrabold text-slate-900">{colAcompanhamento.length}</p>
+        </div>
+
+        <div className="bg-white border border-slate-100 p-5 rounded-2xl shadow-sm">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-9 h-9 bg-amber-50 rounded-xl flex items-center justify-center">
+              <Award size={18} className="text-amber-500" />
+            </div>
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Reconhecimentos</span>
+          </div>
+          <p className="text-3xl font-extrabold text-slate-900">{reconhecimentosMes.length}</p>
+        </div>
+      </div>
+
+      {/* Seção de Acompanhamentos Pendentes */}
+      {lembretesAcompanhamento.length > 0 && (
+        <div className="bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-100 rounded-3xl p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <ClipboardCheck size={20} className="text-indigo-600" />
+              <h2 className="text-lg font-bold text-indigo-900">Acompanhamentos de Experiência</h2>
+            </div>
+            <span className="bg-indigo-100 text-indigo-700 text-xs font-bold px-3 py-1 rounded-full">
+              {lembretesAcompanhamento.length} pendente(s)
+            </span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {lembretesAcompanhamento.map((item) => (
+              <div key={item.id} className="bg-white rounded-2xl p-5 border border-indigo-100">
+                <div className="flex items-center gap-3 mb-3">
+                  <img
+                    src={item.colaborador.fotoUrl}
+                    alt={item.colaborador.nome}
+                    className="w-10 h-10 rounded-full object-cover border-2 border-indigo-100"
+                  />
+                  <div>
+                    <p className="font-bold text-slate-900 text-sm">{item.colaborador.nome}</p>
+                    <p className="text-xs text-slate-500">{item.titulo}</p>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className={`text-xs font-bold px-2 py-1 rounded-lg ${
+                    item.atrasado
+                      ? 'bg-rose-100 text-rose-700'
+                      : 'bg-indigo-100 text-indigo-700'
+                  }`}>
+                    {item.atrasado ? `Atrasado (${Math.abs(item.diasRestantes)}d)` : `${item.diasRestantes}d restantes`}
+                  </span>
+                  <span className="text-xs text-slate-400">
+                    {new Date(item.prazoData).toLocaleDateString('pt-BR')}
+                  </span>
+                </div>
+                {!item.atrasado && (
+                  <button
+                    onClick={() => handleCompleteMilestone(item.colaborador, item.milestone)}
+                    className="w-full mt-3 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-bold rounded-lg cursor-pointer transition"
+                  >
+                    ✓ Marcar Concluída
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Main Sections */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        {/* Left Column: Urgent Leadership Actions (Tasks) */}
+        {/* Left Column */}
         <div className="lg:col-span-5 bg-white border border-slate-100 p-6 rounded-3xl shadow-sm space-y-4">
           <div className="flex items-center justify-between border-b border-slate-100 pb-4">
             <div>
@@ -683,7 +1027,7 @@ export default function Dashboard({
               </div>
             ) : (
               tarefasPendentes.slice(0, 4).map((task) => {
-                const colaborador = colaboradores.find((c) => c.id === task.colaboradorId);
+                const col = colaboradores.find((c) => c.id === task.colaboradorId);
                 const isOverdue = new Date(task.vencimento) < HOJE;
                 return (
                   <div
@@ -692,10 +1036,10 @@ export default function Dashboard({
                       isOverdue ? 'border-rose-100 bg-rose-50/10' : 'border-slate-100'
                     }`}
                   >
-                    {colaborador && (
+                    {col && (
                       <img
-                        src={colaborador.fotoUrl}
-                        alt={colaborador.nome}
+                        src={col.fotoUrl}
+                        alt={col.nome}
                         className="w-9 h-9 rounded-full object-cover shrink-0 border border-slate-200 mt-0.5"
                       />
                     )}
@@ -713,7 +1057,7 @@ export default function Dashboard({
                       <p className="text-xs text-slate-500 mt-1 line-clamp-1">{task.descricao}</p>
                       <div className="flex items-center justify-between gap-2 mt-2">
                         <span className="text-[11px] font-medium text-slate-400">
-                          Para: <span className="text-slate-600 font-semibold">{colaborador?.nome}</span>
+                          Para: <span className="text-slate-600 font-semibold">{col?.nome}</span>
                         </span>
                         <span className="text-[11px] font-medium text-slate-500 flex items-center gap-1">
                           Prazo: {new Date(task.vencimento).toLocaleDateString('pt-BR')}
@@ -727,7 +1071,7 @@ export default function Dashboard({
           </div>
         </div>
 
-        {/* Right Column: Recent Activities Timeline */}
+        {/* Right Column */}
         <div className="lg:col-span-7 bg-white border border-slate-100 p-6 rounded-3xl shadow-sm space-y-4">
           <div className="flex items-center justify-between border-b border-slate-100 pb-4">
             <div>
@@ -753,7 +1097,6 @@ export default function Dashboard({
                 const col = colaboradores.find((c) => c.id === reg.colaboradorId);
                 return (
                   <div key={reg.id} className="flex gap-4 relative items-start group">
-                    {/* Badge circular para o tipo de registro */}
                     <div className="relative z-10 w-12 h-12 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-center shrink-0 shadow-sm group-hover:scale-105 transition duration-150">
                       {col ? (
                         <img

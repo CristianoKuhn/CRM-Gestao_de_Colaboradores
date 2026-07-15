@@ -83,7 +83,7 @@ export default function ColaboradorProfile({
   const [regTipo, setRegTipo] = useState<TipoRegistro>('Feedback Positivo');
   const [regTitulo, setRegTitulo] = useState('');
   const [regDescricao, setRegDescricao] = useState('');
-  const [regData, setRegData] = useState('2026-07-13');
+  const [regData, setRegData] = useState(new Date().toISOString().split('T')[0]);
   const [regLiderId, setRegLiderId] = useState(colaborador.liderId);
   const [regPrioridade, setRegPrioridade] = useState<PrioridadeRegistro>('Média');
   const [regStatus, setRegStatus] = useState<StatusRegistro>('Concluído');
@@ -103,7 +103,7 @@ export default function ColaboradorProfile({
   // Calcular tempo de empresa
   function calcularTempoEmpresa(dataAdmissaoStr: string): string {
     const admissao = new Date(dataAdmissaoStr);
-    const hoje = new Date('2026-07-13');
+    const hoje = new Date();
 
     let anos = hoje.getFullYear() - admissao.getFullYear();
     let meses = hoje.getMonth() - admissao.getMonth();
@@ -797,7 +797,8 @@ export default function ColaboradorProfile({
               ) : (
                 timelineFiltrada.map((reg) => {
                   const appliedLider = lideres.find((l) => l.id === reg.responsavelId);
-                  const isOverdue = reg.status !== 'Concluído' && reg.prazoAcompanhamento && new Date(reg.prazoAcompanhamento) < new Date('2026-07-13');
+                  const hoje = new Date();
+                  const isOverdue = reg.status !== 'Concluído' && reg.prazoAcompanhamento && new Date(reg.prazoAcompanhamento) < hoje;
 
                   return (
                     <div key={reg.id} className="flex gap-4 items-start relative group">

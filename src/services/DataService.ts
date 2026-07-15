@@ -18,6 +18,8 @@ import {
   Usuario,
   OnboardingItem,
   OnboardingChecklist,
+  AlertaInteligente,
+  ConfiguracaoAlertas,
 } from '../types';
 import { StorageAPI } from '../utils/storage';
 
@@ -77,6 +79,14 @@ export interface IDataService {
   deleteOnboardingItem(id: string): Promise<void>;
   getOnboardingChecklists(): Promise<OnboardingChecklist[]>;
   saveOnboardingChecklist(checklist: OnboardingChecklist): Promise<void>;
+
+  // Alertas Inteligentes
+  getAlertasInteligentes(): Promise<AlertaInteligente[]>;
+  saveAlertaInteligente(alerta: AlertaInteligente): Promise<void>;
+  deleteAlertaInteligente(id: string): Promise<void>;
+  getConfiguracaoAlertas(): Promise<ConfiguracaoAlertas>;
+  saveConfiguracaoAlertas(config: ConfiguracaoAlertas): Promise<void>;
+  gerarIdAlerta(): Promise<string>;
 
   uploadFile(
     file: File,
@@ -164,6 +174,27 @@ export class LocalDataService implements IDataService {
   async toggleTarefa(id: string): Promise<Tarefa | undefined> {
     return StorageAPI.toggleTarefa(id);
   }
+  
+  // Alertas Inteligentes
+  async getAlertasInteligentes(): Promise<AlertaInteligente[]> {
+    return StorageAPI.getAlertasInteligentes();
+  }
+  async saveAlertaInteligente(alerta: AlertaInteligente): Promise<void> {
+    StorageAPI.saveAlertaInteligente(alerta);
+  }
+  async deleteAlertaInteligente(id: string): Promise<void> {
+    StorageAPI.deleteAlertaInteligente(id);
+  }
+  async getConfiguracaoAlertas(): Promise<ConfiguracaoAlertas> {
+    return StorageAPI.getConfiguracaoAlertas();
+  }
+  async saveConfiguracaoAlertas(config: ConfiguracaoAlertas): Promise<void> {
+    StorageAPI.saveConfiguracaoAlertas(config);
+  }
+  async gerarIdAlerta(): Promise<string> {
+    return StorageAPI.gerarIdAlerta();
+  }
+
   async uploadFile(
     file: File,
     folderName: 'Fotos Colaboradores' | 'Anexos' | 'documentos',
@@ -716,6 +747,26 @@ export class GoogleScriptDataService implements IDataService {
     } catch (e) {}
   }
 
+  // Alertas Inteligentes (usando localStorage como fallback)
+  async getAlertasInteligentes(): Promise<AlertaInteligente[]> {
+    return this.localFallback.getAlertasInteligentes();
+  }
+  async saveAlertaInteligente(alerta: AlertaInteligente): Promise<void> {
+    await this.localFallback.saveAlertaInteligente(alerta);
+  }
+  async deleteAlertaInteligente(id: string): Promise<void> {
+    await this.localFallback.deleteAlertaInteligente(id);
+  }
+  async getConfiguracaoAlertas(): Promise<ConfiguracaoAlertas> {
+    return this.localFallback.getConfiguracaoAlertas();
+  }
+  async saveConfiguracaoAlertas(config: ConfiguracaoAlertas): Promise<void> {
+    await this.localFallback.saveConfiguracaoAlertas(config);
+  }
+  async gerarIdAlerta(): Promise<string> {
+    return this.localFallback.gerarIdAlerta();
+  }
+
   async uploadFile(
     file: File,
     folderName: 'Fotos Colaboradores' | 'Anexos' | 'documentos',
@@ -1108,6 +1159,26 @@ export class SupabaseDataService implements IDataService {
     await this.localFallback.saveOnboardingChecklist(checklist);
   }
 
+  // Alertas Inteligentes (usando localStorage como fallback)
+  async getAlertasInteligentes(): Promise<AlertaInteligente[]> {
+    return this.localFallback.getAlertasInteligentes();
+  }
+  async saveAlertaInteligente(alerta: AlertaInteligente): Promise<void> {
+    await this.localFallback.saveAlertaInteligente(alerta);
+  }
+  async deleteAlertaInteligente(id: string): Promise<void> {
+    await this.localFallback.deleteAlertaInteligente(id);
+  }
+  async getConfiguracaoAlertas(): Promise<ConfiguracaoAlertas> {
+    return this.localFallback.getConfiguracaoAlertas();
+  }
+  async saveConfiguracaoAlertas(config: ConfiguracaoAlertas): Promise<void> {
+    await this.localFallback.saveConfiguracaoAlertas(config);
+  }
+  async gerarIdAlerta(): Promise<string> {
+    return this.localFallback.gerarIdAlerta();
+  }
+
   async uploadFile(
     file: File,
     folderName: 'Fotos Colaboradores' | 'Anexos' | 'documentos',
@@ -1205,6 +1276,26 @@ class DynamicDataService implements IDataService {
   }
   async saveOnboardingChecklist(checklist: OnboardingChecklist): Promise<void> {
     await this.getService().saveOnboardingChecklist(checklist);
+  }
+
+  // Alertas Inteligentes
+  async getAlertasInteligentes(): Promise<AlertaInteligente[]> {
+    return this.getService().getAlertasInteligentes();
+  }
+  async saveAlertaInteligente(alerta: AlertaInteligente): Promise<void> {
+    await this.getService().saveAlertaInteligente(alerta);
+  }
+  async deleteAlertaInteligente(id: string): Promise<void> {
+    await this.getService().deleteAlertaInteligente(id);
+  }
+  async getConfiguracaoAlertas(): Promise<ConfiguracaoAlertas> {
+    return this.getService().getConfiguracaoAlertas();
+  }
+  async saveConfiguracaoAlertas(config: ConfiguracaoAlertas): Promise<void> {
+    await this.getService().saveConfiguracaoAlertas(config);
+  }
+  async gerarIdAlerta(): Promise<string> {
+    return this.getService().gerarIdAlerta();
   }
 
   async resetData(): Promise<void> {

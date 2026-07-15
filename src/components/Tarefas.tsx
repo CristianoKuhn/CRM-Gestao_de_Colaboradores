@@ -34,7 +34,7 @@ export default function Tarefas({
   onToggleTarefa,
   onAddTarefa,
 }: TarefasProps) {
-  const HOJE = new Date('2026-07-13');
+  const HOJE = new Date();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<'Todas' | 'Pendentes' | 'Concluídas' | 'Atrasadas'>('Todas');
@@ -43,7 +43,11 @@ export default function Tarefas({
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [taskTitulo, setTaskTitulo] = useState('');
   const [taskDescricao, setTaskDescricao] = useState('');
-  const [taskVencimento, setTaskVencimento] = useState('2026-07-15');
+  const [taskVencimento, setTaskVencimento] = useState(() => {
+    const amanha = new Date();
+    amanha.setDate(amanha.getDate() + 2);
+    return amanha.toISOString().split('T')[0];
+  });
   const [taskColaboradorId, setTaskColaboradorId] = useState(colaboradores[0]?.id || '');
   const [taskLiderId, setTaskLiderId] = useState(lideres[0]?.id || '');
   const [taskOrigem, setTaskOrigem] = useState<TipoRegistro>('Acompanhamento');
@@ -89,7 +93,9 @@ export default function Tarefas({
     // Reset Form
     setTaskTitulo('');
     setTaskDescricao('');
-    setTaskVencimento('2026-07-15');
+    const amanha = new Date();
+    amanha.setDate(amanha.getDate() + 2);
+    setTaskVencimento(amanha.toISOString().split('T')[0]);
   };
 
   return (

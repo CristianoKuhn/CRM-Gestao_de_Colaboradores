@@ -141,3 +141,34 @@ export interface Usuario {
   ativo: boolean;
   ultimo_login?: string;
 }
+
+// Tipos para Alertas Inteligentes
+export type TipoAlerta = 
+  | 'sem_interacao'
+  | 'aniversario_nascimento'
+  | 'aniversario_casa'
+  | 'avaliacao_180';
+
+export type StatusAlerta = 'pendente' | 'reconhecido' | 'resolvido';
+
+export interface AlertaInteligente {
+  id: string;
+  tipo: TipoAlerta;
+  colaboradorId: string;
+  titulo: string;
+  descricao: string;
+  dataReferencia: string;
+  diasRestantes: number;
+  status: StatusAlerta;
+  dataCriacao: string;
+  dataReconhecimento?: string;
+  dataResolucao?: string;
+  parametroDias?: number; // Dias parametrizados (ex: X dias sem interação)
+}
+
+export interface ConfiguracaoAlertas {
+  diasSemInteracao: number; // Padrão: 14 dias
+  diasAntecedenciaAniversario: number; // Padrão: 15 dias
+  diasAntecedenciaAvaliacao180: number; // Padrão: 30 dias
+  alertasPersistentes: boolean; // Padrão: true
+}

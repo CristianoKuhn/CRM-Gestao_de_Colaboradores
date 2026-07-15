@@ -26,6 +26,8 @@ import {
   MetaLideranca,
   MetaSetor,
   AcompanhamentoRealizado,
+  AlertaInteligente,
+  ConfiguracaoAlertas,
 } from './types';
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
@@ -39,6 +41,7 @@ import Login from './components/Login';
 import CentralDocumentos from './components/CentralDocumentos';
 import SistemaReconhecimento from './components/SistemaReconhecimento';
 import MetasLideranca from './components/MetasLideranca';
+import SistemaNotificacoes from './components/SistemaNotificacoes';
 import { Users2, X, PlusCircle } from 'lucide-react';
 
 export default function App() {
@@ -111,6 +114,15 @@ export default function App() {
   const [metasSetor, setMetasSetor] = useState<MetaSetor[]>([]);
   const [acompanhamentos, setAcompanhamentos] = useState<AcompanhamentoRealizado[]>([]);
 
+  // Sistema de Notificações e Alertas
+  const [alertas, setAlertas] = useState<AlertaInteligente[]>([]);
+  const [configAlertas, setConfigAlertas] = useState<ConfiguracaoAlertas>({
+    diasSemInteracao: 14,
+    diasAntecedenciaAniversario: 15,
+    diasAntecedenciaAvaliacao180: 30,
+    alertasPersistentes: true,
+  });
+
   // Estado para colaborador selecionado (CRM detalhado)
   const [selectedColaboradorId, setSelectedColaboradorId] = useState<string | null>(null);
 
@@ -143,6 +155,9 @@ export default function App() {
         DataService.getMetasLideranca(),
         DataService.getMetasSetor(),
         DataService.getAcompanhamentos(),
+        // Sistema de Notificações
+        DataService.getAlertasInteligentes(),
+        DataService.getConfiguracaoAlertas(),
       ]);
 
       setColaboradores(cols);
@@ -167,6 +182,10 @@ export default function App() {
       setMetasLideranca(metasLidData);
       setMetasSetor(metasSetData);
       setAcompanhamentos(acompData);
+
+      // Sistema de Notificações
+      setAlertas(await DataService.getAlertasInteligentes());
+      setConfigAlertas(await DataService.getConfiguracaoAlertas());
       
       setSupabaseConfig(StorageAPI.getSupabaseConfig());
       setGoogleScriptConfig(StorageAPI.getGoogleScriptConfig());
@@ -343,6 +362,41 @@ export default function App() {
     loadAllData();
   };
 
+  // Handlers de Alertas
+  const handleReconhecerAlerta = async (id: string) => {
+    const alerta = alertas.find(a => a.id === id);
+    if (alerta) {
+      const atualizado = { ...alerta, status: 'reconhecido' as const, dataReconhecimento: new Date().toISOString().split('T')[0] };
+      await DataService.saveAlertaInteligente(atualizado);
+      loadAllData();
+    }
+  };
+
+  const handleResolverAlerta = async (id: string) => {
+    const alerta = alertas.find(a => a.id === id);
+    if (alerta) {
+      const atualizado = { ...alerta, status: 'resolvido' as const, dataResolucao: new Date().toISOString().split('T')[0] };
+      await DataService.saveAlertaInteligente(atualizado);
+      loadAllData();
+    }
+  };
+
+  const handleIgnorarAlerta = async (id: string) => {
+    await DataService.deleteAlertaInteligente(id);
+    loadAllData();
+  };
+
+  const handleLimparAlertasResolvidos = async () => {
+    // Remover alertas resolvidos do localStorage
+    const ativos = alertas.filter(a => a.status !== 'resolvido');
+    // Salvar apenas os ativos
+    for (const alerta of ativos) {
+      await DataService.saveAlertaInteligente(alerta);
+    }
+    // Recarregar
+    loadAllData();
+  };
+
   // Tratar alteração do provedor de dados ativo
   const handleChangeProvider = (provider: DataSourceProvider) => {
     StorageAPI.saveDataSourceProvider(provider);
@@ -445,6 +499,18 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-4">
+            {/* Sistema de Notificações */}
+            <SistemaNotificacoes
+              alertas={alertas}
+              configAlertas={configAlertas}
+              colaboradores={colaboradores}
+              timeline={timeline}
+              onReconhecerAlerta={handleReconhecerAlerta}
+              onResolverAlerta={handleResolverAlerta}
+              onIgnorarAlerta={handleIgnorarAlerta}
+              onLimparResolvidos={handleLimparAlertasResolvidos}
+            />
+            
             <div className="text-right">
               <span className="text-xs font-bold text-slate-900 block leading-tight">{currentUser.nome}</span>
               <span className="text-[10px] text-slate-400 font-bold block">{currentUser.email}</span>

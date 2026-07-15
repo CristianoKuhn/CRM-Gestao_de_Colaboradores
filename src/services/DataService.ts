@@ -1490,6 +1490,50 @@ export class SupabaseDataService implements IDataService {
   ): Promise<string> {
     return this.localFallback.uploadFile(file, folderName, colaboradorNome);
   }
+
+  // P6: Gestão de Pessoas - Usa fallback local (dados não sincronizados com Google Sheets)
+  async getFerias(): Promise<Ferias[]> {
+    return this.localFallback.getFerias();
+  }
+  async saveFerias(ferias: Ferias): Promise<void> {
+    await this.localFallback.saveFerias(ferias);
+  }
+  async deleteFerias(id: string): Promise<void> {
+    await this.localFallback.deleteFerias(id);
+  }
+  async getDayOffs(): Promise<DayOff[]> {
+    return this.localFallback.getDayOffs();
+  }
+  async saveDayOff(dayoff: DayOff): Promise<void> {
+    await this.localFallback.saveDayOff(dayoff);
+  }
+  async deleteDayOff(id: string): Promise<void> {
+    await this.localFallback.deleteDayOff(id);
+  }
+  async getFolgas(): Promise<Folga[]> {
+    return this.localFallback.getFolgas();
+  }
+  async saveFolga(folga: Folga): Promise<void> {
+    await this.localFallback.saveFolga(folga);
+  }
+  async deleteFolga(id: string): Promise<void> {
+    await this.localFallback.deleteFolga(id);
+  }
+  async getPeriodosAquisitivos(): Promise<PeriodoAquisitivo[]> {
+    return this.localFallback.getPeriodosAquisitivos();
+  }
+  async savePeriodoAquisitivo(periodo: PeriodoAquisitivo): Promise<void> {
+    await this.localFallback.savePeriodoAquisitivo(periodo);
+  }
+  async deletePeriodoAquisitivo(id: string): Promise<void> {
+    await this.localFallback.deletePeriodoAquisitivo(id);
+  }
+  async getConfiguracaoGestaoPessoas(): Promise<ConfiguracaoGestaoPessoas> {
+    return this.localFallback.getConfiguracaoGestaoPessoas();
+  }
+  async saveConfiguracaoGestaoPessoas(config: ConfiguracaoGestaoPessoas): Promise<void> {
+    await this.localFallback.saveConfiguracaoGestaoPessoas(config);
+  }
 }
 
 // -----------------------------------------------------------------

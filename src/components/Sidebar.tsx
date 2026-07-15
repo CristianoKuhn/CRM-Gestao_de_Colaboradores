@@ -47,7 +47,7 @@ export default function Sidebar({
     { id: 'reconhecimento', label: 'Reconhecimento', icon: Trophy },
     { id: 'metas', label: 'Metas Liderança', icon: Target },
     { id: 'analytics', label: 'Analytics & PDIs', icon: BarChart3 },
-    { id: 'config', label: 'Configuração Banco', icon: Settings },
+    { id: 'config', label: 'Configurações Gerais', icon: Settings },
   ];
 
   return (

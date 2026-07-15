@@ -233,6 +233,22 @@ export default function App() {
     loadAllData();
   };
 
+  // Handlers para Update (Dashboard Admin)
+  const handleUpdateSetor = async (setor: Setor) => {
+    await DataService.saveSetor(setor);
+    loadAllData();
+  };
+
+  const handleUpdateCargo = async (cargo: Cargo) => {
+    await DataService.saveCargo(cargo);
+    loadAllData();
+  };
+
+  const handleUpdateLider = async (lider: Lider) => {
+    await DataService.saveLider(lider);
+    loadAllData();
+  };
+
   const handleAddOnboardingItem = async (item: OnboardingItem) => {
     await DataService.saveOnboardingItem(item);
     loadAllData();
@@ -656,6 +672,17 @@ export default function App() {
               onAddOnboardingItem={handleAddOnboardingItem}
               onDeleteOnboardingItem={handleDeleteOnboardingItem}
               currentUser={currentUser!}
+              empresas={empresas}
+              cargos={cargos}
+              lideres={lideres}
+              colaboradores={colaboradores}
+              onAddEmpresa={handleAddEmpresa}
+              onAddSetor={handleAddSetor}
+              onAddCargo={handleAddCargo}
+              onAddLider={handleAddLider}
+              onUpdateSetor={handleUpdateSetor}
+              onUpdateCargo={handleUpdateCargo}
+              onUpdateLider={handleUpdateLider}
             />
           )}
         </div>

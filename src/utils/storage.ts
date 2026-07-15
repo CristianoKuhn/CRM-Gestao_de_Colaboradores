@@ -43,6 +43,7 @@ const KEYS = {
   PROVIDER: 'gc_datasource_provider',
   ONBOARDING_ITEMS: 'gc_onboarding_items',
   ONBOARDING_CHECKLISTS: 'gc_onboarding_checklists',
+  AVALIACOES_EXPERIENCIA: 'gc_avaliacoes_experiencia',
   ALERTAS: 'gc_alertas_inteligentes',
   CONFIG_ALERTAS: 'gc_config_alertas',
   // P3: Documentos
@@ -653,6 +654,22 @@ export const StorageAPI = {
     if (index >= 0) lists[index] = checklist;
     else lists.push(checklist);
     set(KEYS.ONBOARDING_CHECKLISTS, lists);
+  },
+
+  // Avaliações de Experiência (15, 30, 60, 90 dias)
+  getAvaliacoesExperiencia: (): any[] => {
+    return get(KEYS.AVALIACOES_EXPERIENCIA) || [];
+  },
+  saveAvaliacaoExperiencia: (avaliacao: any) => {
+    const avaliacoes = StorageAPI.getAvaliacoesExperiencia();
+    const index = avaliacoes.findIndex((a) => a.id === avaliacao.id);
+    if (index >= 0) avaliacoes[index] = avaliacao;
+    else avaliacoes.push(avaliacao);
+    set(KEYS.AVALIACOES_EXPERIENCIA, avaliacoes);
+  },
+  deleteAvaliacaoExperiencia: (id: string) => {
+    const avaliacoes = StorageAPI.getAvaliacoesExperiencia().filter((a) => a.id !== id);
+    set(KEYS.AVALIACOES_EXPERIENCIA, avaliacoes);
   },
 
   // Resetar para valores padrão

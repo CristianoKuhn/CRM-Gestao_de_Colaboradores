@@ -87,6 +87,11 @@ export interface IDataService {
   getOnboardingChecklists(): Promise<OnboardingChecklist[]>;
   saveOnboardingChecklist(checklist: OnboardingChecklist): Promise<void>;
 
+  // Avaliações de Experiência (15, 30, 60, 90 dias)
+  getAvaliacoesExperiencia(): Promise<any[]>;
+  saveAvaliacaoExperiencia(avaliacao: any): Promise<void>;
+  deleteAvaliacaoExperiencia(id: string): Promise<void>;
+
   // Alertas Inteligentes
   getAlertasInteligentes(): Promise<AlertaInteligente[]>;
   saveAlertaInteligente(alerta: AlertaInteligente): Promise<void>;
@@ -203,6 +208,17 @@ export class LocalDataService implements IDataService {
   }
   async toggleTarefa(id: string): Promise<Tarefa | undefined> {
     return StorageAPI.toggleTarefa(id);
+  }
+
+  // Avaliações de Experiência
+  async getAvaliacoesExperiencia(): Promise<any[]> {
+    return StorageAPI.getAvaliacoesExperiencia();
+  }
+  async saveAvaliacaoExperiencia(avaliacao: any): Promise<void> {
+    StorageAPI.saveAvaliacaoExperiencia(avaliacao);
+  }
+  async deleteAvaliacaoExperiencia(id: string): Promise<void> {
+    StorageAPI.deleteAvaliacaoExperiencia(id);
   }
   
   // Alertas Inteligentes
@@ -834,6 +850,17 @@ export class GoogleScriptDataService implements IDataService {
     } catch (e) {}
   }
 
+  // Avaliações de Experiência
+  async getAvaliacoesExperiencia(): Promise<any[]> {
+    return this.localFallback.getAvaliacoesExperiencia();
+  }
+  async saveAvaliacaoExperiencia(avaliacao: any): Promise<void> {
+    await this.localFallback.saveAvaliacaoExperiencia(avaliacao);
+  }
+  async deleteAvaliacaoExperiencia(id: string): Promise<void> {
+    await this.localFallback.deleteAvaliacaoExperiencia(id);
+  }
+
   // Alertas Inteligentes (usando localStorage como fallback)
   async getAlertasInteligentes(): Promise<AlertaInteligente[]> {
     return this.localFallback.getAlertasInteligentes();
@@ -1303,6 +1330,17 @@ export class SupabaseDataService implements IDataService {
     await this.localFallback.saveOnboardingChecklist(checklist);
   }
 
+  // Avaliações de Experiência
+  async getAvaliacoesExperiencia(): Promise<any[]> {
+    return this.localFallback.getAvaliacoesExperiencia();
+  }
+  async saveAvaliacaoExperiencia(avaliacao: any): Promise<void> {
+    await this.localFallback.saveAvaliacaoExperiencia(avaliacao);
+  }
+  async deleteAvaliacaoExperiencia(id: string): Promise<void> {
+    await this.localFallback.deleteAvaliacaoExperiencia(id);
+  }
+
   // Alertas Inteligentes (usando localStorage como fallback)
   async getAlertasInteligentes(): Promise<AlertaInteligente[]> {
     return this.localFallback.getAlertasInteligentes();
@@ -1477,6 +1515,17 @@ class DynamicDataService implements IDataService {
   }
   async saveOnboardingChecklist(checklist: OnboardingChecklist): Promise<void> {
     await this.getService().saveOnboardingChecklist(checklist);
+  }
+
+  // Avaliações de Experiência
+  async getAvaliacoesExperiencia(): Promise<any[]> {
+    return this.getService().getAvaliacoesExperiencia();
+  }
+  async saveAvaliacaoExperiencia(avaliacao: any): Promise<void> {
+    await this.getService().saveAvaliacaoExperiencia(avaliacao);
+  }
+  async deleteAvaliacaoExperiencia(id: string): Promise<void> {
+    await this.getService().deleteAvaliacaoExperiencia(id);
   }
 
   // Alertas Inteligentes

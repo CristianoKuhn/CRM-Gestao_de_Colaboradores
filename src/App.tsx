@@ -20,6 +20,7 @@ import {
   Usuario,
   OnboardingItem,
   OnboardingChecklist,
+  AvaliacaoExperiencia,
   Documento,
   Reconhecimento,
   ConfiguracaoReconhecimento,
@@ -201,9 +202,42 @@ export default function App() {
     loadAllData();
   };
 
-  // Sincronizar ao criar colaborador
+  // Sincronizar ao criar colaborador - com auto onboarding e avaliações de experiência
   const handleAddColaborador = async (col: Colaborador) => {
     await DataService.saveColaborador(col);
+
+    // Gerar Onboarding Checklist baseado nos itens configurados para o setor
+    const onboardingItems = await DataService.getOnboardingItems();
+    const itensDoSetor = onboardingItems.filter(item => item.setorIds.includes(col.setorId));
+    
+    if (itensDoSetor.length > 0) {
+      const checklist: OnboardingChecklist = {
+        id: `oc-${Date.now()}`,
+        colaboradorId: col.id,
+        itemsConcluidos: [],
+        dataCriacao: new Date().toISOString(),
+      };
+      await DataService.saveOnboardingChecklist(checklist);
+    }
+
+    // Gerar Avaliações de Experiência (15, 30, 60, 90 dias)
+    const dataAdmissao = new Date(col.dataAdmissao);
+    const diasAvaliacoes = [15, 30, 60, 90];
+    
+    for (const dias of diasAvaliacoes) {
+      const dataVencimento = new Date(dataAdmissao);
+      dataVencimento.setDate(dataVencimento.getDate() + dias);
+      
+      const avaliacao: AvaliacaoExperiencia = {
+        id: `av-${col.id}-${dias}`,
+        colaboradorId: col.id,
+        dias,
+        dataVencimento: dataVencimento.toISOString().split('T')[0],
+        status: 'pendente',
+      };
+      await DataService.saveAvaliacaoExperiencia(avaliacao);
+    }
+
     loadAllData();
   };
 

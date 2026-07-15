@@ -104,6 +104,18 @@ export interface OnboardingChecklist {
   dataCriacao: string;
 }
 
+// Avaliação de Período de Experiência (15, 30, 60, 90 dias)
+export interface AvaliacaoExperiencia {
+  id: string;
+  colaboradorId: string;
+  dias: number; // 15, 30, 60 ou 90
+  dataVencimento: string;
+  status: 'pendente' | 'aprovado' | 'reprovado';
+  resultado?: string;
+  dataRealizacao?: string;
+  observacoes?: string;
+}
+
 export interface Tarefa {
   id: string;
   colaboradorId: string;

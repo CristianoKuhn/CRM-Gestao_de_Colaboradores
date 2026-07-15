@@ -83,6 +83,7 @@ export default function Colaboradores({
   const [newCidadeBase, setNewCidadeBase] = useState('');
   const [newPrazoAvaliacao180, setNewPrazoAvaliacao180] = useState<number>(6);
   const [newRealizarExperiencia, setNewRealizarExperiencia] = useState<boolean>(true);
+  const [newColNascimento, setNewColNascimento] = useState('');
 
   const photoInputRef = React.useRef<HTMLInputElement>(null);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
@@ -166,6 +167,7 @@ export default function Colaboradores({
       prazoAvaliacao180: Number(newPrazoAvaliacao180 || 6),
       realizarExperiencia: newRealizarExperiencia,
       avaliacoesCompletas: [],
+      dataNascimento: newColNascimento,
     };
 
     onAddColaborador(novoCol);
@@ -179,6 +181,7 @@ export default function Colaboradores({
     setNewCidadeBase('');
     setNewPrazoAvaliacao180(6);
     setNewRealizarExperiencia(true);
+    setNewColNascimento('');
   };
 
   const handleCreateAux = (e: React.FormEvent) => {
@@ -549,6 +552,15 @@ export default function Colaboradores({
                     required
                     value={newColAdmissao}
                     onChange={(e) => setNewColAdmissao(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 cursor-pointer"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Data de Nascimento</label>
+                  <input
+                    type="date"
+                    value={newColNascimento}
+                    onChange={(e) => setNewColNascimento(e.target.value)}
                     className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 cursor-pointer"
                   />
                 </div>

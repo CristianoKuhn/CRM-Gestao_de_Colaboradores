@@ -141,6 +141,11 @@ export default function App() {
     loadAllData();
   };
 
+  const handleDeleteColaborador = async (id: string) => {
+    await DataService.deleteColaborador(id);
+    loadAllData();
+  };
+
   // Métodos rápidos para entidades auxiliares
   const handleAddEmpresa = async (nome: string) => {
     await DataService.saveEmpresa({ id: `emp-${Date.now()}`, nome });
@@ -395,6 +400,9 @@ export default function App() {
                 onAddSetor={handleAddSetor}
                 onAddCargo={handleAddCargo}
                 onAddLider={handleAddLider}
+                onUpdateColaborador={handleUpdateColaborador}
+                onDeleteColaborador={handleDeleteColaborador}
+                currentUser={currentUser}
                 preselectedFilters={preselectedFilters}
               />
             )

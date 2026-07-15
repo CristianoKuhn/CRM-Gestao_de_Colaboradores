@@ -65,6 +65,7 @@ export interface IDataService {
   saveCargo(cargo: Cargo): Promise<void>;
   saveLider(lider: Lider): Promise<void>;
   saveColaborador(colaborador: Colaborador): Promise<void>;
+  deleteColaborador(id: string): Promise<void>;
   saveTimelineRegistro(registro: TimelineRegistro): Promise<void>;
   saveTarefa(tarefa: Tarefa): Promise<void>;
   toggleTarefa(id: string): Promise<Tarefa | undefined>;
@@ -129,6 +130,9 @@ export class LocalDataService implements IDataService {
   }
   async saveColaborador(colaborador: Colaborador): Promise<void> {
     StorageAPI.saveColaborador(colaborador);
+  }
+  async deleteColaborador(id: string): Promise<void> {
+    StorageAPI.deleteColaborador(id);
   }
   async saveTimelineRegistro(registro: TimelineRegistro): Promise<void> {
     StorageAPI.saveTimelineRegistro(registro);
@@ -481,6 +485,7 @@ export class GoogleScriptDataService implements IDataService {
       prazo_avaliacao_180: colaborador.prazoAvaliacao180 ?? 6,
       realizar_experiencia: colaborador.realizarExperiencia ?? true,
       avaliacoes_completas: colaborador.avaliacoesCompletas || [],
+      data_nascimento: colaborador.dataNascimento || '',
     };
 
     try {
@@ -495,6 +500,15 @@ export class GoogleScriptDataService implements IDataService {
           console.warn('Erro ao sincronizar colaborador com GoogleScript (usando fallback local):', err3);
         }
       }
+    }
+  }
+
+  async deleteColaborador(id: string): Promise<void> {
+    await this.localFallback.deleteColaborador(id);
+    try {
+      await this.request('deleteColaborador', { id });
+    } catch (err) {
+      console.warn('Erro ao excluir colaborador no GoogleScript (usando fallback local):', err);
     }
   }
 
@@ -650,7 +664,7 @@ export class GoogleScriptDataService implements IDataService {
       const raw = await this.request<any[]>('getOnboardingItems');
       return raw.map(i => ({
         id: String(i.id || ''),
-        setorId: String(i.setor_id || i.setorId || ''),
+        setorIds: typeof i.setor_ids === 'string' ? JSON.parse(i.setor_ids) : (i.setorIds || [i.setorId || i.setor_id]),
         titulo: String(i.titulo || ''),
         descricao: String(i.descricao || ''),
       }));
@@ -661,12 +675,12 @@ export class GoogleScriptDataService implements IDataService {
   async saveOnboardingItem(item: OnboardingItem): Promise<void> {
     await this.localFallback.saveOnboardingItem(item);
     try {
-      const body = {
-        id: item.id,
-        setor_id: item.setorId,
-        titulo: item.titulo,
-        descricao: item.descricao,
-      };
+    const body = {
+      id: item.id,
+      setor_ids: JSON.stringify(item.setorIds),
+      titulo: item.titulo,
+      descricao: item.descricao,
+    };
       await this.request('saveOnboardingItem', { data: body });
     } catch (e) {}
   }
@@ -942,10 +956,23 @@ export class SupabaseDataService implements IDataService {
           situacao: colaborador.situacao,
           empresa_id: colaborador.empresaId,
           telefone: colaborador.telefone,
+          avaliacoes_completas: JSON.stringify(colaborador.avaliacoesCompletas || []),
+          data_nascimento: colaborador.dataNascimento || ''
         };
         await this.request('colaboradores', 'POST', body);
       } catch (e) {
         console.error('Erro ao sincronizar colaborador com Supabase:', e);
+      }
+    }
+  }
+
+  async deleteColaborador(id: string): Promise<void> {
+    await this.localFallback.deleteColaborador(id);
+    if (this.config.supabaseUrl) {
+      try {
+        await this.request(`colaboradores?id=eq.${id}`, 'DELETE');
+      } catch (e) {
+        console.error('Erro ao excluir colaborador no Supabase:', e);
       }
     }
   }
@@ -1138,6 +1165,9 @@ class DynamicDataService implements IDataService {
   }
   async saveColaborador(colaborador: Colaborador): Promise<void> {
     await this.getService().saveColaborador(colaborador);
+  }
+  async deleteColaborador(id: string): Promise<void> {
+    await this.getService().deleteColaborador(id);
   }
   async saveTimelineRegistro(registro: TimelineRegistro): Promise<void> {
     await this.getService().saveTimelineRegistro(registro);

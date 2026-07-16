@@ -112,6 +112,10 @@ export default function Dashboard({
 }: DashboardProps) {
   const HOJE = getDataAtual();
   const ANO_ATUAL = HOJE.getFullYear();
+  
+  // Data de início do processo: janeiro de 2026
+  // Colaboradores admitidos antes desta data não terão avaliação 180° retroativa
+  const DATA_INICIO_PROCESSO = new Date('2026-01-01');
 
   // Estados para alertas inteligentes
   const [alertas, setAlertas] = useState<AlertaInteligente[]>([]);
@@ -259,6 +263,11 @@ export default function Dashboard({
       if (col.situacao === 'Desligado' || col.realizarExperiencia === false) continue;
 
       const dataAdmissao = new Date(col.dataAdmissao);
+      
+      // Ignorar colaboradores admitidos antes de janeiro de 2026
+      // (data de início do processo de avaliação 180°)
+      if (dataAdmissao < DATA_INICIO_PROCESSO) continue;
+
       const prazoMeses = col.prazoAvaliacao180 || 6;
       const dataAvaliacao180 = new Date(dataAdmissao);
       dataAvaliacao180.setMonth(dataAvaliacao180.getMonth() + prazoMeses);
@@ -415,7 +424,8 @@ export default function Dashboard({
       if (isNaN(admissao.getTime())) return;
 
       // Período de Experiência (15, 30, 60, 90 dias)
-      if (col.realizarExperiencia !== false) {
+      // Apenas para colaboradores admitidos a partir de janeiro de 2026
+      if (col.realizarExperiencia !== false && admissao >= DATA_INICIO_PROCESSO) {
         const milestones = [15, 30, 60, 90];
         milestones.forEach((days) => {
           const completed = col.avaliacoesCompletas?.includes(String(days));
@@ -441,26 +451,28 @@ export default function Dashboard({
         });
       }
 
-      // Avaliação 180º
-      const prazoMeses = col.prazoAvaliacao180 || 6;
-      const completed180 = col.avaliacoesCompletas?.includes('180');
-      if (!completed180) {
-        const dueDate180 = new Date(admissao);
-        dueDate180.setMonth(dueDate180.getMonth() + prazoMeses);
+      // Avaliação 180º - Apenas para colaboradores admitidos a partir de janeiro de 2026
+      if (admissao >= DATA_INICIO_PROCESSO) {
+        const prazoMeses = col.prazoAvaliacao180 || 6;
+        const completed180 = col.avaliacoesCompletas?.includes('180');
+        if (!completed180) {
+          const dueDate180 = new Date(admissao);
+          dueDate180.setMonth(dueDate180.getMonth() + prazoMeses);
 
-        const diffTime180 = dueDate180.getTime() - HOJE.getTime();
-        const diffDays180 = Math.ceil(diffTime180 / (1000 * 60 * 60 * 24));
+          const diffTime180 = dueDate180.getTime() - HOJE.getTime();
+          const diffDays180 = Math.ceil(diffTime180 / (1000 * 60 * 60 * 24));
 
-        if (diffDays180 <= 30) {
-          list.push({
-            id: `${col.id}-180`,
-            colaborador: col,
-            milestone: '180',
-            titulo: `Avaliação 180º (${prazoMeses} Meses)`,
-            prazoData: dueDate180.toISOString().split('T')[0],
-            atrasado: diffDays180 < 0,
-            diasRestantes: diffDays180,
-          });
+          if (diffDays180 <= 30) {
+            list.push({
+              id: `${col.id}-180`,
+              colaborador: col,
+              milestone: '180',
+              titulo: `Avaliação 180º (${prazoMeses} Meses)`,
+              prazoData: dueDate180.toISOString().split('T')[0],
+              atrasado: diffDays180 < 0,
+              diasRestantes: diffDays180,
+            });
+          }
         }
       }
     });

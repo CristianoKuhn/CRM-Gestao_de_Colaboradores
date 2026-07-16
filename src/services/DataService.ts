@@ -387,16 +387,18 @@ export class GoogleScriptDataService implements IDataService {
   }
 
   private async request<T>(action: string, payload?: any): Promise<T> {
-    const url = new URL('/api/googlescript', window.location.origin);
+    // URL padrão do Google Apps Script
+    const DEFAULT_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbz8iGKX9f9VNECQL1fcQttiMaEuT3a61YS3hE3HYi13SUvx3ShxF3RF69u7LkQhac0V/exec';
+    
+    // Usa a URL configurada ou a padrão
+    const webAppUrl = this.config.webAppUrl || DEFAULT_WEBAPP_URL;
+    
+    const url = new URL(webAppUrl);
     url.searchParams.set('action', action);
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     };
-
-    if (this.config.webAppUrl) {
-      headers['x-google-script-url'] = this.config.webAppUrl;
-    }
 
     const options: RequestInit = {
       method: payload ? 'POST' : 'GET',

@@ -747,6 +747,20 @@ export default function GestaoPessoas({
   const handleSalvarFerias = async (feriasData: Ferias) => {
     await DataService.saveFerias(feriasData);
     
+    // Criar registro na timeline automaticamente
+    const novoRegistro: TimelineRegistro = {
+      id: `tl-ferias-${Date.now()}`,
+      colaboradorId: feriasData.colaboradorId,
+      tipo: 'ferias_planejadas',
+      titulo: `Férias Planejadas: ${feriasData.dias} dias`,
+      descricao: `Período de ${new Date(feriasData.dataInicio).toLocaleDateString('pt-BR')} a ${new Date(feriasData.dataFim).toLocaleDateString('pt-BR')}`,
+      data: feriasData.dataInicio,
+      dataFim: feriasData.dataFim,
+      createdAt: new Date().toISOString(),
+      createdBy: currentUserId,
+    };
+    await DataService.saveTimelineRegistro(novoRegistro);
+    
     // Atualizar período aquisitivo
     const periodo = periodosAquisitivos.find(p => p.id === feriasData.periodoAquisitivoId);
     if (periodo) {

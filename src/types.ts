@@ -60,6 +60,8 @@ export type TipoRegistro =
   | 'Reclamação de Cliente'
   | 'Observação Geral'
   | 'Acompanhamento'
+  | 'Férias Planejadas'
+  | 'Férias Gozadas'
   | 'Outros';
 
 export type PrioridadeRegistro = 'Baixa' | 'Média' | 'Alta' | 'Crítica';

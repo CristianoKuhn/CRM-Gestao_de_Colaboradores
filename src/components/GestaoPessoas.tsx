@@ -159,6 +159,196 @@ function getMesesDoAno(): string[] {
 }
 
 // ==========================================
+// FUNÇÕES DE REGRAS DE FÉRIAS
+// ==========================================
+
+// Feriados brasileiros (fixos e moveis aproximados)
+function getFeriadosBrasil(ano: number): Date[] {
+  const pascoa = calcularPascoa(ano);
+  return [
+    new Date(ano, 0, 1),   // Ano Novo
+    new Date(ano, 0, 25),  // São Paulo (ou 21/04 para Tiradentes)
+    new Date(ano, 3, 21),  // Tiradentes
+    new Date(ano, 3, 1),   // Dia do Trabalho
+    new Date(ano, 8, 7),   // Independência
+    new Date(ano, 9, 12),   // Nossa Senhora Aparecida
+    new Date(ano, 10, 2),  // Finados
+    new Date(ano, 10, 15), // Proclamação da República
+    new Date(ano, 11, 25), // Natal
+    // Carnaval (sexta antes da Páscoa)
+    new Date(pascoa.getTime() - 2 * 24 * 60 * 60 * 1000),
+    new Date(pascoa.getTime() - 1 * 24 * 60 * 60 * 1000),
+    // Paixão de Cristo (sexta Santa)
+    new Date(pascoa.getTime() - 0 * 24 * 60 * 60 * 1000),
+  ];
+}
+
+function calcularPascoa(ano: number): Date {
+  const a = ano % 19;
+  const b = Math.floor(ano / 100);
+  const c = ano % 100;
+  const d = Math.floor(b / 4);
+  const e = b % 4;
+  const f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4);
+  const k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const mes = Math.floor((h + l - 7 * m + 114) / 30);
+  const dia = ((h + l - 7 * m + 114) % 30) + 1;
+  return new Date(ano, mes - 1, dia);
+}
+
+function isFimDeSemana(data: Date): boolean {
+  const diaSemana = data.getDay();
+  return diaSemana === 0 || diaSemana === 6;
+}
+
+function isFeriado(data: Date, ano: number): boolean {
+  const feriados = getFeriadosBrasil(ano);
+  const dataStr = data.toISOString().split('T')[0];
+  return feriados.some(f => f.toISOString().split('T')[0] === dataStr);
+}
+
+function isProximoFeriado(data: Date, ano: number, margemDias: number = 2): boolean {
+  const feriados = getFeriadosBrasil(ano);
+  const dataTime = data.getTime();
+  return feriados.some(f => {
+    const diff = Math.abs(f.getTime() - dataTime);
+    return diff <= margemDias * 24 * 60 * 60 * 1000;
+  });
+}
+
+function getProximoDiaUtil(data: Date, direção: 'proximo' | 'anterior' = 'proximo'): Date {
+  let novaData = new Date(data);
+  while (isFimDeSemana(novaData)) {
+    novaData.setDate(novaData.getDate() + (direção === 'proximo' ? 1 : -1));
+  }
+  return novaData;
+}
+
+function getDatasBloqueadasFerias(dataInicio: Date, dias: number, ano: number): { valida: boolean; motivo?: string } {
+  const inicio = new Date(dataInicio);
+  const fim = new Date(dataInicio);
+  fim.setDate(fim.getDate() + dias - 1);
+  
+  // Verificar início
+  if (isFimDeSemana(inicio)) {
+    return { valida: false, motivo: 'Início não pode ser em fim de semana' };
+  }
+  if (isProximoFeriado(inicio, ano)) {
+    return { valida: false, motivo: 'Início muito próximo de feriado' };
+  }
+  
+  // Verificar fim
+  if (isFimDeSemana(fim)) {
+    return { valida: false, motivo: 'Fim não pode ser em fim de semana' };
+  }
+  if (isProximoFeriado(fim, ano)) {
+    return { valida: false, motivo: 'Fim muito próximo de feriado' };
+  }
+  
+  // Verificar se atravessa feriado no meio
+  const feriados = getFeriadosBrasil(ano);
+  for (let i = 0; i < dias; i++) {
+    const dataAtual = new Date(inicio);
+    dataAtual.setDate(dataAtual.getDate() + i);
+    const dataStr = dataAtual.toISOString().split('T')[0];
+    if (feriados.some(f => f.toISOString().split('T')[0] === dataStr)) {
+      return { valida: false, motivo: 'Período inclui feriado(s)' };
+    }
+  }
+  
+  return { valida: true };
+}
+
+interface SugestaoFerias {
+  dataInicio: Date;
+  dataFim: Date;
+  dias: number;
+  pontuacao: number;
+  motivo: string;
+}
+
+function gerarSugestoesFerias(
+  colaborador: Colaborador,
+  diasDisponiveis: number,
+  setor: Setor | undefined,
+  colaboradoresSetor: Colaborador[],
+  feriasExistentes: Ferias[],
+  ano: number
+): SugestaoFerias[] {
+  const sugestoes: SugestaoFerias[] = [];
+  const hoje = new Date();
+  
+  // Encontrar colaboradores do setor que já têm férias marcadas
+  const feriasSetor = feriasExistentes.filter(f => {
+    const col = colaboradoresSetor.find(c => c.id === f.colaboradorId);
+    return col && f.status !== 'cancelada' && new Date(f.dataInicio).getFullYear() === ano;
+  });
+  
+  // Meses ideais para férias (evitando picos)
+  const mesesIdeais = [2, 3, 4, 5, 9, 10, 11]; // Fora do verão e dezembro
+  
+  for (const mes of mesesIdeais) {
+    for (let dia = 1; dia <= 28; dia += 7) {
+      const dataTeste = new Date(ano, mes, dia);
+      
+      if (dataTeste <= hoje) continue;
+      
+      for (let duracao = 10; duracao <= Math.min(diasDisponiveis, 20); duracao += 5) {
+        const validacao = getDatasBloqueadasFerias(dataTeste, duracao, ano);
+        
+        if (!validacao.valida) continue;
+        
+        // Verificar se há conflito com outros do setor
+        const dataFim = new Date(dataTeste);
+        dataFim.setDate(dataFim.getDate() + duracao - 1);
+        
+        const conflitos = feriasSetor.filter(f => {
+          const inicio = new Date(f.dataInicio);
+          const fim = new Date(f.dataFim);
+          return (dataTeste <= fim && dataFim >= inicio);
+        });
+        
+        let pontuacao = 100;
+        
+        // Penalizar se houver conflitos
+        pontuacao -= conflitos.length * 30;
+        
+        // Bonificar se for no meio da semana
+        const inicioUtil = getProximoDiaUtil(dataTeste, 'proximo');
+        if (inicioUtil.getDay() === 1) pontuacao += 10; // Segunda
+        if (inicioUtil.getDay() === 5) pontuacao += 5;  // Sexta
+        
+        // Bonificar se for fora da alta temporada
+        if (![0, 6, 11].includes(mes)) pontuacao += 15;
+        
+        // Penalizar se muito curto
+        if (duracao < 10) pontuacao -= 10;
+        
+        if (pontuacao > 30) {
+          sugestoes.push({
+            dataInicio: dataTeste,
+            dataFim: dataFim,
+            dias: duracao,
+            pontuacao,
+            motivo: conflitos.length > 0 
+              ? `${conflitos.length} colega(s) do setor em férias neste período`
+              : 'Período recomendado',
+          });
+        }
+      }
+    }
+  }
+  
+  // Ordenar por pontuação
+  return sugestoes.sort((a, b) => b.pontuacao - a.pontuacao).slice(0, 5);
+}
+
+// ==========================================
 // COMPONENTE PRINCIPAL
 // ==========================================
 interface GestaoPessoasProps {
@@ -170,6 +360,7 @@ interface GestaoPessoasProps {
   reconhecimentos: Reconhecimento[];
   avaliacoesExperiencia: AvaliacaoExperiencia[];
   currentUserId: string;
+  onSelectColaborador?: (id: string) => void;
 }
 
 export default function GestaoPessoas({
@@ -181,6 +372,7 @@ export default function GestaoPessoas({
   reconhecimentos,
   avaliacoesExperiencia,
   currentUserId,
+  onSelectColaborador,
 }: GestaoPessoasProps) {
   const [subTab, setSubTab] = useState<SubTab>('dashboard');
   const [ferias, setFerias] = useState<Ferias[]>([]);
@@ -199,6 +391,24 @@ export default function GestaoPessoas({
   const [showModal, setShowModal] = useState(false);
   const [modalType, setModalType] = useState<'ferias' | 'dayoff' | 'folga'>('ferias');
   const [selectedColaborador, setSelectedColaborador] = useState<string | null>(null);
+  
+  // Detalhe de colaborador selecionado
+  const [colaboradorDetalhe, setColaboradorDetalhe] = useState<Colaborador | null>(null);
+  
+  // Lista de anos disponíveis (baseado na primeira admissão)
+  const anosDisponiveis = useMemo(() => {
+    const anos = new Set<number>();
+    anos.add(ANO_ATUAL);
+    
+    colaboradores.forEach(col => {
+      const dataAdmissao = new Date(col.dataAdmissao);
+      for (let ano = dataAdmissao.getFullYear(); ano <= ANO_ATUAL + 2; ano++) {
+        anos.add(ano);
+      }
+    });
+    
+    return Array.from(anos).sort((a, b) => a - b);
+  }, [colaboradores]);
 
   // Carregar dados
   useEffect(() => {
@@ -223,6 +433,18 @@ export default function GestaoPessoas({
   // ==========================================
   // CÁLCULOS E DERIVAÇÕES
   // ==========================================
+  
+  // Selecionar colaborador para ver detalhes
+  const handleSelectColaborador = (colaborador: Colaborador) => {
+    setColaboradorDetalhe(colaborador);
+  };
+  
+  // Colaborador selecionado para modal de cadastro
+  const handlePlanejarFerias = (colaborador: Colaborador) => {
+    setSelectedColaborador(colaborador.id);
+    setModalType('ferias');
+    setShowModal(true);
+  };
   
   // Alertas inteligentes
   const alertas = useMemo<AlertaGestaoPessoas[]>(() => {
@@ -733,66 +955,159 @@ export default function GestaoPessoas({
         )}
       </div>
 
-      {/* Visão rápida de colaboradores */}
+      {/* Visão Macro: Setores com Previsão de Férias */}
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
         <h3 className="text-sm font-bold text-slate-900 mb-4 flex items-center gap-2">
-          <Users size={16} className="text-teal-500" />
-          Visão Geral dos Colaboradores
+          <LayoutDashboard size={16} className="text-teal-500" />
+          Visão Macro: Previsão de Férias por Setor
         </h3>
         
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b border-slate-100">
-                <th className="text-left py-2 px-3 font-semibold text-slate-500 uppercase tracking-wider">Colaborador</th>
-                <th className="text-left py-2 px-3 font-semibold text-slate-500 uppercase tracking-wider">Tempo Empresa</th>
-                <th className="text-left py-2 px-3 font-semibold text-slate-500 uppercase tracking-wider">Férias</th>
-                <th className="text-left py-2 px-3 font-semibold text-slate-500 uppercase tracking-wider">DayOff</th>
-                <th className="text-left py-2 px-3 font-semibold text-slate-500 uppercase tracking-wider">Próximo Aniv.</th>
-              </tr>
-            </thead>
-            <tbody>
-              {colaboradores.filter(c => c.situacao !== 'Desligado').slice(0, 8).map(col => {
-                const tempo = calcularTempoDeEmpresa(col.dataAdmissao);
-                const periodoAtivo = periodosAquisitivos.find(p => p.colaboradorId === col.id && p.status === 'ativo');
-                const diasFerias = periodoAtivo ? periodoAtivo.diasDisponiveis - periodoAtivo.diasUsados : 0;
-                const dayoff = dayOffs.find(d => d.colaboradorId === col.id && d.ano === ANO_ATUAL && d.status === 'disponivel');
-                const proximoAniv = calcularProximoAniversario(col.dataNascimento);
-                
-                return (
-                  <tr key={col.id} className="border-b border-slate-50 hover:bg-slate-50">
-                    <td className="py-3 px-3">
-                      <div className="flex items-center gap-2">
-                        <img src={col.fotoUrl} alt={col.nome} className="w-6 h-6 rounded-full object-cover" />
-                        <div>
-                          <p className="font-semibold text-slate-800">{col.nome}</p>
-                          <p className="text-[10px] text-slate-400">{cargos.find(c => c.id === col.cargoId)?.nome}</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="py-3 px-3 text-slate-600">{tempo.texto}</td>
-                    <td className="py-3 px-3">
-                      <span className={`font-semibold ${diasFerias > 0 ? 'text-emerald-600' : 'text-slate-400'}`}>
-                        {diasFerias} dias
-                      </span>
-                    </td>
-                    <td className="py-3 px-3">
-                      {dayoff ? (
-                        <span className="text-violet-600 font-semibold">Disponível</span>
-                      ) : (
-                        <span className="text-slate-400">Utilizado</span>
-                      )}
-                    </td>
-                    <td className="py-3 px-3 text-slate-600">
-                      {proximoAniv ? `${proximoAniv.diasRestantes}d` : '-'}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {setores.map(setor => {
+            const colsSetor = colaboradores.filter(c => c.setorId === setor.id && c.situacao !== 'Desligado');
+            const colsComFerias = colsSetor.filter(col => {
+              const periodo = periodosAquisitivos.find(p => p.colaboradorId === col.id && p.status === 'ativo');
+              return periodo && (periodo.diasDisponiveis - periodo.diasUsados) > 0;
+            });
+            
+            return (
+              <div 
+                key={setor.id}
+                onClick={() => setFiltroSetor(setor.id)}
+                className="p-4 border border-slate-100 rounded-xl hover:border-teal-200 hover:bg-teal-50/20 cursor-pointer transition"
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="font-semibold text-slate-800 text-sm">{setor.nome}</h4>
+                  <span className="text-xs text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">
+                    {colsSetor.length} cols
+                  </span>
+                </div>
+                <div className="space-y-1">
+                  <div className="flex justify-between text-[11px]">
+                    <span className="text-slate-500">Com férias pendentes:</span>
+                    <span className="font-semibold text-amber-600">{colsComFerias.length}</span>
+                  </div>
+                  <div className="flex justify-between text-[11px]">
+                    <span className="text-slate-500">Férias agendadas:</span>
+                    <span className="font-semibold text-emerald-600">
+                      {ferias.filter(f => {
+                        const col = colsSetor.find(c => c.id === f.colaboradorId);
+                        return col && f.status !== 'cancelada' && new Date(f.dataInicio).getFullYear() === ANO_ATUAL;
+                      }).length}
+                    </span>
+                  </div>
+                </div>
+                <div className="mt-3 flex -space-x-1">
+                  {colsSetor.slice(0, 4).map(col => (
+                    <img 
+                      key={col.id} 
+                      src={col.fotoUrl} 
+                      alt={col.nome} 
+                      className="w-6 h-6 rounded-full border-2 border-white object-cover"
+                      title={col.nome}
+                    />
+                  ))}
+                  {colsSetor.length > 4 && (
+                    <span className="w-6 h-6 rounded-full bg-slate-200 border-2 border-white text-[9px] font-bold text-slate-600 flex items-center justify-center">
+                      +{colsSetor.length - 4}
+                    </span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
+
+      {/* Visão Micro: Colaborador Selecionado Detalhadamente */}
+      {colaboradorDetalhe ? (
+        <ColaboradorDetalheCard
+          colaborador={colaboradorDetalhe}
+          setor={setores.find(s => s.id === colaboradorDetalhe.setorId)}
+          cargo={cargos.find(c => c.id === colaboradorDetalhe.cargoId)}
+          periodoAtivo={periodosAquisitivos.find(p => p.colaboradorId === colaboradorDetalhe.id && p.status === 'ativo')}
+          prazoMaximoFerias={calcularPrazoMaximoFerias(colaboradorDetalhe.dataAdmissao)}
+          sugestoesFerias={gerarSugestoesFerias(
+            colaboradorDetalhe,
+            (periodosAquisitivos.find(p => p.colaboradorId === colaboradorDetalhe.id && p.status === 'ativo')?.diasDisponiveis || 0) - 
+            (periodosAquisitivos.find(p => p.colaboradorId === colaboradorDetalhe.id && p.status === 'ativo')?.diasUsados || 0),
+            setores.find(s => s.id === colaboradorDetalhe.setorId),
+            colaboradores.filter(c => c.setorId === colaboradorDetalhe.setorId),
+            ferias,
+            ANO_ATUAL
+          )}
+          dayoff={dayOffs.find(d => d.colaboradorId === colaboradorDetalhe.id && d.ano === ANO_ATUAL)}
+          onClose={() => setColaboradorDetalhe(null)}
+          onPlanejarFerias={() => handlePlanejarFerias(colaboradorDetalhe)}
+          onVerCompleto={() => onSelectColaborador?.(colaboradorDetalhe.id)}
+        />
+      ) : (
+        /* Lista clicável de colaboradores */
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
+          <h3 className="text-sm font-bold text-slate-900 mb-4 flex items-center gap-2">
+            <Users size={16} className="text-teal-500" />
+            Visão Micro: Colaboradores - Clique para ver detalhes
+          </h3>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+            {colaboradores.filter(c => c.situacao !== 'Desligado').map(col => {
+              const tempo = calcularTempoDeEmpresa(col.dataAdmissao);
+              const prazoFerias = calcularPrazoMaximoFerias(col.dataAdmissao);
+              const periodoAtivo = periodosAquisitivos.find(p => p.colaboradorId === col.id && p.status === 'ativo');
+              const diasFerias = periodoAtivo ? periodoAtivo.diasDisponiveis - periodoAtivo.diasUsados : 0;
+              const dayoff = dayOffs.find(d => d.colaboradorId === col.id && d.ano === ANO_ATUAL);
+              const proximoAniv = calcularProximoAniversario(col.dataNascimento);
+              
+              return (
+                <div 
+                  key={col.id}
+                  onClick={() => handleSelectColaborador(col)}
+                  className="p-3 border border-slate-100 rounded-xl hover:border-teal-300 hover:bg-teal-50/30 cursor-pointer transition group"
+                >
+                  <div className="flex items-center gap-3 mb-2">
+                    <img src={col.fotoUrl} alt={col.nome} className="w-10 h-10 rounded-full object-cover" />
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-slate-800 text-xs truncate">{col.nome}</p>
+                      <p className="text-[10px] text-slate-400 truncate">{setores.find(s => s.id === col.setorId)?.nome}</p>
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-1 text-[10px]">
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Tempo:</span>
+                      <span className="text-slate-600 font-medium">{tempo.texto}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Férias:</span>
+                      <span className={`font-medium ${diasFerias > 0 ? 'text-emerald-600' : 'text-slate-400'}`}>
+                        {diasFerias} dias
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Prazo máx:</span>
+                      <span className={`font-medium ${prazoFerias.diasRestantes < 90 ? 'text-rose-600' : 'text-slate-600'}`}>
+                        {prazoFerias.diasRestantes}d
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">DayOff:</span>
+                      {dayoff ? (
+                        <span className="text-violet-600 font-medium">Agendado</span>
+                      ) : (
+                        <span className="text-amber-500 font-medium">Pendente</span>
+                      )}
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Aniversário:</span>
+                      <span className="text-slate-600 font-medium">{proximoAniv?.diasRestantes}d</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 
@@ -991,9 +1306,9 @@ export default function GestaoPessoas({
             <select
               value={filtroAno}
               onChange={e => setFiltroAno(parseInt(e.target.value))}
-              className="text-xs border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:border-teal-500"
+              className="text-xs border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:border-teal-500 bg-white"
             >
-              {[ANO_ATUAL - 1, ANO_ATUAL, ANO_ATUAL + 1].map(ano => (
+              {anosDisponiveis.map(ano => (
                 <option key={ano} value={ano}>{ano}</option>
               ))}
             </select>
@@ -1001,7 +1316,7 @@ export default function GestaoPessoas({
             <select
               value={filtroSetor ?? ''}
               onChange={e => setFiltroSetor(e.target.value || null)}
-              className="text-xs border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:border-teal-500"
+              className="text-xs border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:border-teal-500 bg-white"
             >
               <option value="">Todos os setores</option>
               {setores.map(setor => (
@@ -1712,6 +2027,181 @@ function ModalCadastro({ type, colaboradores, periodosAquisitivos, onSave, onClo
             Salvar
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ==========================================
+// COMPONENTE: CARD DE DETALHE DO COLABORADOR
+// ==========================================
+interface ColaboradorDetalheCardProps {
+  colaborador: Colaborador;
+  setor?: Setor;
+  cargo?: Cargo;
+  periodoAtivo?: PeriodoAquisitivo;
+  prazoMaximoFerias: { data: string; diasRestantes: number };
+  sugestoesFerias: SugestaoFerias[];
+  dayoff?: DayOff;
+  onClose: () => void;
+  onPlanejarFerias: () => void;
+  onVerCompleto: () => void;
+}
+
+function ColaboradorDetalheCard({
+  colaborador,
+  setor,
+  cargo,
+  periodoAtivo,
+  prazoMaximoFerias,
+  sugestoesFerias,
+  dayoff,
+  onClose,
+  onPlanejarFerias,
+  onVerCompleto,
+}: ColaboradorDetalheCardProps) {
+  const tempo = calcularTempoDeEmpresa(colaborador.dataAdmissao);
+  const diasDisponiveis = periodoAtivo ? periodoAtivo.diasDisponiveis - periodoAtivo.diasUsados : 0;
+  const proximoAniv = calcularProximoAniversario(colaborador.dataNascimento);
+  const anivEmpresa = calcularProximoAniversarioEmpresa(colaborador.dataAdmissao);
+  
+  return (
+    <div className="bg-white rounded-2xl border border-teal-200 shadow-lg p-6">
+      <div className="flex items-start justify-between mb-6">
+        <div className="flex items-center gap-4">
+          <img src={colaborador.fotoUrl} alt={colaborador.nome} className="w-16 h-16 rounded-full object-cover border-2 border-teal-200" />
+          <div>
+            <h3 className="text-lg font-bold text-slate-900">{colaborador.nome}</h3>
+            <p className="text-xs text-slate-500">{cargo?.nome} · {setor?.nome}</p>
+            <p className="text-xs text-slate-400 mt-1">{tempo.texto} na empresa</p>
+          </div>
+        </div>
+        <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
+          <X size={20} />
+        </button>
+      </div>
+      
+      {/* Métricas Automáticas */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+        <div className="p-3 bg-emerald-50 rounded-xl">
+          <p className="text-[10px] text-emerald-600 font-semibold uppercase">Férias Disponíveis</p>
+          <p className="text-xl font-bold text-emerald-700">{diasDisponiveis} dias</p>
+        </div>
+        <div className={`p-3 rounded-xl ${prazoMaximoFerias.diasRestantes < 90 ? 'bg-rose-50' : 'bg-amber-50'}`}>
+          <p className={`text-[10px] font-semibold uppercase ${prazoMaximoFerias.diasRestantes < 90 ? 'text-rose-600' : 'text-amber-600'}`}>
+            Prazo Limite Férias
+          </p>
+          <p className={`text-xl font-bold ${prazoMaximoFerias.diasRestantes < 90 ? 'text-rose-700' : 'text-amber-700'}`}>
+            {prazoMaximoFerias.diasRestantes}d
+          </p>
+        </div>
+        <div className="p-3 bg-pink-50 rounded-xl">
+          <p className="text-[10px] text-pink-600 font-semibold uppercase">Próximo Aniversário</p>
+          <p className="text-xl font-bold text-pink-700">{proximoAniv?.diasRestantes}d</p>
+        </div>
+        <div className="p-3 bg-blue-50 rounded-xl">
+          <p className="text-[10px] text-blue-600 font-semibold uppercase">Aniversário Empresa</p>
+          <p className="text-xl font-bold text-blue-700">{anivEmpresa.diasRestantes}d</p>
+        </div>
+      </div>
+      
+      {/* DayOff */}
+      <div className="mb-6 p-4 bg-violet-50 rounded-xl">
+        <div className="flex items-center justify-between">
+          <div>
+            <h4 className="text-sm font-bold text-violet-800 flex items-center gap-2">
+              <Cake size={16} />
+              Day Off no Mês do Aniversário
+            </h4>
+            <p className="text-xs text-violet-600 mt-1">
+              {proximoAniv ? `Mês: ${getMesesDoAno()[new Date(proximoAniv.data).getMonth()]}` : 'Mês do aniversário'}
+            </p>
+          </div>
+          {dayoff ? (
+            <div className="text-right">
+              <span className={`inline-block px-3 py-1 text-white text-xs font-bold rounded-full ${
+                dayoff.status === 'utilizado' ? 'bg-violet-500' : 
+                dayoff.status === 'disponivel' ? 'bg-amber-500' : 'bg-rose-500'
+              }`}>
+                {dayoff.status === 'utilizado' ? 'Utilizado' : 
+                 dayoff.status === 'disponivel' ? 'Disponível' : 'Vencido'}
+              </span>
+              {dayoff.dataUtilizacao && (
+                <p className="text-[10px] text-violet-600 mt-1">
+                  {new Date(dayoff.dataUtilizacao).toLocaleDateString('pt-BR')}
+                </p>
+              )}
+              {dayoff.status === 'disponivel' && (
+                <p className="text-[10px] text-amber-600 mt-1">
+                  Limite: {new Date(dayoff.dataLimite).toLocaleDateString('pt-BR')}
+                </p>
+              )}
+            </div>
+          ) : (
+            <span className="px-3 py-1 bg-amber-500 text-white text-xs font-bold rounded-full">
+              Pendente
+            </span>
+          )}
+        </div>
+      </div>
+      
+      {/* Sugestões de Férias Otimizadas */}
+      <div className="mb-6">
+        <h4 className="text-sm font-bold text-slate-800 mb-3 flex items-center gap-2">
+          <Palmtree size={16} className="text-emerald-500" />
+          Sugestões de Férias Otimizadas
+        </h4>
+        
+        {sugestoesFerias.length > 0 ? (
+          <div className="space-y-2">
+            {sugestoesFerias.map((sug, idx) => (
+              <div 
+                key={idx}
+                className={`p-3 rounded-xl border ${
+                  idx === 0 ? 'border-emerald-300 bg-emerald-50' : 'border-slate-200 bg-slate-50'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className={`text-xs font-bold ${idx === 0 ? 'text-emerald-700' : 'text-slate-700'}`}>
+                      {new Date(sug.dataInicio).toLocaleDateString('pt-BR')} a {new Date(sug.dataFim).toLocaleDateString('pt-BR')}
+                      {' '}({sug.dias} dias)
+                    </p>
+                    <p className="text-[10px] text-slate-500 mt-1">{sug.motivo}</p>
+                  </div>
+                  <div className="text-right">
+                    <span className={`text-lg font-bold ${idx === 0 ? 'text-emerald-600' : 'text-slate-400'}`}>
+                      {sug.pontuacao}%
+                    </span>
+                    {idx === 0 && <span className="block text-[10px] text-emerald-600">Melhor opção</span>}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="p-4 text-center text-slate-400 text-xs">
+            <Palmtree size={24} className="mx-auto mb-2 opacity-50" />
+            <p>Sem sugestões disponíveis no momento</p>
+            <p className="text-[10px]">Verifique as datas disponíveis</p>
+          </div>
+        )}
+      </div>
+      
+      {/* Ações */}
+      <div className="flex gap-3">
+        <button
+          onClick={onPlanejarFerias}
+          className="flex-1 py-2.5 bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold rounded-xl text-xs transition"
+        >
+          Planejar Férias
+        </button>
+        <button
+          onClick={onVerCompleto}
+          className="flex-1 py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-700 font-semibold rounded-xl text-xs transition"
+        >
+          Ver Completo
+        </button>
       </div>
     </div>
   );

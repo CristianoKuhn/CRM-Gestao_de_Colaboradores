@@ -59,6 +59,10 @@ interface DashboardProps {
   onUpdateAvaliacaoExperiencia?: (avaliacao: AvaliacaoExperiencia) => void;
   // Configuração de Alertas
   configuracaoAlertas?: ConfiguracaoAlertas;
+  // Callback para tratar tarefa (abrir registro)
+  onTreatTask?: (tarefa: Tarefa, colaborador: Colaborador) => void;
+  // Callback para marcar tarefa como concluída
+  onCompleteTask?: (tarefaId: string) => void;
 }
 
 // Função para obter a data atual real
@@ -100,6 +104,8 @@ export default function Dashboard({
   onboardingItems,
   onboardingChecklists,
   onSaveOnboardingChecklist,
+  onTreatTask,
+  onCompleteTask,
 }: DashboardProps) {
   const HOJE = getDataAtual();
   const ANO_ATUAL = HOJE.getFullYear();
@@ -1035,11 +1041,31 @@ export default function Dashboard({
               tarefasPendentes.slice(0, 4).map((task) => {
                 const col = colaboradores.find((c) => c.id === task.colaboradorId);
                 const isOverdue = new Date(task.vencimento) < HOJE;
+                
+                // Verificar se existe registro na timeline para este colaborador
+                const temRegistro = col && timeline.some(r => r.colaboradorId === col.id);
+                
+                const handleClick = () => {
+                  if (col) {
+                    onSelectColaborador(col.id);
+                  }
+                };
+                
+                const handleTreat = (e: React.MouseEvent) => {
+                  e.stopPropagation();
+                  if (col && onTreatTask) {
+                    onTreatTask(task, col);
+                  } else if (col) {
+                    onOpenNewRegistroModal(col.id);
+                  }
+                };
+                
                 return (
                   <div
                     key={task.id}
-                    className={`p-3.5 border rounded-2xl flex items-start gap-3.5 hover:bg-slate-50 transition ${
-                      isOverdue ? 'border-rose-100 bg-rose-50/10' : 'border-slate-100'
+                    onClick={handleClick}
+                    className={`p-3.5 border rounded-2xl flex items-start gap-3.5 hover:bg-slate-50 transition cursor-pointer ${
+                      isOverdue ? 'border-rose-200 bg-rose-50/30' : 'border-slate-200 hover:border-teal-200'
                     }`}
                   >
                     {col && (
@@ -1068,6 +1094,34 @@ export default function Dashboard({
                         <span className="text-[11px] font-medium text-slate-500 flex items-center gap-1">
                           Prazo: {new Date(task.vencimento).toLocaleDateString('pt-BR')}
                         </span>
+                      </div>
+                      {/* Botão de tratar/concluir */}
+                      <div className="mt-3 flex items-center gap-2">
+                        <button
+                          onClick={handleTreat}
+                          className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition flex items-center gap-1.5 ${
+                            temRegistro 
+                              ? 'bg-teal-500 hover:bg-teal-400 text-slate-950' 
+                              : 'bg-amber-100 hover:bg-amber-200 text-amber-700'
+                          }`}
+                        >
+                          {temRegistro ? (
+                            <>
+                              <CheckCircle2 size={14} />
+                              Concluir
+                            </>
+                          ) : (
+                            <>
+                              <AlertTriangle size={14} />
+                              Tratar primeiro
+                            </>
+                          )}
+                        </button>
+                        {!temRegistro && (
+                          <span className="text-[10px] text-amber-600">
+                            Necessário registrar interação antes de concluir
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>

@@ -13,6 +13,9 @@ import {
   ConfiguracaoAlertas,
   AvaliacaoExperiencia,
   RespostaAvaliacao180,
+  PeriodoAquisitivo,
+  Ferias,
+  AlertaFerias,
 } from '../types';
 import {
   MessageSquare,
@@ -127,6 +130,11 @@ export default function Dashboard({
   });
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showAlertasModal, setShowAlertasModal] = useState(false);
+  
+  // Estados para Férias
+  const [periodosAquisitivos, setPeriodosAquisitivos] = useState<PeriodoAquisitivo[]>([]);
+  const [ferias, setFerias] = useState<Ferias[]>([]);
+  const [alertasFerias, setAlertasFerias] = useState<AlertaFerias[]>([]);
 
   // Estado para Modal de Avaliação 180°
   const [modalAvaliacao180, setModalAvaliacao180] = useState<{
@@ -139,14 +147,20 @@ export default function Dashboard({
   useEffect(() => {
     const carregarDados = async () => {
       try {
-        const [alertasData, configData] = await Promise.all([
+        const [alertasData, configData, periodosData, feriasData, alertasFeriasData] = await Promise.all([
           DataService.getAlertasInteligentes(),
           DataService.getConfiguracaoAlertas(),
+          DataService.getPeriodosAquisitivos(),
+          DataService.getFerias(),
+          DataService.getAlertasFerias(),
         ]);
         setAlertas(alertasData);
         setConfigAlertas(configData);
+        setPeriodosAquisitivos(periodosData);
+        setFerias(feriasData);
+        setAlertasFerias(alertasFeriasData);
       } catch (error) {
-        console.error('Erro ao carregar alertas:', error);
+        console.error('Erro ao carregar dados:', error);
       }
     };
     carregarDados();
@@ -299,6 +313,72 @@ export default function Dashboard({
       }
     }
 
+    // 5. Alertas de Férias - Períodos Aquisitivos
+    for (const col of colaboradores) {
+      if (col.situacao === 'Desligado') continue;
+      
+      // Filtrar períodos do colaborador
+      const periodosColaborador = periodosAquisitivos.filter(p => p.colaboradorId === col.id);
+      
+      for (const periodo of periodosColaborador) {
+        if (periodo.status !== 'ativo') continue;
+        
+        const dataFim = new Date(periodo.dataFim);
+        const diasRestantes = Math.ceil((dataFim.getTime() - HOJE.getTime()) / (1000 * 60 * 60 * 24));
+        
+        // Verificar se já existe alerta para este período
+        const alertaExistente = alertasFerias.find(
+          a => a.colaboradorId === col.id && a.tipo === 'prazo_concessivo_vencendo' && a.status !== 'resolvido'
+        );
+        
+        if (!alertaExistente && diasRestantes <= 90 && diasRestantes >= 0) {
+          const novoAlertaFerias: AlertaFerias = {
+            id: gerarIdUnico(),
+            colaboradorId: col.id,
+            tipo: 'prazo_concessivo_vencendo',
+            titulo: diasRestantes <= 30 ? '🔴 Restam 30 dias para vencer prazo de férias' :
+                    diasRestantes <= 60 ? '🔴 Restam 60 dias para vencer prazo de férias' :
+                    diasRestantes <= 90 ? '🟡 Restam 90 dias para vencer prazo de férias' :
+                    '🟢 Novo período aquisitivo em breve',
+            descricao: `${col.nome} possui prazo concessivo de férias terminando em ${dataFim.toLocaleDateString('pt-BR')}. Restam ${diasRestantes} dia(s).`,
+            severidade: diasRestantes <= 30 ? 'vermelho' : diasRestantes <= 60 ? 'vermelho' : 'amarelo',
+            diasRestantes,
+            dataReferencia: formatarDataISO(dataFim),
+            status: 'pendente',
+            createdAt: formatarDataISO(HOJE),
+          };
+          
+          await DataService.saveAlertaFerias(novoAlertaFerias);
+          setAlertasFerias(prev => [...prev, novoAlertaFerias]);
+        }
+        
+        // Alerta de período vencido
+        if (diasRestantes < 0 && periodo.status !== 'concluido') {
+          const alertaVencido = alertasFerias.find(
+            a => a.colaboradorId === col.id && a.tipo === 'ferias_vencendo' && a.status !== 'resolvido'
+          );
+          
+          if (!alertaVencido) {
+            const alertaVencidoObj: AlertaFerias = {
+              id: gerarIdUnico(),
+              colaboradorId: col.id,
+              tipo: 'ferias_vencendo',
+              titulo: '⛔ Prazo de férias vencido',
+              descricao: `${col.nome} possui prazo concessivo de férias vencido desde ${dataFim.toLocaleDateString('pt-BR')}. O período aquisitivo não foi gozado dentro do prazo legal.`,
+              severidade: 'vermelho',
+              diasRestantes: 0,
+              dataReferencia: formatarDataISO(dataFim),
+              status: 'pendente',
+              createdAt: formatarDataISO(HOJE),
+            };
+            
+            await DataService.saveAlertaFerias(alertaVencidoObj);
+            setAlertasFerias(prev => [...prev, alertaVencidoObj]);
+          }
+        }
+      }
+    }
+
     // Salvar novos alertas
     for (const alerta of novosAlertas) {
       await DataService.saveAlertaInteligente(alerta);
@@ -361,7 +441,13 @@ export default function Dashboard({
   // Filtrar alertas pendentes/reconhecidos
   const alertasPendentes = alertas.filter(a => a.status === 'pendente');
   const alertasReconhecidos = alertas.filter(a => a.status === 'reconhecido');
+  
+  // Alertas de férias pendentes
+  const alertasFeriasPendentes = alertasFerias.filter(a => a.status === 'pendente');
+  const alertasFeriasReconhecidos = alertasFerias.filter(a => a.status === 'reconhecido');
+  
   const todosAlertasAtivos = [...alertasPendentes, ...alertasReconhecidos].sort((a, b) => a.diasRestantes - b.diasRestantes);
+  const todosAlertasFeriasAtivos = [...alertasFeriasPendentes, ...alertasFeriasReconhecidos].sort((a, b) => (a.diasRestantes || 0) - (b.diasRestantes || 0));
 
   // Obter ícone do tipo de alerta
   const getIconeAlerta = (tipo: string) => {
@@ -374,6 +460,10 @@ export default function Dashboard({
         return <Gift size={18} className="text-amber-500" />;
       case 'avaliacao_180':
         return <Target size={18} className="text-indigo-500" />;
+      case 'prazo_concessivo_vencendo':
+      case 'ferias_vencendo':
+      case 'periodo_aquisitivo_vencendo':
+        return <Calendar size={18} className="text-blue-500" />;
       default:
         return <Bell size={18} className="text-slate-500" />;
     }
@@ -390,6 +480,10 @@ export default function Dashboard({
         return 'bg-amber-100 text-amber-700 border-amber-200';
       case 'avaliacao_180':
         return 'bg-indigo-100 text-indigo-700 border-indigo-200';
+      case 'prazo_concessivo_vencendo':
+      case 'ferias_vencendo':
+      case 'periodo_aquisitivo_vencendo':
+        return 'bg-blue-100 text-blue-700 border-blue-200';
       default:
         return 'bg-slate-100 text-slate-700 border-slate-200';
     }
@@ -949,7 +1043,7 @@ export default function Dashboard({
       )}
 
       {/* Seção de Alertas Rápidos (Cards de Resumo) */}
-      {todosAlertasAtivos.length > 0 && (
+      {(todosAlertasAtivos.length > 0 || todosAlertasFeriasAtivos.length > 0) && (
         <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-3xl p-6">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
@@ -960,39 +1054,85 @@ export default function Dashboard({
               onClick={() => setShowAlertasModal(true)}
               className="text-xs font-semibold text-amber-700 hover:text-amber-800 cursor-pointer"
             >
-              Ver todos ({todosAlertasAtivos.length})
+              Ver todos ({todosAlertasAtivos.length + todosAlertasFeriasAtivos.length})
             </button>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-            {todosAlertasAtivos.slice(0, 4).map((alerta) => {
-              const col = colaboradores.find(c => c.id === alerta.colaboradorId);
-              return (
-                <div
-                  key={alerta.id}
-                  onClick={() => {
-                    onSelectColaborador(alerta.colaboradorId);
-                  }}
-                  className={`bg-white rounded-xl p-4 border cursor-pointer hover:shadow-md transition ${
-                    alerta.status === 'pendente' ? 'border-amber-200' : 'border-slate-200'
-                  }`}
-                >
-                  <div className="flex items-center gap-2 mb-2">
-                    {getIconeAlerta(alerta.tipo)}
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                      {alerta.diasRestantes === 0 ? 'HOJE' : alerta.diasRestantes < 0 ? 'ATRASADO' : `${alerta.diasRestantes} dias`}
-                    </span>
-                  </div>
-                  <p className="text-sm font-bold text-slate-800 truncate">{alerta.titulo}</p>
-                  {col && (
-                    <div className="flex items-center gap-1.5 mt-2">
-                      <img src={col.fotoUrl} alt={col.nome} className="w-4 h-4 rounded-full" />
-                      <span className="text-xs text-slate-500 truncate">{col.nome}</span>
+          
+          {/* Alertas de Férias */}
+          {todosAlertasFeriasAtivos.length > 0 && (
+            <div className="mb-4">
+              <h3 className="text-sm font-semibold text-blue-800 mb-2 flex items-center gap-2">
+                <Calendar size={16} className="text-blue-600" />
+                Férias - Prazos Concessivos
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                {todosAlertasFeriasAtivos.slice(0, 4).map((alerta) => {
+                  const col = colaboradores.find(c => c.id === alerta.colaboradorId);
+                  return (
+                    <div
+                      key={alerta.id}
+                      onClick={() => onSelectColaborador(alerta.colaboradorId)}
+                      className={`bg-white rounded-xl p-4 border cursor-pointer hover:shadow-md transition ${
+                        alerta.severidade === 'vermelho' ? 'border-red-200' :
+                        alerta.severidade === 'amarelo' ? 'border-amber-200' : 'border-green-200'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 mb-2">
+                        <Calendar size={16} className={alerta.severidade === 'vermelho' ? 'text-red-500' : alerta.severidade === 'amarelo' ? 'text-amber-500' : 'text-green-500'} />
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                          {alerta.diasRestantes === 0 ? 'VENCIDO' : `${alerta.diasRestantes} dias`}
+                        </span>
+                      </div>
+                      <p className="text-sm font-bold text-slate-800 truncate">{alerta.titulo}</p>
+                      {col && (
+                        <div className="flex items-center gap-1.5 mt-2">
+                          <img src={col.fotoUrl} alt={col.nome} className="w-4 h-4 rounded-full" />
+                          <span className="text-xs text-slate-500 truncate">{col.nome}</span>
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          
+          {/* Outros Alertas */}
+          {todosAlertasAtivos.length > 0 && (
+            <div>
+              <h3 className="text-sm font-semibold text-amber-800 mb-2">Outros Alertas</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                {todosAlertasAtivos.slice(0, 4).map((alerta) => {
+                  const col = colaboradores.find(c => c.id === alerta.colaboradorId);
+                  return (
+                    <div
+                      key={alerta.id}
+                      onClick={() => {
+                        onSelectColaborador(alerta.colaboradorId);
+                      }}
+                      className={`bg-white rounded-xl p-4 border cursor-pointer hover:shadow-md transition ${
+                        alerta.status === 'pendente' ? 'border-amber-200' : 'border-slate-200'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 mb-2">
+                        {getIconeAlerta(alerta.tipo)}
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                          {alerta.diasRestantes === 0 ? 'HOJE' : alerta.diasRestantes < 0 ? 'ATRASADO' : `${alerta.diasRestantes} dias`}
+                        </span>
+                      </div>
+                      <p className="text-sm font-bold text-slate-800 truncate">{alerta.titulo}</p>
+                      {col && (
+                        <div className="flex items-center gap-1.5 mt-2">
+                          <img src={col.fotoUrl} alt={col.nome} className="w-4 h-4 rounded-full" />
+                          <span className="text-xs text-slate-500 truncate">{col.nome}</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

@@ -97,6 +97,11 @@ export interface IDataService {
   saveAvaliacaoExperiencia(avaliacao: any): Promise<void>;
   deleteAvaliacaoExperiencia(id: string): Promise<void>;
 
+  // Avaliação 180°
+  getResultados180(): Promise<any[]>;
+  saveResultado180(resultado: any): Promise<void>;
+  deleteResultado180(id: string): Promise<void>;
+
   // Alertas Inteligentes
   getAlertasInteligentes(): Promise<AlertaInteligente[]>;
   saveAlertaInteligente(alerta: AlertaInteligente): Promise<void>;
@@ -240,6 +245,17 @@ export class LocalDataService implements IDataService {
   }
   async deleteAvaliacaoExperiencia(id: string): Promise<void> {
     StorageAPI.deleteAvaliacaoExperiencia(id);
+  }
+
+  // Resultados Avaliação 180°
+  async getResultados180(): Promise<any[]> {
+    return StorageAPI.getResultados180();
+  }
+  async saveResultado180(resultado: any): Promise<void> {
+    StorageAPI.saveResultado180(resultado);
+  }
+  async deleteResultado180(id: string): Promise<void> {
+    StorageAPI.deleteResultado180(id);
   }
   
   // Alertas Inteligentes
@@ -941,6 +957,17 @@ export class GoogleScriptDataService implements IDataService {
     await this.localFallback.deleteAvaliacaoExperiencia(id);
   }
 
+  // Resultados Avaliação 180°
+  async getResultados180(): Promise<any[]> {
+    return this.localFallback.getResultados180();
+  }
+  async saveResultado180(resultado: any): Promise<void> {
+    await this.localFallback.saveResultado180(resultado);
+  }
+  async deleteResultado180(id: string): Promise<void> {
+    await this.localFallback.deleteResultado180(id);
+  }
+
   // Alertas Inteligentes (usando localStorage como fallback)
   async getAlertasInteligentes(): Promise<AlertaInteligente[]> {
     return this.localFallback.getAlertasInteligentes();
@@ -1509,6 +1536,17 @@ export class SupabaseDataService implements IDataService {
     await this.localFallback.deleteAvaliacaoExperiencia(id);
   }
 
+  // Resultados Avaliação 180°
+  async getResultados180(): Promise<any[]> {
+    return this.localFallback.getResultados180();
+  }
+  async saveResultado180(resultado: any): Promise<void> {
+    await this.localFallback.saveResultado180(resultado);
+  }
+  async deleteResultado180(id: string): Promise<void> {
+    await this.localFallback.deleteResultado180(id);
+  }
+
   // Alertas Inteligentes (usando localStorage como fallback)
   async getAlertasInteligentes(): Promise<AlertaInteligente[]> {
     return this.localFallback.getAlertasInteligentes();
@@ -1738,6 +1776,17 @@ class DynamicDataService implements IDataService {
   }
   async deleteAvaliacaoExperiencia(id: string): Promise<void> {
     await this.getService().deleteAvaliacaoExperiencia(id);
+  }
+
+  // Resultados Avaliação 180°
+  async getResultados180(): Promise<any[]> {
+    return this.getService().getResultados180();
+  }
+  async saveResultado180(resultado: any): Promise<void> {
+    await this.getService().saveResultado180(resultado);
+  }
+  async deleteResultado180(id: string): Promise<void> {
+    await this.getService().deleteResultado180(id);
   }
 
   // Alertas Inteligentes

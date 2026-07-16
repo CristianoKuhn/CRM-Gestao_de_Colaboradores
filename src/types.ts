@@ -116,6 +116,27 @@ export interface AvaliacaoExperiencia {
   observacoes?: string;
 }
 
+// Avaliação 180° - Resposta individual
+export interface RespostaAvaliacao180 {
+  perguntaId: string;
+  nota: number;
+  comentario: string;
+}
+
+// Resultado completo da Avaliação 180°
+export interface ResultadoAvaliacao180 {
+  id: string;
+  colaboradorId: string;
+  dataRealizacao: string;
+  resultado: 'aprovado' | 'reprovado';
+  mediaGeral: number;
+  mediaPonderada: number;
+  respostas: RespostaAvaliacao180[];
+  observacoes: string;
+  avaliadorId: string;
+  tipo: '180';
+}
+
 export interface Tarefa {
   id: string;
   colaboradorId: string;

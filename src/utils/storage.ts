@@ -49,6 +49,7 @@ const KEYS = {
   ONBOARDING_ITEMS: 'gc_onboarding_items',
   ONBOARDING_CHECKLISTS: 'gc_onboarding_checklists',
   AVALIACOES_EXPERIENCIA: 'gc_avaliacoes_experiencia',
+  RESULTADOS_180: 'gc_resultados_180',
   ALERTAS: 'gc_alertas_inteligentes',
   CONFIG_ALERTAS: 'gc_config_alertas',
   // P3: Documentos
@@ -754,6 +755,22 @@ export const StorageAPI = {
   deleteAvaliacaoExperiencia: (id: string) => {
     const avaliacoes = StorageAPI.getAvaliacoesExperiencia().filter((a) => a.id !== id);
     set(KEYS.AVALIACOES_EXPERIENCIA, avaliacoes);
+  },
+
+  // Resultados Avaliação 180°
+  getResultados180: (): any[] => {
+    return get(KEYS.RESULTADOS_180) || [];
+  },
+  saveResultado180: (resultado: any) => {
+    const resultados = StorageAPI.getResultados180();
+    const index = resultados.findIndex((r) => r.id === resultado.id);
+    if (index >= 0) resultados[index] = resultado;
+    else resultados.push(resultado);
+    set(KEYS.RESULTADOS_180, resultados);
+  },
+  deleteResultado180: (id: string) => {
+    const resultados = StorageAPI.getResultados180().filter((r) => r.id !== id);
+    set(KEYS.RESULTADOS_180, resultados);
   },
 
   // Resetar para valores padrão

@@ -12,6 +12,7 @@ import {
   AlertaInteligente,
   ConfiguracaoAlertas,
   AvaliacaoExperiencia,
+  RespostaAvaliacao180,
 } from '../types';
 import {
   MessageSquare,
@@ -38,9 +39,11 @@ import {
   Gift,
   Target,
   Check,
+  Star,
 } from 'lucide-react';
 import { OnboardingItem, OnboardingChecklist } from '../types';
 import { DataService } from '../services/DataService';
+import ModalAvaliacao180 from './ModalAvaliacao180';
 
 interface DashboardProps {
   colaboradores: Colaborador[];
@@ -120,6 +123,13 @@ export default function Dashboard({
   });
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showAlertasModal, setShowAlertasModal] = useState(false);
+
+  // Estado para Modal de Avaliação 180°
+  const [modalAvaliacao180, setModalAvaliacao180] = useState<{
+    isOpen: boolean;
+    colaborador: Colaborador | null;
+    milestone: string;
+  }>({ isOpen: false, colaborador: null, milestone: '' });
 
   // Carregar alertas e configurações
   useEffect(() => {
@@ -461,6 +471,17 @@ export default function Dashboard({
   const lembretesAcompanhamento = calculateReminders();
 
   const handleCompleteMilestone = async (col: Colaborador, milestone: string) => {
+    // Se for avaliação 180°, abrir o modal
+    if (milestone === '180') {
+      setModalAvaliacao180({
+        isOpen: true,
+        colaborador: col,
+        milestone: milestone,
+      });
+      return;
+    }
+
+    // Para avaliações de experiência (15, 30, 60, 90), marcar como concluída diretamente
     const novasCompletas = [...(col.avaliacoesCompletas || [])];
     if (!novasCompletas.includes(milestone)) {
       novasCompletas.push(milestone);
@@ -472,6 +493,52 @@ export default function Dashboard({
     };
 
     onUpdateColaborador(colAtualizado);
+  };
+
+  // Salvar resultado da Avaliação 180°
+  const handleSalvarAvaliacao180 = async (
+    respostas: RespostaAvaliacao180[],
+    resultado: 'aprovado' | 'reprovado',
+    observacoes: string
+  ) => {
+    if (!modalAvaliacao180.colaborador) return;
+
+    const col = modalAvaliacao180.colaborador;
+    const milestone = modalAvaliacao180.milestone;
+
+    // Calcular médias
+    const mediaGeral = respostas.reduce((acc, r) => acc + r.nota, 0) / respostas.length;
+    const mediaPonderada = respostas.reduce((acc, r) => acc + r.nota, 0) / respostas.length; // Simplificado
+
+    // Salvar resultado da avaliação 180°
+    await DataService.saveResultado180({
+      id: `resultado-180-${col.id}-${Date.now()}`,
+      colaboradorId: col.id,
+      dataRealizacao: new Date().toISOString(),
+      resultado,
+      mediaGeral,
+      mediaPonderada,
+      respostas,
+      observacoes,
+      avaliadorId: currentUser.id,
+      tipo: '180',
+    });
+
+    // Marcar como concluída no colaborador
+    const novasCompletas = [...(col.avaliacoesCompletas || [])];
+    if (!novasCompletas.includes(milestone)) {
+      novasCompletas.push(milestone);
+    }
+
+    const colAtualizado: Colaborador = {
+      ...col,
+      avaliacoesCompletas: novasCompletas,
+    };
+
+    onUpdateColaborador(colAtualizado);
+
+    // Fechar modal
+    setModalAvaliacao180({ isOpen: false, colaborador: null, milestone: '' });
   };
 
   // Feedbacks Pendentes
@@ -1195,6 +1262,26 @@ export default function Dashboard({
           </div>
         </div>
       </div>
+
+      {/* Modal de Avaliação 180° */}
+      {modalAvaliacao180.isOpen && modalAvaliacao180.colaborador && (
+        <ModalAvaliacao180
+          isOpen={modalAvaliacao180.isOpen}
+          onClose={() => setModalAvaliacao180({ isOpen: false, colaborador: null, milestone: '' })}
+          colaborador={modalAvaliacao180.colaborador}
+          avaliacao={{
+            id: `avaliacao-180-${modalAvaliacao180.colaborador.id}`,
+            colaboradorId: modalAvaliacao180.colaborador.id,
+            dias: 180,
+            dataVencimento: new Date(
+              new Date(modalAvaliacao180.colaborador.dataAdmissao).getTime() +
+              (180 * 24 * 60 * 60 * 1000)
+            ).toISOString(),
+            status: 'pendente',
+          }}
+          onSave={handleSalvarAvaliacao180}
+        />
+      )}
     </div>
   );
 }

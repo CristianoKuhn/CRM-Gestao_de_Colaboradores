@@ -61,10 +61,9 @@ export type TipoRegistro =
   | 'Observação Geral'
   | 'Acompanhamento'
   | 'Férias Planejadas'
-  | 'Demissão'
-  | 'Afastamento'
-  | 'Licença'
-  | 'Outros';
+  | 'Férias Gozadas'
+  	  | 'Outros';
+
 
 export type PrioridadeRegistro = 'Baixa' | 'Média' | 'Alta' | 'Crítica';
 
@@ -118,6 +117,27 @@ export interface AvaliacaoExperiencia {
   resultado?: string;
   dataRealizacao?: string;
   observacoes?: string;
+}
+
+// Avaliação 180° - Resposta individual
+export interface RespostaAvaliacao180 {
+  perguntaId: string;
+  nota: number;
+  comentario: string;
+}
+
+// Resultado completo da Avaliação 180°
+export interface ResultadoAvaliacao180 {
+  id: string;
+  colaboradorId: string;
+  dataRealizacao: string;
+  resultado: 'aprovado' | 'reprovado';
+  mediaGeral: number;
+  mediaPonderada: number;
+  respostas: RespostaAvaliacao180[];
+  observacoes: string;
+  avaliadorId: string;
+  tipo: '180';
 }
 
 export interface Tarefa {
@@ -328,10 +348,27 @@ export interface PeriodoAquisitivo {
   anoBase: number; // Ano de referência para o período aquisitivo
   dataInicio: string; // Data de início do período
   dataFim: string; // Data de fim do período (dataInicio + 12 meses)
-  diasDisponiveis: number; // Dias de férias disponíveis
+  diasDisponiveis: number; // Dias de férias disponíveis (padrão 30)
   diasUsados: number; // Dias já utilizados
-  status: 'ativo' | 'vencido' | 'futuro';
-  diasRestantes?: number; // Dias restantes (calculado)
+  diasRestantes: number; // Dias restantes (calculado)
+  status: 'ativo' | 'vencido' | 'futuro' | 'concluido';
+  // Novos campos
+  dataConclusao?: string; // Quando foi concluído
+  marcaComoUtilizado?: boolean; // Se foi marcado como já utilizado
+  observacoes?: string;
+}
+
+// Histórico de Período Aquisitivo (visualização)
+export interface HistoricoPeriodoAquisitivo {
+  id: string;
+  colaboradorId: string;
+  periodo: string; // Ex: "15/03/2024 até 14/03/2025"
+  diasTotais: number;
+  diasUtilizados: number;
+  diasRestantes: number;
+  status: 'Em aquisição' | 'Parcialmente utilizado' | 'Concluído' | 'Vencido';
+  dataInicio: string;
+  dataFim: string;
 }
 
 // Registro de Férias
@@ -342,9 +379,79 @@ export interface Ferias {
   dataInicio: string;
   dataFim: string;
   dias: number;
-  status: 'planejada' | 'concluida' | 'cancelada';
+  status: 'planejada' | 'concluida' | 'cancelada' | 'em_gozo';
   observacoes?: string;
   createdAt: string;
+  // Novos campos
+  tipo?: 'integral' | 'parcial';
+  periodosUsados?: string[]; // IDs dos períodos aquisitivos utilizados
+}
+
+// Alerta Inteligente de Férias
+export interface AlertaFerias {
+  id: string;
+  colaboradorId: string;
+  tipo: 'periodo_aquisitivo_vencendo' | 'ferias_vencendo' | 'prazo_concessivo_vencendo' | 'conflito_setor' | 'superior_afastado';
+  titulo: string;
+  descricao: string;
+  severidade: 'verde' | 'amarelo' | 'vermelho';
+  diasRestantes?: number;
+  dataReferencia?: string;
+  recomendacao?: string;
+  status: 'pendente' | 'reconhecido' | 'resolvido';
+  createdAt: string;
+}
+
+// Sugestão de Data para Férias
+export interface SugestaoDataFerias {
+  data: string;
+  motivo: string;
+  conflitos: number; // Quantidade de conflitos
+  colaboradoresAfastados: number;
+  percentualEquipeAfastada: number;
+  score: number; // Quanto menor, melhor
+}
+
+// Conflito de Férias Detectado
+export interface ConflitoFerias {
+  tipo: 'mesmo_setor' | 'gestor_afastado' | 'alta_concentracao';
+  severidade: 'info' | 'alerta' | 'critico';
+  descricao: string;
+  colaboradoresAfetados: string[];
+  dataInicio: string;
+  dataFim: string;
+  recomendacao?: string;
+}
+
+// Configurações de Férias
+export interface ConfiguracaoFerias {
+  diasAntecedenciaAlerta: number; // Padrão 90 dias
+  permitirFeriasProlongadas: boolean;
+  maximoDiasSimultaneoSetor: number; // Máximo de pessoas por setor
+  maximoPercentualEquipe: number; // Percentual máximo da equipe
+  diasMinimosAntecedenciaPlanejamento: number;
+  // Opções de antecedência (para o seletor)
+  opcoesAntecedencia: number[]; // [30, 60, 90, 120, 180]
+  // Regras trabalhistas
+  salarioMinimoDias: number; // Mínimo de dias por período (geralmente 10)
+  prazoConcessivoMeses: number; // Prazo máximo para gozar (geralmente 12 meses após período aquisitivo)
+}
+
+// Dashboard Macro de Férias (visão anual)
+export interface DashboardMacroFerias {
+  ano: number;
+  meses: {
+    mes: number; // 1-12
+    colaboradores: {
+      colaboradorId: string;
+      nome: string;
+      setorId: string;
+      dataInicio: string;
+      dataFim: string;
+    }[];
+    totalAfastados: number;
+    percentualAfastados: number;
+  }[];
 }
 
 // DayOff - Folga pelo aniversário

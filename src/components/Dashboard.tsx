@@ -12,6 +12,10 @@ import {
   AlertaInteligente,
   ConfiguracaoAlertas,
   AvaliacaoExperiencia,
+  RespostaAvaliacao180,
+  PeriodoAquisitivo,
+  Ferias,
+  AlertaFerias,
 } from '../types';
 import {
   MessageSquare,
@@ -38,9 +42,11 @@ import {
   Gift,
   Target,
   Check,
+  Star,
 } from 'lucide-react';
 import { OnboardingItem, OnboardingChecklist } from '../types';
 import { DataService } from '../services/DataService';
+import ModalAvaliacao180 from './ModalAvaliacao180';
 
 interface DashboardProps {
   colaboradores: Colaborador[];
@@ -109,6 +115,10 @@ export default function Dashboard({
 }: DashboardProps) {
   const HOJE = getDataAtual();
   const ANO_ATUAL = HOJE.getFullYear();
+  
+  // Data de início do processo: janeiro de 2026
+  // Colaboradores admitidos antes desta data não terão avaliação 180° retroativa
+  const DATA_INICIO_PROCESSO = new Date('2026-01-01');
 
   // Estados para alertas inteligentes
   const [alertas, setAlertas] = useState<AlertaInteligente[]>([]);
@@ -120,19 +130,37 @@ export default function Dashboard({
   });
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showAlertasModal, setShowAlertasModal] = useState(false);
+  
+  // Estados para Férias
+  const [periodosAquisitivos, setPeriodosAquisitivos] = useState<PeriodoAquisitivo[]>([]);
+  const [ferias, setFerias] = useState<Ferias[]>([]);
+  const [alertasFerias, setAlertasFerias] = useState<AlertaFerias[]>([]);
+
+  // Estado para Modal de Avaliação 180°
+  const [modalAvaliacao180, setModalAvaliacao180] = useState<{
+    isOpen: boolean;
+    colaborador: Colaborador | null;
+    milestone: string;
+  }>({ isOpen: false, colaborador: null, milestone: '' });
 
   // Carregar alertas e configurações
   useEffect(() => {
     const carregarDados = async () => {
       try {
-        const [alertasData, configData] = await Promise.all([
+        const [alertasData, configData, periodosData, feriasData, alertasFeriasData] = await Promise.all([
           DataService.getAlertasInteligentes(),
           DataService.getConfiguracaoAlertas(),
+          DataService.getPeriodosAquisitivos(),
+          DataService.getFerias(),
+          DataService.getAlertasFerias(),
         ]);
         setAlertas(alertasData);
         setConfigAlertas(configData);
+        setPeriodosAquisitivos(periodosData);
+        setFerias(feriasData);
+        setAlertasFerias(alertasFeriasData);
       } catch (error) {
-        console.error('Erro ao carregar alertas:', error);
+        console.error('Erro ao carregar dados:', error);
       }
     };
     carregarDados();
@@ -249,6 +277,11 @@ export default function Dashboard({
       if (col.situacao === 'Desligado' || col.realizarExperiencia === false) continue;
 
       const dataAdmissao = new Date(col.dataAdmissao);
+      
+      // Ignorar colaboradores admitidos antes de janeiro de 2026
+      // (data de início do processo de avaliação 180°)
+      if (dataAdmissao < DATA_INICIO_PROCESSO) continue;
+
       const prazoMeses = col.prazoAvaliacao180 || 6;
       const dataAvaliacao180 = new Date(dataAdmissao);
       dataAvaliacao180.setMonth(dataAvaliacao180.getMonth() + prazoMeses);
@@ -276,6 +309,72 @@ export default function Dashboard({
             dataCriacao: formatarDataISO(HOJE),
             parametroDias: configAlertas.diasAntecedenciaAvaliacao180,
           });
+        }
+      }
+    }
+
+    // 5. Alertas de Férias - Períodos Aquisitivos
+    for (const col of colaboradores) {
+      if (col.situacao === 'Desligado') continue;
+      
+      // Filtrar períodos do colaborador
+      const periodosColaborador = periodosAquisitivos.filter(p => p.colaboradorId === col.id);
+      
+      for (const periodo of periodosColaborador) {
+        if (periodo.status !== 'ativo') continue;
+        
+        const dataFim = new Date(periodo.dataFim);
+        const diasRestantes = Math.ceil((dataFim.getTime() - HOJE.getTime()) / (1000 * 60 * 60 * 24));
+        
+        // Verificar se já existe alerta para este período
+        const alertaExistente = alertasFerias.find(
+          a => a.colaboradorId === col.id && a.tipo === 'prazo_concessivo_vencendo' && a.status !== 'resolvido'
+        );
+        
+        if (!alertaExistente && diasRestantes <= 90 && diasRestantes >= 0) {
+          const novoAlertaFerias: AlertaFerias = {
+            id: gerarIdUnico(),
+            colaboradorId: col.id,
+            tipo: 'prazo_concessivo_vencendo',
+            titulo: diasRestantes <= 30 ? '🔴 Restam 30 dias para vencer prazo de férias' :
+                    diasRestantes <= 60 ? '🔴 Restam 60 dias para vencer prazo de férias' :
+                    diasRestantes <= 90 ? '🟡 Restam 90 dias para vencer prazo de férias' :
+                    '🟢 Novo período aquisitivo em breve',
+            descricao: `${col.nome} possui prazo concessivo de férias terminando em ${dataFim.toLocaleDateString('pt-BR')}. Restam ${diasRestantes} dia(s).`,
+            severidade: diasRestantes <= 30 ? 'vermelho' : diasRestantes <= 60 ? 'vermelho' : 'amarelo',
+            diasRestantes,
+            dataReferencia: formatarDataISO(dataFim),
+            status: 'pendente',
+            createdAt: formatarDataISO(HOJE),
+          };
+          
+          await DataService.saveAlertaFerias(novoAlertaFerias);
+          setAlertasFerias(prev => [...prev, novoAlertaFerias]);
+        }
+        
+        // Alerta de período vencido
+        if (diasRestantes < 0) {
+          const alertaVencido = alertasFerias.find(
+            a => a.colaboradorId === col.id && a.tipo === 'ferias_vencendo' && a.status !== 'resolvido'
+          );
+          
+          if (!alertaVencido) {
+            const alertaVencidoObj: AlertaFerias = {
+              id: gerarIdUnico(),
+              colaboradorId: col.id,
+              tipo: 'ferias_vencendo',
+              titulo: '⛔ Prazo de férias vencido',
+              descricao: `${col.nome} possui prazo concessivo de férias vencido desde ${dataFim.toLocaleDateString('pt-BR')}. O período aquisitivo não foi gozado dentro do prazo legal.`,
+              severidade: 'vermelho',
+              diasRestantes: 0,
+              dataReferencia: formatarDataISO(dataFim),
+              status: 'pendente',
+              createdAt: formatarDataISO(HOJE),
+            };
+            
+            await DataService.saveAlertaFerias(alertaVencidoObj);
+            setAlertasFerias(prev => [...prev, alertaVencidoObj]);
+          }
         }
       }
     }
@@ -342,7 +441,13 @@ export default function Dashboard({
   // Filtrar alertas pendentes/reconhecidos
   const alertasPendentes = alertas.filter(a => a.status === 'pendente');
   const alertasReconhecidos = alertas.filter(a => a.status === 'reconhecido');
+  
+  // Alertas de férias pendentes
+  const alertasFeriasPendentes = alertasFerias.filter(a => a.status === 'pendente');
+  const alertasFeriasReconhecidos = alertasFerias.filter(a => a.status === 'reconhecido');
+  
   const todosAlertasAtivos = [...alertasPendentes, ...alertasReconhecidos].sort((a, b) => a.diasRestantes - b.diasRestantes);
+  const todosAlertasFeriasAtivos = [...alertasFeriasPendentes, ...alertasFeriasReconhecidos].sort((a, b) => (a.diasRestantes || 0) - (b.diasRestantes || 0));
 
   // Obter ícone do tipo de alerta
   const getIconeAlerta = (tipo: string) => {
@@ -355,6 +460,10 @@ export default function Dashboard({
         return <Gift size={18} className="text-amber-500" />;
       case 'avaliacao_180':
         return <Target size={18} className="text-indigo-500" />;
+      case 'prazo_concessivo_vencendo':
+      case 'ferias_vencendo':
+      case 'periodo_aquisitivo_vencendo':
+        return <Calendar size={18} className="text-blue-500" />;
       default:
         return <Bell size={18} className="text-slate-500" />;
     }
@@ -371,6 +480,10 @@ export default function Dashboard({
         return 'bg-amber-100 text-amber-700 border-amber-200';
       case 'avaliacao_180':
         return 'bg-indigo-100 text-indigo-700 border-indigo-200';
+      case 'prazo_concessivo_vencendo':
+      case 'ferias_vencendo':
+      case 'periodo_aquisitivo_vencendo':
+        return 'bg-blue-100 text-blue-700 border-blue-200';
       default:
         return 'bg-slate-100 text-slate-700 border-slate-200';
     }
@@ -405,7 +518,8 @@ export default function Dashboard({
       if (isNaN(admissao.getTime())) return;
 
       // Período de Experiência (15, 30, 60, 90 dias)
-      if (col.realizarExperiencia !== false) {
+      // Apenas para colaboradores admitidos a partir de janeiro de 2026
+      if (col.realizarExperiencia !== false && admissao >= DATA_INICIO_PROCESSO) {
         const milestones = [15, 30, 60, 90];
         milestones.forEach((days) => {
           const completed = col.avaliacoesCompletas?.includes(String(days));
@@ -431,26 +545,28 @@ export default function Dashboard({
         });
       }
 
-      // Avaliação 180º
-      const prazoMeses = col.prazoAvaliacao180 || 6;
-      const completed180 = col.avaliacoesCompletas?.includes('180');
-      if (!completed180) {
-        const dueDate180 = new Date(admissao);
-        dueDate180.setMonth(dueDate180.getMonth() + prazoMeses);
+      // Avaliação 180º - Apenas para colaboradores admitidos a partir de janeiro de 2026
+      if (admissao >= DATA_INICIO_PROCESSO) {
+        const prazoMeses = col.prazoAvaliacao180 || 6;
+        const completed180 = col.avaliacoesCompletas?.includes('180');
+        if (!completed180) {
+          const dueDate180 = new Date(admissao);
+          dueDate180.setMonth(dueDate180.getMonth() + prazoMeses);
 
-        const diffTime180 = dueDate180.getTime() - HOJE.getTime();
-        const diffDays180 = Math.ceil(diffTime180 / (1000 * 60 * 60 * 24));
+          const diffTime180 = dueDate180.getTime() - HOJE.getTime();
+          const diffDays180 = Math.ceil(diffTime180 / (1000 * 60 * 60 * 24));
 
-        if (diffDays180 <= 30) {
-          list.push({
-            id: `${col.id}-180`,
-            colaborador: col,
-            milestone: '180',
-            titulo: `Avaliação 180º (${prazoMeses} Meses)`,
-            prazoData: dueDate180.toISOString().split('T')[0],
-            atrasado: diffDays180 < 0,
-            diasRestantes: diffDays180,
-          });
+          if (diffDays180 <= 30) {
+            list.push({
+              id: `${col.id}-180`,
+              colaborador: col,
+              milestone: '180',
+              titulo: `Avaliação 180º (${prazoMeses} Meses)`,
+              prazoData: dueDate180.toISOString().split('T')[0],
+              atrasado: diffDays180 < 0,
+              diasRestantes: diffDays180,
+            });
+          }
         }
       }
     });
@@ -461,6 +577,17 @@ export default function Dashboard({
   const lembretesAcompanhamento = calculateReminders();
 
   const handleCompleteMilestone = async (col: Colaborador, milestone: string) => {
+    // Se for avaliação 180°, abrir o modal
+    if (milestone === '180') {
+      setModalAvaliacao180({
+        isOpen: true,
+        colaborador: col,
+        milestone: milestone,
+      });
+      return;
+    }
+
+    // Para avaliações de experiência (15, 30, 60, 90), marcar como concluída diretamente
     const novasCompletas = [...(col.avaliacoesCompletas || [])];
     if (!novasCompletas.includes(milestone)) {
       novasCompletas.push(milestone);
@@ -472,6 +599,52 @@ export default function Dashboard({
     };
 
     onUpdateColaborador(colAtualizado);
+  };
+
+  // Salvar resultado da Avaliação 180°
+  const handleSalvarAvaliacao180 = async (
+    respostas: RespostaAvaliacao180[],
+    resultado: 'aprovado' | 'reprovado',
+    observacoes: string
+  ) => {
+    if (!modalAvaliacao180.colaborador) return;
+
+    const col = modalAvaliacao180.colaborador;
+    const milestone = modalAvaliacao180.milestone;
+
+    // Calcular médias
+    const mediaGeral = respostas.reduce((acc, r) => acc + r.nota, 0) / respostas.length;
+    const mediaPonderada = respostas.reduce((acc, r) => acc + r.nota, 0) / respostas.length; // Simplificado
+
+    // Salvar resultado da avaliação 180°
+    await DataService.saveResultado180({
+      id: `resultado-180-${col.id}-${Date.now()}`,
+      colaboradorId: col.id,
+      dataRealizacao: new Date().toISOString(),
+      resultado,
+      mediaGeral,
+      mediaPonderada,
+      respostas,
+      observacoes,
+      avaliadorId: currentUser.id,
+      tipo: '180',
+    });
+
+    // Marcar como concluída no colaborador
+    const novasCompletas = [...(col.avaliacoesCompletas || [])];
+    if (!novasCompletas.includes(milestone)) {
+      novasCompletas.push(milestone);
+    }
+
+    const colAtualizado: Colaborador = {
+      ...col,
+      avaliacoesCompletas: novasCompletas,
+    };
+
+    onUpdateColaborador(colAtualizado);
+
+    // Fechar modal
+    setModalAvaliacao180({ isOpen: false, colaborador: null, milestone: '' });
   };
 
   // Feedbacks Pendentes
@@ -870,7 +1043,7 @@ export default function Dashboard({
       )}
 
       {/* Seção de Alertas Rápidos (Cards de Resumo) */}
-      {todosAlertasAtivos.length > 0 && (
+      {(todosAlertasAtivos.length > 0 || todosAlertasFeriasAtivos.length > 0) && (
         <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-3xl p-6">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
@@ -881,39 +1054,85 @@ export default function Dashboard({
               onClick={() => setShowAlertasModal(true)}
               className="text-xs font-semibold text-amber-700 hover:text-amber-800 cursor-pointer"
             >
-              Ver todos ({todosAlertasAtivos.length})
+              Ver todos ({todosAlertasAtivos.length + todosAlertasFeriasAtivos.length})
             </button>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-            {todosAlertasAtivos.slice(0, 4).map((alerta) => {
-              const col = colaboradores.find(c => c.id === alerta.colaboradorId);
-              return (
-                <div
-                  key={alerta.id}
-                  onClick={() => {
-                    onSelectColaborador(alerta.colaboradorId);
-                  }}
-                  className={`bg-white rounded-xl p-4 border cursor-pointer hover:shadow-md transition ${
-                    alerta.status === 'pendente' ? 'border-amber-200' : 'border-slate-200'
-                  }`}
-                >
-                  <div className="flex items-center gap-2 mb-2">
-                    {getIconeAlerta(alerta.tipo)}
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                      {alerta.diasRestantes === 0 ? 'HOJE' : alerta.diasRestantes < 0 ? 'ATRASADO' : `${alerta.diasRestantes} dias`}
-                    </span>
-                  </div>
-                  <p className="text-sm font-bold text-slate-800 truncate">{alerta.titulo}</p>
-                  {col && (
-                    <div className="flex items-center gap-1.5 mt-2">
-                      <img src={col.fotoUrl} alt={col.nome} className="w-4 h-4 rounded-full" />
-                      <span className="text-xs text-slate-500 truncate">{col.nome}</span>
+          
+          {/* Alertas de Férias */}
+          {todosAlertasFeriasAtivos.length > 0 && (
+            <div className="mb-4">
+              <h3 className="text-sm font-semibold text-blue-800 mb-2 flex items-center gap-2">
+                <Calendar size={16} className="text-blue-600" />
+                Férias - Prazos Concessivos
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                {todosAlertasFeriasAtivos.slice(0, 4).map((alerta) => {
+                  const col = colaboradores.find(c => c.id === alerta.colaboradorId);
+                  return (
+                    <div
+                      key={alerta.id}
+                      onClick={() => onSelectColaborador(alerta.colaboradorId)}
+                      className={`bg-white rounded-xl p-4 border cursor-pointer hover:shadow-md transition ${
+                        alerta.severidade === 'vermelho' ? 'border-red-200' :
+                        alerta.severidade === 'amarelo' ? 'border-amber-200' : 'border-green-200'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 mb-2">
+                        <Calendar size={16} className={alerta.severidade === 'vermelho' ? 'text-red-500' : alerta.severidade === 'amarelo' ? 'text-amber-500' : 'text-green-500'} />
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                          {alerta.diasRestantes === 0 ? 'VENCIDO' : `${alerta.diasRestantes} dias`}
+                        </span>
+                      </div>
+                      <p className="text-sm font-bold text-slate-800 truncate">{alerta.titulo}</p>
+                      {col && (
+                        <div className="flex items-center gap-1.5 mt-2">
+                          <img src={col.fotoUrl} alt={col.nome} className="w-4 h-4 rounded-full" />
+                          <span className="text-xs text-slate-500 truncate">{col.nome}</span>
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          
+          {/* Outros Alertas */}
+          {todosAlertasAtivos.length > 0 && (
+            <div>
+              <h3 className="text-sm font-semibold text-amber-800 mb-2">Outros Alertas</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                {todosAlertasAtivos.slice(0, 4).map((alerta) => {
+                  const col = colaboradores.find(c => c.id === alerta.colaboradorId);
+                  return (
+                    <div
+                      key={alerta.id}
+                      onClick={() => {
+                        onSelectColaborador(alerta.colaboradorId);
+                      }}
+                      className={`bg-white rounded-xl p-4 border cursor-pointer hover:shadow-md transition ${
+                        alerta.status === 'pendente' ? 'border-amber-200' : 'border-slate-200'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 mb-2">
+                        {getIconeAlerta(alerta.tipo)}
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                          {alerta.diasRestantes === 0 ? 'HOJE' : alerta.diasRestantes < 0 ? 'ATRASADO' : `${alerta.diasRestantes} dias`}
+                        </span>
+                      </div>
+                      <p className="text-sm font-bold text-slate-800 truncate">{alerta.titulo}</p>
+                      {col && (
+                        <div className="flex items-center gap-1.5 mt-2">
+                          <img src={col.fotoUrl} alt={col.nome} className="w-4 h-4 rounded-full" />
+                          <span className="text-xs text-slate-500 truncate">{col.nome}</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -1003,7 +1222,15 @@ export default function Dashboard({
                     onClick={() => handleCompleteMilestone(item.colaborador, item.milestone)}
                     className="w-full mt-3 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-bold rounded-lg cursor-pointer transition"
                   >
-                    ✓ Marcar Concluída
+                    {item.milestone === '180' ? '📊 Realizar Avaliação 180°' : '✓ Marcar Concluída'}
+                  </button>
+                )}
+                {item.atrasado && item.milestone === '180' && (
+                  <button
+                    onClick={() => handleCompleteMilestone(item.colaborador, item.milestone)}
+                    className="w-full mt-3 px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold rounded-lg cursor-pointer transition"
+                  >
+                    📊 Realizar Avaliação 180°
                   </button>
                 )}
               </div>
@@ -1195,6 +1422,26 @@ export default function Dashboard({
           </div>
         </div>
       </div>
+
+      {/* Modal de Avaliação 180° */}
+      {modalAvaliacao180.isOpen && modalAvaliacao180.colaborador && (
+        <ModalAvaliacao180
+          isOpen={modalAvaliacao180.isOpen}
+          onClose={() => setModalAvaliacao180({ isOpen: false, colaborador: null, milestone: '' })}
+          colaborador={modalAvaliacao180.colaborador}
+          avaliacao={{
+            id: `avaliacao-180-${modalAvaliacao180.colaborador.id}`,
+            colaboradorId: modalAvaliacao180.colaborador.id,
+            dias: 180,
+            dataVencimento: new Date(
+              new Date(modalAvaliacao180.colaborador.dataAdmissao).getTime() +
+              (180 * 24 * 60 * 60 * 1000)
+            ).toISOString(),
+            status: 'pendente',
+          }}
+          onSave={handleSalvarAvaliacao180}
+        />
+      )}
     </div>
   );
 }

@@ -17,8 +17,11 @@ import {
   Tarefa,
   Reconhecimento,
   AvaliacaoExperiencia,
+  PrioridadeRegistro,
+  StatusRegistro,
 } from '../types';
 import { DataService } from '../services/DataService';
+import { PlanejadorFerias } from './PlanejadorFerias';
 import {
   Calendar,
   Palmtree,
@@ -392,6 +395,10 @@ export default function GestaoPessoas({
   const [modalType, setModalType] = useState<'ferias' | 'dayoff' | 'folga'>('ferias');
   const [selectedColaborador, setSelectedColaborador] = useState<string | null>(null);
   
+  // Planejador de Férias Inteligente
+  const [showPlanejadorFerias, setShowPlanejadorFerias] = useState(false);
+  const [colaboradorParaPlanejar, setColaboradorParaPlanejar] = useState<Colaborador | null>(null);
+  
   // Detalhe de colaborador selecionado
   const [colaboradorDetalhe, setColaboradorDetalhe] = useState<Colaborador | null>(null);
   
@@ -441,9 +448,8 @@ export default function GestaoPessoas({
   
   // Colaborador selecionado para modal de cadastro
   const handlePlanejarFerias = (colaborador: Colaborador) => {
-    setSelectedColaborador(colaborador.id);
-    setModalType('ferias');
-    setShowModal(true);
+    setColaboradorParaPlanejar(colaborador);
+    setShowPlanejadorFerias(true);
   };
   
   // Alertas inteligentes
@@ -742,6 +748,22 @@ export default function GestaoPessoas({
   // ==========================================
   const handleSalvarFerias = async (feriasData: Ferias) => {
     await DataService.saveFerias(feriasData);
+    
+    // Criar registro na timeline automaticamente
+    const novoRegistro: TimelineRegistro = {
+      id: `tl-ferias-${Date.now()}`,
+      colaboradorId: feriasData.colaboradorId,
+      tipo: 'Férias Planejadas',
+      titulo: `Férias Planejadas: ${feriasData.dias} dias`,
+      descricao: `Período de ${new Date(feriasData.dataInicio).toLocaleDateString('pt-BR')} a ${new Date(feriasData.dataFim).toLocaleDateString('pt-BR')}`,
+      data: feriasData.dataInicio,
+      responsavelId: currentUserId || 'sistema',
+      prioridade: 'Média' as PrioridadeRegistro,
+      status: 'Pendente' as StatusRegistro,
+      gerarTarefaFutura: false,
+      anexos: [],
+    };
+    await DataService.saveTimelineRegistro(novoRegistro);
     
     // Atualizar período aquisitivo
     const periodo = periodosAquisitivos.find(p => p.id === feriasData.periodoAquisitivoId);
@@ -1798,6 +1820,37 @@ export default function GestaoPessoas({
             else handleSalvarFolga(data as Folga);
           }}
           onClose={() => setShowModal(false)}
+        />
+      )}
+
+      {/* Planejador Inteligente de Férias */}
+      {showPlanejadorFerias && colaboradorParaPlanejar && (
+        <PlanejadorFerias
+          colaborador={colaboradorParaPlanejar}
+          setores={setores}
+          cargos={cargos}
+          colaboradores={colaboradores}
+          onClose={() => {
+            setShowPlanejadorFerias(false);
+            setColaboradorParaPlanejar(null);
+          }}
+          onSalvarFerias={handleSalvarFerias}
+          onMarcarPeriodoUtilizado={async (periodoId, totalmente) => {
+            const periodo = periodosAquisitivos.find(p => p.id === periodoId);
+            if (periodo) {
+              const atualizado: PeriodoAquisitivo = {
+                ...periodo,
+                diasUsados: totalmente ? periodo.diasDisponiveis : periodo.diasUsados,
+                diasRestantes: totalmente ? 0 : periodo.diasRestantes,
+                status: totalmente ? 'concluido' : periodo.status,
+                marcaComoUtilizado: true,
+                dataConclusao: new Date().toISOString().split('T')[0],
+              };
+              await DataService.savePeriodoAquisitivo(atualizado);
+              const periodosAtualizados = await DataService.getPeriodosAquisitivos();
+              setPeriodosAquisitivos(periodosAtualizados);
+            }
+          }}
         />
       )}
     </div>

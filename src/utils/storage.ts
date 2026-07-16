@@ -31,6 +31,8 @@ import {
   Folga,
   PeriodoAquisitivo,
   ConfiguracaoGestaoPessoas,
+  AlertaFerias,
+  ConfiguracaoFerias,
 } from '../types';
 
 // Chaves para o LocalStorage
@@ -49,6 +51,7 @@ const KEYS = {
   ONBOARDING_ITEMS: 'gc_onboarding_items',
   ONBOARDING_CHECKLISTS: 'gc_onboarding_checklists',
   AVALIACOES_EXPERIENCIA: 'gc_avaliacoes_experiencia',
+  RESULTADOS_180: 'gc_resultados_180',
   ALERTAS: 'gc_alertas_inteligentes',
   CONFIG_ALERTAS: 'gc_config_alertas',
   // P3: Documentos
@@ -66,6 +69,9 @@ const KEYS = {
   FOLGAS: 'gc_folgas',
   PERIODOS_AQUISITIVOS: 'gc_periodos_aquisitivos',
   CONFIG_GESTAO_PESSOAS: 'gc_config_gestao_pessoas',
+  // Férias Inteligentes
+  ALERTAS_FERIAS: 'gc_alertas_ferias',
+  CONFIG_FERIAS: 'gc_config_ferias',
 };
 
 // Dados Iniciais para o Seed
@@ -425,20 +431,20 @@ const SEED_ACOMPANHAMENTOS: AcompanhamentoRealizado[] = [];
 // ========== P6: GESTÃO DE PESSOAS SEED ==========
 const SEED_PERIODOS_AQUISITIVOS: PeriodoAquisitivo[] = [
   // Aline - Contratada em 2024-03-10
-  { id: 'pa-1', colaboradorId: 'col-1', anoBase: 2024, dataInicio: '2024-03-10', dataFim: '2025-03-09', diasDisponiveis: 30, diasUsados: 0, status: 'vencido' },
-  { id: 'pa-2', colaboradorId: 'col-1', anoBase: 2025, dataInicio: '2025-03-10', dataFim: '2026-03-09', diasDisponiveis: 30, diasUsados: 10, status: 'ativo' },
+  { id: 'pa-1', colaboradorId: 'col-1', anoBase: 2024, dataInicio: '2024-03-10', dataFim: '2025-03-09', diasDisponiveis: 30, diasUsados: 0, diasRestantes: 30, status: 'vencido' },
+  { id: 'pa-2', colaboradorId: 'col-1', anoBase: 2025, dataInicio: '2025-03-10', dataFim: '2026-03-09', diasDisponiveis: 30, diasUsados: 10, diasRestantes: 20, status: 'ativo' },
   // Bruno - Contratado em 2023-01-15
-  { id: 'pa-3', colaboradorId: 'col-2', anoBase: 2023, dataInicio: '2023-01-15', dataFim: '2024-01-14', diasDisponiveis: 30, diasUsados: 30, status: 'vencido' },
-  { id: 'pa-4', colaboradorId: 'col-2', anoBase: 2024, dataInicio: '2024-01-15', dataFim: '2025-01-14', diasDisponiveis: 30, diasUsados: 20, status: 'vencido' },
-  { id: 'pa-5', colaboradorId: 'col-2', anoBase: 2025, dataInicio: '2025-01-15', dataFim: '2026-01-14', diasDisponiveis: 30, diasUsados: 0, status: 'ativo' },
+  { id: 'pa-3', colaboradorId: 'col-2', anoBase: 2023, dataInicio: '2023-01-15', dataFim: '2024-01-14', diasDisponiveis: 30, diasUsados: 30, diasRestantes: 0, status: 'vencido' },
+  { id: 'pa-4', colaboradorId: 'col-2', anoBase: 2024, dataInicio: '2024-01-15', dataFim: '2025-01-14', diasDisponiveis: 30, diasUsados: 20, diasRestantes: 10, status: 'vencido' },
+  { id: 'pa-5', colaboradorId: 'col-2', anoBase: 2025, dataInicio: '2025-01-15', dataFim: '2026-01-14', diasDisponiveis: 30, diasUsados: 0, diasRestantes: 30, status: 'ativo' },
   // Clarice - Contratada em 2025-05-20
-  { id: 'pa-6', colaboradorId: 'col-3', anoBase: 2025, dataInicio: '2025-05-20', dataFim: '2026-05-19', diasDisponiveis: 30, diasUsados: 0, status: 'ativo' },
+  { id: 'pa-6', colaboradorId: 'col-3', anoBase: 2025, dataInicio: '2025-05-20', dataFim: '2026-05-19', diasDisponiveis: 30, diasUsados: 0, diasRestantes: 30, status: 'ativo' },
   // Daniel - Contratado em 2024-09-01
-  { id: 'pa-7', colaboradorId: 'col-4', anoBase: 2024, dataInicio: '2024-09-01', dataFim: '2025-08-31', diasDisponiveis: 30, diasUsados: 15, status: 'vencido' },
-  { id: 'pa-8', colaboradorId: 'col-4', anoBase: 2025, dataInicio: '2025-09-01', dataFim: '2026-08-31', diasDisponiveis: 30, diasUsados: 0, status: 'ativo' },
+  { id: 'pa-7', colaboradorId: 'col-4', anoBase: 2024, dataInicio: '2024-09-01', dataFim: '2025-08-31', diasDisponiveis: 30, diasUsados: 15, diasRestantes: 15, status: 'vencido' },
+  { id: 'pa-8', colaboradorId: 'col-4', anoBase: 2025, dataInicio: '2025-09-01', dataFim: '2026-08-31', diasDisponiveis: 30, diasUsados: 0, diasRestantes: 30, status: 'ativo' },
   // Eduarda - Contratada em 2022-11-10
-  { id: 'pa-9', colaboradorId: 'col-5', anoBase: 2024, dataInicio: '2024-11-10', dataFim: '2025-11-09', diasDisponiveis: 30, diasUsados: 30, status: 'vencido' },
-  { id: 'pa-10', colaboradorId: 'col-5', anoBase: 2025, dataInicio: '2025-11-10', dataFim: '2026-11-09', diasDisponiveis: 30, diasUsados: 0, status: 'ativo' },
+  { id: 'pa-9', colaboradorId: 'col-5', anoBase: 2024, dataInicio: '2024-11-10', dataFim: '2025-11-09', diasDisponiveis: 30, diasUsados: 30, diasRestantes: 0, status: 'vencido' },
+  { id: 'pa-10', colaboradorId: 'col-5', anoBase: 2025, dataInicio: '2025-11-10', dataFim: '2026-11-09', diasDisponiveis: 30, diasUsados: 0, diasRestantes: 30, status: 'ativo' },
 ];
 
 const SEED_FERIAS: Ferias[] = [
@@ -473,6 +479,17 @@ const DEFAULT_CONFIG_GESTAO_PESSOAS: ConfiguracaoGestaoPessoas = {
     aniversarioProximo: true,
     aniversarioEmpresaProximo: true,
   },
+};
+
+const DEFAULT_CONFIG_FERIAS: ConfiguracaoFerias = {
+  diasAntecedenciaAlerta: 90,
+  permitirFeriasProlongadas: true,
+  maximoDiasSimultaneoSetor: 3,
+  maximoPercentualEquipe: 35,
+  diasMinimosAntecedenciaPlanejamento: 7,
+  opcoesAntecedencia: [30, 60, 90, 120, 180],
+  salarioMinimoDias: 10,
+  prazoConcessivoMeses: 12,
 };
 
 // Funções de Inicialização e Leitura/Escrita
@@ -562,6 +579,9 @@ export function initializeStorage() {
   }
   if (!localStorage.getItem(KEYS.CONFIG_GESTAO_PESSOAS)) {
     localStorage.setItem(KEYS.CONFIG_GESTAO_PESSOAS, JSON.stringify(DEFAULT_CONFIG_GESTAO_PESSOAS));
+  }
+  if (!localStorage.getItem(KEYS.CONFIG_FERIAS)) {
+    localStorage.setItem(KEYS.CONFIG_FERIAS, JSON.stringify(DEFAULT_CONFIG_FERIAS));
   }
 }
 
@@ -754,6 +774,22 @@ export const StorageAPI = {
   deleteAvaliacaoExperiencia: (id: string) => {
     const avaliacoes = StorageAPI.getAvaliacoesExperiencia().filter((a) => a.id !== id);
     set(KEYS.AVALIACOES_EXPERIENCIA, avaliacoes);
+  },
+
+  // Resultados Avaliação 180°
+  getResultados180: (): any[] => {
+    return get(KEYS.RESULTADOS_180) || [];
+  },
+  saveResultado180: (resultado: any) => {
+    const resultados = StorageAPI.getResultados180();
+    const index = resultados.findIndex((r) => r.id === resultado.id);
+    if (index >= 0) resultados[index] = resultado;
+    else resultados.push(resultado);
+    set(KEYS.RESULTADOS_180, resultados);
+  },
+  deleteResultado180: (id: string) => {
+    const resultados = StorageAPI.getResultados180().filter((r) => r.id !== id);
+    set(KEYS.RESULTADOS_180, resultados);
   },
 
   // Resetar para valores padrão
@@ -1030,6 +1066,50 @@ export const StorageAPI = {
   deleteFerias: (id: string) => {
     const ferias = StorageAPI.getFerias().filter(f => f.id !== id);
     set(KEYS.FERIAS, ferias);
+  },
+
+  // Alertas de Férias
+  getAlertasFerias: (): AlertaFerias[] => {
+    return get<AlertaFerias>(KEYS.ALERTAS_FERIAS) || [];
+  },
+
+  getAlertasFeriasPorColaborador: (colaboradorId: string): AlertaFerias[] => {
+    return StorageAPI.getAlertasFerias().filter(a => a.colaboradorId === colaboradorId);
+  },
+
+  getAlertasFeriasPendentes: (): AlertaFerias[] => {
+    return StorageAPI.getAlertasFerias().filter(a => a.status === 'pendente');
+  },
+
+  saveAlertaFerias: (alerta: AlertaFerias) => {
+    const alertas = StorageAPI.getAlertasFerias();
+    const index = alertas.findIndex(a => a.id === alerta.id);
+    if (index >= 0) {
+      alertas[index] = alerta;
+    } else {
+      alertas.push(alerta);
+    }
+    set(KEYS.ALERTAS_FERIAS, alertas);
+  },
+
+  deleteAlertaFerias: (id: string) => {
+    const alertas = StorageAPI.getAlertasFerias().filter(a => a.id !== id);
+    set(KEYS.ALERTAS_FERIAS, alertas);
+  },
+
+  deleteAlertasFeriasPorColaborador: (colaboradorId: string) => {
+    const alertas = StorageAPI.getAlertasFerias().filter(a => a.colaboradorId !== colaboradorId);
+    set(KEYS.ALERTAS_FERIAS, alertas);
+  },
+
+  // Configuração de Férias
+  getConfiguracaoFerias: (): ConfiguracaoFerias => {
+    const config = localStorage.getItem(KEYS.CONFIG_FERIAS);
+    return config ? JSON.parse(config) : DEFAULT_CONFIG_FERIAS;
+  },
+
+  saveConfiguracaoFerias: (config: ConfiguracaoFerias) => {
+    localStorage.setItem(KEYS.CONFIG_FERIAS, JSON.stringify(config));
   },
 
   // DayOffs

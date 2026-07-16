@@ -950,13 +950,57 @@ export class GoogleScriptDataService implements IDataService {
 
   // P3: Documentos
   async getDocumentos(): Promise<Documento[]> {
+    try {
+      const raw = await this.request<any[]>('getDocumentos');
+      if (raw && raw.length > 0) {
+        return raw.map((d: any) => ({
+          id: String(d.id || ''),
+          colaboradorId: String(d.colaborador_id || ''),
+          nome: String(d.nome || ''),
+          categoria: String(d.categoria || ''),
+          tipoArquivo: String(d.tipo_arquivo || ''),
+          url: String(d.url || ''),
+          tamanho: String(d.tamanho || ''),
+          uploadedPor: String(d.uploaded_por || ''),
+          dataUpload: String(d.data_upload || ''),
+          descricao: String(d.descricao || '')
+        }));
+      }
+    } catch (e) {
+      console.warn('GoogleScript getDocumentos falhou, usando LocalStorage:', e);
+    }
     return this.localFallback.getDocumentos();
   }
+  
   async saveDocumento(doc: Documento): Promise<void> {
     await this.localFallback.saveDocumento(doc);
+    try {
+      await this.request('saveDocumento', {
+        data: {
+          id: doc.id,
+          colaborador_id: doc.colaboradorId,
+          nome: doc.nome,
+          categoria: doc.categoria,
+          tipo_arquivo: doc.tipoArquivo,
+          url: doc.url,
+          tamanho: doc.tamanho,
+          uploaded_por: doc.uploadedPor,
+          data_upload: doc.dataUpload,
+          descricao: doc.descricao || ''
+        }
+      });
+    } catch (e) {
+      console.warn('Documento salvo localmente (erro na sincronização):', e);
+    }
   }
+  
   async deleteDocumento(id: string): Promise<void> {
     await this.localFallback.deleteDocumento(id);
+    try {
+      await this.request('deleteDocumento', { id });
+    } catch (e) {
+      console.warn('Erro ao excluir documento no GoogleScript:', e);
+    }
   }
 
   // P4: Reconhecimento

@@ -13,7 +13,8 @@ const SHEETS = {
   REGISTROS: "Registros",
   TAREFAS: "Tarefas",
   ONBOARDING_ITEMS: "OnboardingItems",
-  ONBOARDING_CHECKLISTS: "OnboardingChecklists"
+  ONBOARDING_CHECKLISTS: "OnboardingChecklists",
+  DOCUMENTOS: "Documentos"
 };
 
 // ═══════════════════════════════════════════════════════════════════
@@ -89,6 +90,9 @@ function processRequest(e) {
     if (action === "getOnboardingChecklists") {
       return renderJson(getTableData(SHEETS.ONBOARDING_CHECKLISTS, ["id", "colaborador_id", "items_concluidos", "data_criacao"]));
     }
+    if (action === "getDocumentos") {
+      return renderJson(getTableData(SHEETS.DOCUMENTOS, ["id", "colaborador_id", "nome", "categoria", "tipo_arquivo", "url", "tamanho", "uploaded_por", "data_upload", "descricao"]));
+    }
     
     // --- GRAVAÇÕES POST (UPSERT) ---
     var dataObj = params.data || params;
@@ -156,6 +160,14 @@ function processRequest(e) {
     if (action === "saveOnboardingChecklist") {
       saveRow(SHEETS.ONBOARDING_CHECKLISTS, dataObj, ["id", "colaborador_id", "items_concluidos", "data_criacao"]);
       return renderSuccess("Checklist de onboarding salvo.");
+    }
+    if (action === "saveDocumento") {
+      saveRow(SHEETS.DOCUMENTOS, dataObj, ["id", "colaborador_id", "nome", "categoria", "tipo_arquivo", "url", "tamanho", "uploaded_por", "data_upload", "descricao"]);
+      return renderSuccess("Documento salvo.");
+    }
+    if (action === "deleteDocumento") {
+      deleteRow(SHEETS.DOCUMENTOS, dataObj.id);
+      return renderSuccess("Documento removido.");
     }
 
     // ALTERNAR STATUS DE TAREFA (CONCLUÍDO/PENDENTE)

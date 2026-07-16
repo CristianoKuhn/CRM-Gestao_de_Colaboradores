@@ -60,6 +60,10 @@ export type TipoRegistro =
   | 'Reclamação de Cliente'
   | 'Observação Geral'
   | 'Acompanhamento'
+  | 'Férias Planejadas'
+  | 'Demissão'
+  | 'Afastamento'
+  | 'Licença'
   | 'Outros';
 
 export type PrioridadeRegistro = 'Baixa' | 'Média' | 'Alta' | 'Crítica';
@@ -327,6 +331,7 @@ export interface PeriodoAquisitivo {
   diasDisponiveis: number; // Dias de férias disponíveis
   diasUsados: number; // Dias já utilizados
   status: 'ativo' | 'vencido' | 'futuro';
+  diasRestantes?: number; // Dias restantes (calculado)
 }
 
 // Registro de Férias

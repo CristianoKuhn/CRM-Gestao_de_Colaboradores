@@ -993,15 +993,6 @@ export class GoogleScriptDataService implements IDataService {
     } catch (e) {
       console.warn('Erro ao excluir resultado 180 no GoogleScript:', e);
     }
-  }  // Resultados Avaliação 180°
-  async getResultados180(): Promise<any[]> {
-    return this.localFallback.getResultados180();
-  }
-  async saveResultado180(resultado: any): Promise<void> {
-    await this.localFallback.saveResultado180(resultado);
-  }
-  async deleteResultado180(id: string): Promise<void> {
-    await this.localFallback.deleteResultado180(id);
   }
 
   // Alertas Inteligentes (usando localStorage como fallback)

@@ -566,11 +566,11 @@ export default function Dashboard({
       }
       
       const itemsPendentes = itensRelevantes.filter(item => 
-        !checklist.itemsConcluidos.includes(item.id)
+        !checklist!.itemsConcluidos.includes(item.id)
       );
       
       if (itemsPendentes.length > 0) {
-        list.push({ colaborador: col, checklist, itemsPendentes });
+        list.push({ colaborador: col, checklist: checklist!, itemsPendentes });
       }
     });
     

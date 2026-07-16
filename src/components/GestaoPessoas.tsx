@@ -1042,7 +1042,7 @@ export default function GestaoPessoas({
               </thead>
               <tbody>
                 {planejamento.flatMap(item => {
-                  const rows = [];
+                  const rows: React.ReactNode[] = [];
                   
                   // Períodos
                   item.periodos.forEach(periodo => {
@@ -1477,7 +1477,11 @@ export default function GestaoPessoas({
           type={modalType}
           colaboradores={colaboradores}
           periodosAquisitivos={periodosAquisitivos}
-          onSave={modalType === 'ferias' ? handleSalvarFerias : modalType === 'dayoff' ? handleSalvarDayOff : handleSalvarFolga}
+          onSave={(data) => {
+            if (modalType === 'ferias') handleSalvarFerias(data as Ferias);
+            else if (modalType === 'dayoff') handleSalvarDayOff(data as DayOff);
+            else handleSalvarFolga(data as Folga);
+          }}
           onClose={() => setShowModal(false)}
         />
       )}
@@ -1644,7 +1648,7 @@ function ModalCadastro({ type, colaboradores, periodosAquisitivos, onSave, onClo
                   type="number"
                   value={dias}
                   onChange={e => setDias(parseInt(e.target.value) || 0)}
-                  max={periodoSelecionado?.diasDisponiveis - periodoSelecionado?.diasUsados}
+                  max={periodoSelecionado ? periodoSelecionado.diasDisponiveis - periodoSelecionado.diasUsados : undefined}
                   className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-xs focus:outline-none focus:border-teal-500"
                 />
               </div>

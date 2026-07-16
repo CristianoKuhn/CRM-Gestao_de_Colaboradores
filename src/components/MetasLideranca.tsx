@@ -300,8 +300,8 @@ export default function MetasLideranca({
             {resumoMetas.map((item) => {
               const isLider = 'liderId' in item.meta;
               const responsavel = isLider
-                ? lideres.find((l) => l.id === item.meta.liderId)?.nome
-                : setores.find((s) => s.id === item.meta.setorId)?.nome;
+                ? lideres.find((l) => l.id === (item.meta as MetaLideranca).liderId)?.nome
+                : setores.find((s) => s.id === (item.meta as MetaSetor).setorId)?.nome;
 
               return (
                 <div

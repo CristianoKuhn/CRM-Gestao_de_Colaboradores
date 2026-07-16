@@ -101,9 +101,9 @@ export default function App() {
   const [avaliacoesExperiencia, setAvaliacoesExperiencia] = useState<AvaliacaoExperiencia[]>([]);
   const [configuracaoAlertas, setConfiguracaoAlertas] = useState<ConfiguracaoAlertas>({
     diasSemInteracao: 30,
-    antecedenciaAniversario: 15,
-    antecedenciaAvaliacao180: 30,
-    habilitado: true,
+    diasAntecedenciaAniversario: 15,
+    diasAntecedenciaAvaliacao180: 30,
+    alertasPersistentes: true,
   });
 
   // P3: Documentos

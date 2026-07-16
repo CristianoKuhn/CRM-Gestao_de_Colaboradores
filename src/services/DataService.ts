@@ -970,7 +970,7 @@ export class GoogleScriptDataService implements IDataService {
           id: String(d.id || ''),
           colaboradorId: String(d.colaborador_id || ''),
           nome: String(d.nome || ''),
-          categoria: String(d.categoria || ''),
+          categoria: String(d.categoria || '') as any,
           tipoArquivo: String(d.tipo_arquivo || ''),
           url: String(d.url || ''),
           tamanho: String(d.tamanho || ''),
@@ -1060,6 +1060,50 @@ export class GoogleScriptDataService implements IDataService {
   }
   async deleteAcompanhamento(id: string): Promise<void> {
     await this.localFallback.deleteAcompanhamento(id);
+  }
+
+  // P6: Gestão de Pessoas
+  async getFerias(): Promise<Ferias[]> {
+    return this.localFallback.getFerias();
+  }
+  async saveFerias(ferias: Ferias): Promise<void> {
+    await this.localFallback.saveFerias(ferias);
+  }
+  async deleteFerias(id: string): Promise<void> {
+    await this.localFallback.deleteFerias(id);
+  }
+  async getDayOffs(): Promise<DayOff[]> {
+    return this.localFallback.getDayOffs();
+  }
+  async saveDayOff(dayoff: DayOff): Promise<void> {
+    await this.localFallback.saveDayOff(dayoff);
+  }
+  async deleteDayOff(id: string): Promise<void> {
+    await this.localFallback.deleteDayOff(id);
+  }
+  async getFolgas(): Promise<Folga[]> {
+    return this.localFallback.getFolgas();
+  }
+  async saveFolga(folga: Folga): Promise<void> {
+    await this.localFallback.saveFolga(folga);
+  }
+  async deleteFolga(id: string): Promise<void> {
+    await this.localFallback.deleteFolga(id);
+  }
+  async getPeriodosAquisitivos(): Promise<PeriodoAquisitivo[]> {
+    return this.localFallback.getPeriodosAquisitivos();
+  }
+  async savePeriodoAquisitivo(periodo: PeriodoAquisitivo): Promise<void> {
+    await this.localFallback.savePeriodoAquisitivo(periodo);
+  }
+  async deletePeriodoAquisitivo(id: string): Promise<void> {
+    await this.localFallback.deletePeriodoAquisitivo(id);
+  }
+  async getConfiguracaoGestaoPessoas(): Promise<ConfiguracaoGestaoPessoas> {
+    return this.localFallback.getConfiguracaoGestaoPessoas();
+  }
+  async saveConfiguracaoGestaoPessoas(config: ConfiguracaoGestaoPessoas): Promise<void> {
+    await this.localFallback.saveConfiguracaoGestaoPessoas(config);
   }
 
   async uploadFile(
@@ -1775,46 +1819,46 @@ class DynamicDataService implements IDataService {
 
   // P6: Gestão de Pessoas
   async getFerias(): Promise<Ferias[]> {
-    return this.localFallback.getFerias();
+    return this.getService().getFerias();
   }
   async saveFerias(ferias: Ferias): Promise<void> {
-    await this.localFallback.saveFerias(ferias);
+    await this.getService().saveFerias(ferias);
   }
   async deleteFerias(id: string): Promise<void> {
-    await this.localFallback.deleteFerias(id);
+    await this.getService().deleteFerias(id);
   }
   async getDayOffs(): Promise<DayOff[]> {
-    return this.localFallback.getDayOffs();
+    return this.getService().getDayOffs();
   }
   async saveDayOff(dayoff: DayOff): Promise<void> {
-    await this.localFallback.saveDayOff(dayoff);
+    await this.getService().saveDayOff(dayoff);
   }
   async deleteDayOff(id: string): Promise<void> {
-    await this.localFallback.deleteDayOff(id);
+    await this.getService().deleteDayOff(id);
   }
   async getFolgas(): Promise<Folga[]> {
-    return this.localFallback.getFolgas();
+    return this.getService().getFolgas();
   }
   async saveFolga(folga: Folga): Promise<void> {
-    await this.localFallback.saveFolga(folga);
+    await this.getService().saveFolga(folga);
   }
   async deleteFolga(id: string): Promise<void> {
-    await this.localFallback.deleteFolga(id);
+    await this.getService().deleteFolga(id);
   }
   async getPeriodosAquisitivos(): Promise<PeriodoAquisitivo[]> {
-    return this.localFallback.getPeriodosAquisitivos();
+    return this.getService().getPeriodosAquisitivos();
   }
   async savePeriodoAquisitivo(periodo: PeriodoAquisitivo): Promise<void> {
-    await this.localFallback.savePeriodoAquisitivo(periodo);
+    await this.getService().savePeriodoAquisitivo(periodo);
   }
   async deletePeriodoAquisitivo(id: string): Promise<void> {
-    await this.localFallback.deletePeriodoAquisitivo(id);
+    await this.getService().deletePeriodoAquisitivo(id);
   }
   async getConfiguracaoGestaoPessoas(): Promise<ConfiguracaoGestaoPessoas> {
-    return this.localFallback.getConfiguracaoGestaoPessoas();
+    return this.getService().getConfiguracaoGestaoPessoas();
   }
   async saveConfiguracaoGestaoPessoas(config: ConfiguracaoGestaoPessoas): Promise<void> {
-    await this.localFallback.saveConfiguracaoGestaoPessoas(config);
+    await this.getService().saveConfiguracaoGestaoPessoas(config);
   }
 
   async resetData(): Promise<void> {

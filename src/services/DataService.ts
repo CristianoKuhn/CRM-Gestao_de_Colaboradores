@@ -32,6 +32,8 @@ import {
   Folga,
   PeriodoAquisitivo,
   ConfiguracaoGestaoPessoas,
+  AlertaFerias,
+  ConfiguracaoFerias,
 } from '../types';
 import { StorageAPI } from '../utils/storage';
 
@@ -148,6 +150,13 @@ export interface IDataService {
   deletePeriodoAquisitivo(id: string): Promise<void>;
   getConfiguracaoGestaoPessoas(): Promise<ConfiguracaoGestaoPessoas>;
   saveConfiguracaoGestaoPessoas(config: ConfiguracaoGestaoPessoas): Promise<void>;
+
+  // Férias Inteligentes
+  getAlertasFerias(): Promise<AlertaFerias[]>;
+  saveAlertaFerias(alerta: AlertaFerias): Promise<void>;
+  deleteAlertaFerias(id: string): Promise<void>;
+  getConfiguracaoFerias(): Promise<ConfiguracaoFerias>;
+  saveConfiguracaoFerias(config: ConfiguracaoFerias): Promise<void>;
 
   uploadFile(
     file: File,
@@ -377,6 +386,23 @@ export class LocalDataService implements IDataService {
   }
   async saveConfiguracaoGestaoPessoas(config: ConfiguracaoGestaoPessoas): Promise<void> {
     StorageAPI.saveConfiguracaoGestaoPessoas(config);
+  }
+
+  // Férias Inteligentes
+  async getAlertasFerias(): Promise<AlertaFerias[]> {
+    return StorageAPI.getAlertasFerias();
+  }
+  async saveAlertaFerias(alerta: AlertaFerias): Promise<void> {
+    StorageAPI.saveAlertaFerias(alerta);
+  }
+  async deleteAlertaFerias(id: string): Promise<void> {
+    StorageAPI.deleteAlertaFerias(id);
+  }
+  async getConfiguracaoFerias(): Promise<ConfiguracaoFerias> {
+    return StorageAPI.getConfiguracaoFerias();
+  }
+  async saveConfiguracaoFerias(config: ConfiguracaoFerias): Promise<void> {
+    StorageAPI.saveConfiguracaoFerias(config);
   }
 
   async uploadFile(
@@ -1123,6 +1149,23 @@ export class GoogleScriptDataService implements IDataService {
   async saveConfiguracaoGestaoPessoas(config: ConfiguracaoGestaoPessoas): Promise<void> {
     await this.localFallback.saveConfiguracaoGestaoPessoas(config);
   }
+
+  // Férias Inteligentes
+  async getAlertasFerias(): Promise<AlertaFerias[]> {
+    return this.localFallback.getAlertasFerias();
+  }
+  async saveAlertaFerias(alerta: AlertaFerias): Promise<void> {
+    await this.localFallback.saveAlertaFerias(alerta);
+  }
+  async deleteAlertaFerias(id: string): Promise<void> {
+    await this.localFallback.deleteAlertaFerias(id);
+  }
+  async getConfiguracaoFerias(): Promise<ConfiguracaoFerias> {
+    return this.localFallback.getConfiguracaoFerias();
+  }
+  async saveConfiguracaoFerias(config: ConfiguracaoFerias): Promise<void> {
+    await this.localFallback.saveConfiguracaoFerias(config);
+  }
 }
 
 // -----------------------------------------------------------------
@@ -1356,6 +1399,23 @@ class DynamicDataService implements IDataService {
   }
   async saveConfiguracaoGestaoPessoas(config: ConfiguracaoGestaoPessoas): Promise<void> {
     await this.getService().saveConfiguracaoGestaoPessoas(config);
+  }
+
+  // Férias Inteligentes
+  async getAlertasFerias(): Promise<AlertaFerias[]> {
+    return this.getService().getAlertasFerias();
+  }
+  async saveAlertaFerias(alerta: AlertaFerias): Promise<void> {
+    await this.getService().saveAlertaFerias(alerta);
+  }
+  async deleteAlertaFerias(id: string): Promise<void> {
+    await this.getService().deleteAlertaFerias(id);
+  }
+  async getConfiguracaoFerias(): Promise<ConfiguracaoFerias> {
+    return this.getService().getConfiguracaoFerias();
+  }
+  async saveConfiguracaoFerias(config: ConfiguracaoFerias): Promise<void> {
+    await this.getService().saveConfiguracaoFerias(config);
   }
 
   async resetData(): Promise<void> {

@@ -31,6 +31,8 @@ import {
   Folga,
   PeriodoAquisitivo,
   ConfiguracaoGestaoPessoas,
+  AlertaFerias,
+  ConfiguracaoFerias,
 } from '../types';
 
 // Chaves para o LocalStorage
@@ -67,6 +69,9 @@ const KEYS = {
   FOLGAS: 'gc_folgas',
   PERIODOS_AQUISITIVOS: 'gc_periodos_aquisitivos',
   CONFIG_GESTAO_PESSOAS: 'gc_config_gestao_pessoas',
+  // Férias Inteligentes
+  ALERTAS_FERIAS: 'gc_alertas_ferias',
+  CONFIG_FERIAS: 'gc_config_ferias',
 };
 
 // Dados Iniciais para o Seed
@@ -476,6 +481,17 @@ const DEFAULT_CONFIG_GESTAO_PESSOAS: ConfiguracaoGestaoPessoas = {
   },
 };
 
+const DEFAULT_CONFIG_FERIAS: ConfiguracaoFerias = {
+  diasAntecedenciaAlerta: 90,
+  permitirFeriasProlongadas: true,
+  maximoDiasSimultaneoSetor: 3,
+  maximoPercentualEquipe: 35,
+  diasMinimosAntecedenciaPlanejamento: 7,
+  opcoesAntecedencia: [30, 60, 90, 120, 180],
+  salarioMinimoDias: 10,
+  prazoConcessivoMeses: 12,
+};
+
 // Funções de Inicialização e Leitura/Escrita
 export function initializeStorage() {
   if (!localStorage.getItem(KEYS.EMPRESAS)) {
@@ -563,6 +579,9 @@ export function initializeStorage() {
   }
   if (!localStorage.getItem(KEYS.CONFIG_GESTAO_PESSOAS)) {
     localStorage.setItem(KEYS.CONFIG_GESTAO_PESSOAS, JSON.stringify(DEFAULT_CONFIG_GESTAO_PESSOAS));
+  }
+  if (!localStorage.getItem(KEYS.CONFIG_FERIAS)) {
+    localStorage.setItem(KEYS.CONFIG_FERIAS, JSON.stringify(DEFAULT_CONFIG_FERIAS));
   }
 }
 
@@ -1047,6 +1066,50 @@ export const StorageAPI = {
   deleteFerias: (id: string) => {
     const ferias = StorageAPI.getFerias().filter(f => f.id !== id);
     set(KEYS.FERIAS, ferias);
+  },
+
+  // Alertas de Férias
+  getAlertasFerias: (): AlertaFerias[] => {
+    return get<AlertaFerias>(KEYS.ALERTAS_FERIAS) || [];
+  },
+
+  getAlertasFeriasPorColaborador: (colaboradorId: string): AlertaFerias[] => {
+    return StorageAPI.getAlertasFerias().filter(a => a.colaboradorId === colaboradorId);
+  },
+
+  getAlertasFeriasPendentes: (): AlertaFerias[] => {
+    return StorageAPI.getAlertasFerias().filter(a => a.status === 'pendente');
+  },
+
+  saveAlertaFerias: (alerta: AlertaFerias) => {
+    const alertas = StorageAPI.getAlertasFerias();
+    const index = alertas.findIndex(a => a.id === alerta.id);
+    if (index >= 0) {
+      alertas[index] = alerta;
+    } else {
+      alertas.push(alerta);
+    }
+    set(KEYS.ALERTAS_FERIAS, alertas);
+  },
+
+  deleteAlertaFerias: (id: string) => {
+    const alertas = StorageAPI.getAlertasFerias().filter(a => a.id !== id);
+    set(KEYS.ALERTAS_FERIAS, alertas);
+  },
+
+  deleteAlertasFeriasPorColaborador: (colaboradorId: string) => {
+    const alertas = StorageAPI.getAlertasFerias().filter(a => a.colaboradorId !== colaboradorId);
+    set(KEYS.ALERTAS_FERIAS, alertas);
+  },
+
+  // Configuração de Férias
+  getConfiguracaoFerias: (): ConfiguracaoFerias => {
+    const config = localStorage.getItem(KEYS.CONFIG_FERIAS);
+    return config ? JSON.parse(config) : DEFAULT_CONFIG_FERIAS;
+  },
+
+  saveConfiguracaoFerias: (config: ConfiguracaoFerias) => {
+    localStorage.setItem(KEYS.CONFIG_FERIAS, JSON.stringify(config));
   },
 
   // DayOffs

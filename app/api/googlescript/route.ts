@@ -12,6 +12,7 @@ export async function GET(request: NextRequest) {
     const scriptUrl =
       request.headers.get('x-google-script-url') ||
       process.env.GOOGLE_SCRIPT_URL ||
+      process.env.VITE_GOOGLE_SCRIPT_URL ||
       'https://script.google.com/macros/s/AKfycbz8iGKX9f9VNECQL1fcQttiMaEuT3a61YS3hE3HYi13SUvx3ShxF3RF69u7LkQhac0V/exec';
 
     const url = new URL(scriptUrl);
@@ -45,6 +46,7 @@ export async function POST(request: NextRequest) {
     const scriptUrl =
       request.headers.get('x-google-script-url') ||
       process.env.GOOGLE_SCRIPT_URL ||
+      process.env.VITE_GOOGLE_SCRIPT_URL ||
       'https://script.google.com/macros/s/AKfycbz8iGKX9f9VNECQL1fcQttiMaEuT3a61YS3hE3HYi13SUvx3ShxF3RF69u7LkQhac0V/exec';
 
     const url = new URL(scriptUrl);

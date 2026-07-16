@@ -387,22 +387,35 @@ export class GoogleScriptDataService implements IDataService {
   }
 
   private async request<T>(action: string, payload?: any): Promise<T> {
-    // URL padrão do Google Apps Script
+    // URL padrão do Google Apps Script (fallback)
     const DEFAULT_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbz8iGKX9f9VNECQL1fcQttiMaEuT3a61YS3hE3HYi13SUvx3ShxF3RF69u7LkQhac0V/exec';
     
     // Usa a URL configurada ou a padrão
     const webAppUrl = this.config.webAppUrl || DEFAULT_WEBAPP_URL;
     
-    const url = new URL(webAppUrl);
-    url.searchParams.set('action', action);
-
+    // Usa o proxy API se estiver em produção (Vercel), senão chama diretamente
+    const isProduction = window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
+    
+    let url: URL;
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     };
+    
+    if (isProduction) {
+      // Em produção, usa o proxy API do Vercel
+      url = new URL('/api/googlescript', window.location.origin);
+      url.searchParams.set('action', action);
+      if (webAppUrl !== DEFAULT_WEBAPP_URL) {
+        headers['x-google-script-url'] = webAppUrl;
+      }
+    } else {
+      // Em desenvolvimento, chama diretamente o Apps Script
+      url = new URL(webAppUrl);
+      url.searchParams.set('action', action);
+    }
 
     const options: RequestInit = {
       method: payload ? 'POST' : 'GET',
-      mode: 'cors',
       headers,
     };
 
@@ -415,12 +428,12 @@ export class GoogleScriptDataService implements IDataService {
 
     const response = await fetch(url.toString(), options);
     if (!response.ok) {
-      throw new Error(`Erro na chamada do Google Apps Script: ${response.statusText}`);
+      throw new Error(`Erro na chamada: ${response.statusText}`);
     }
 
     const result = await response.json();
     if (result.status === 'error' || result.success === false) {
-      throw new Error(result.message || 'Erro reportado pelo Google Apps Script.');
+      throw new Error(result.message || 'Erro reportado.');
     }
 
     return result.data as T;

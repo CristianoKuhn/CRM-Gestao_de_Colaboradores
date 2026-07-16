@@ -584,6 +584,7 @@ export default function ColaboradorProfile({
                       <option value="Reclamação de Cliente">Reclamação de Cliente</option>
                       <option value="Observação Geral">Observação Geral</option>
                       <option value="Acompanhamento">Acompanhamento</option>
+                      <option value="Avaliação 180°">Avaliação 180°</option>
                       <option value="Outros">Outros</option>
                     </select>
                   </div>

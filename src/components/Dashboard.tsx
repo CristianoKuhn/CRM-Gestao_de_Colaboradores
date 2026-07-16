@@ -1070,7 +1070,15 @@ export default function Dashboard({
                     onClick={() => handleCompleteMilestone(item.colaborador, item.milestone)}
                     className="w-full mt-3 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-bold rounded-lg cursor-pointer transition"
                   >
-                    ✓ Marcar Concluída
+                    {item.milestone === '180' ? '📊 Realizar Avaliação 180°' : '✓ Marcar Concluída'}
+                  </button>
+                )}
+                {item.atrasado && item.milestone === '180' && (
+                  <button
+                    onClick={() => handleCompleteMilestone(item.colaborador, item.milestone)}
+                    className="w-full mt-3 px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold rounded-lg cursor-pointer transition"
+                  >
+                    📊 Realizar Avaliação 180°
                   </button>
                 )}
               </div>

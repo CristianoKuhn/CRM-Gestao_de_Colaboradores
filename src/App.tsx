@@ -208,9 +208,10 @@ export default function App() {
   };
 
   // Tratar alteração rápida de situação ou atualização de dados do colaborador
-  const handleUpdateColaborador = async (col: Colaborador) => {
+  const handleUpdateColaborador = async (col: Colaborador): Promise<Colaborador> => {
     await DataService.saveColaborador(col);
     await loadAllData();
+    return col;
   };
 
   // Sincronizar ao criar colaborador - com auto onboarding e avaliações de experiência

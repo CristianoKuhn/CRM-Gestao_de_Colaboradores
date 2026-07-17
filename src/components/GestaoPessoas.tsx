@@ -100,6 +100,8 @@ function calcularProximoAniversario(dataNascimento: string | undefined): { data:
   if (!dataNascimento) return null;
   
   const nasc = new Date(dataNascimento);
+  if (isNaN(nasc.getTime())) return null;
+  
   const proximoAniversario = new Date(ANO_ATUAL, nasc.getMonth(), nasc.getDate());
   
   if (proximoAniversario < HOJE) {
@@ -710,6 +712,7 @@ export default function GestaoPessoas({
     colaboradores.forEach(col => {
       if (!col.dataNascimento || col.situacao === 'Desligado') return;
       const nasc = new Date(col.dataNascimento);
+      if (isNaN(nasc.getTime())) return;
       let proximoAniversario = new Date(ANO_ATUAL, nasc.getMonth(), nasc.getDate());
       if (proximoAniversario < HOJE) {
         proximoAniversario.setFullYear(ANO_ATUAL + 1);

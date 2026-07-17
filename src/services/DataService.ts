@@ -577,6 +577,9 @@ export class GoogleScriptDataService implements IDataService {
         raw = await this.request<any[]>('getColaboradores');
       }
 
+      // Filtra colaboradores com IDs vazios ou inválidos (linhas vazias no sheet)
+      raw = raw.filter(c => c && c.id && String(c.id).trim() !== '');
+
       return raw.map(c => {
         let completed: string[] = [];
         if (typeof c.avaliacoes_completas === 'string') {
@@ -669,6 +672,9 @@ export class GoogleScriptDataService implements IDataService {
         raw = await this.request<any[]>('listarRegistros');
       }
 
+      // Filtra registros com IDs vazios
+      raw = raw.filter(r => r && r.id && String(r.id).trim() !== '');
+
       return raw.map(r => {
         let titulo = r.titulo || '';
         if (!titulo) {
@@ -711,6 +717,9 @@ export class GoogleScriptDataService implements IDataService {
       } catch (err) {
         raw = await this.request<any[]>('listarTarefas');
       }
+
+      // Filtra tarefas com IDs vazios
+      raw = raw.filter(t => t && t.id && String(t.id).trim() !== '');
 
       return raw.map(t => ({
         id: String(t.id || ''),
@@ -958,6 +967,9 @@ export class GoogleScriptDataService implements IDataService {
       } catch (err) {
         raw = await this.request<any[]>('listarUsuarios');
       }
+
+      // Filtra usuários com IDs vazios
+      raw = raw.filter(u => u && u.id && String(u.id).trim() !== '');
 
       return raw.map(u => ({
         id: String(u.id || ''),

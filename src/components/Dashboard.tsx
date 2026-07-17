@@ -78,6 +78,7 @@ function getDataAtual(): Date {
 
 // Função para formatar data para comparison (YYYY-MM-DD)
 function formatarDataISO(date: Date): string {
+  if (!date || isNaN(date.getTime())) return '';
   return date.toISOString().split('T')[0];
 }
 
@@ -89,6 +90,9 @@ function calcularDiasRestantes(dataFutura: Date, hoje: Date): number {
 
 // Função para calcular próxima ocorrência de uma data no ano atual/seguinte
 function proximaOcorrencia(dataAniversario: Date, anoAtual: number, hoje: Date): Date {
+  if (!dataAniversario || isNaN(dataAniversario.getTime())) {
+    return new Date();
+  }
   const esteAno = new Date(anoAtual, dataAniversario.getMonth(), dataAniversario.getDate());
   const proximoAno = new Date(anoAtual + 1, dataAniversario.getMonth(), dataAniversario.getDate());
   
@@ -1441,10 +1445,11 @@ export default function Dashboard({
             id: `avaliacao-180-${modalAvaliacao180.colaborador.id}`,
             colaboradorId: modalAvaliacao180.colaborador.id,
             dias: 180,
-            dataVencimento: new Date(
-              new Date(modalAvaliacao180.colaborador.dataAdmissao).getTime() +
-              (180 * 24 * 60 * 60 * 1000)
-            ).toISOString(),
+            dataVencimento: (() => {
+              const admissao = new Date(modalAvaliacao180.colaborador.dataAdmissao);
+              if (isNaN(admissao.getTime())) return '';
+              return new Date(admissao.getTime() + (180 * 24 * 60 * 60 * 1000)).toISOString();
+            })(),
             status: 'pendente',
           }}
           onSave={handleSalvarAvaliacao180}

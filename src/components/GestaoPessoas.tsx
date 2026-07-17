@@ -1923,7 +1923,9 @@ function ModalCadastro({ type, colaboradores, periodosAquisitivos, onSave, onClo
       const dataLimite = new Date();
       if (col?.dataNascimento) {
         const nasc = new Date(col.dataNascimento);
-        dataLimite.setFullYear(ANO_ATUAL, nasc.getMonth(), nasc.getDate() + 30);
+        if (!isNaN(nasc.getTime())) {
+          dataLimite.setFullYear(ANO_ATUAL, nasc.getMonth(), nasc.getDate() + 30);
+        }
       }
       
       const dayoffData: DayOff = {

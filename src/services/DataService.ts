@@ -850,7 +850,17 @@ export class GoogleScriptDataService implements IDataService {
       data_nascimento: formatDate(colaborador.dataNascimento || ''),
     };
 
-    console.log('[saveColaborador] Salvando:', body);
+    // Log detalhado para debug
+    console.log('[saveColaborador] Salvando colaborador:', {
+      id: body.id,
+      nome: body.nome,
+      email: body.email,
+      cargo_id: body.cargo_id,
+      setor_id: body.setor_id,
+      lider_id: body.lider_id,
+      foto_url: body.foto_url ? '(presente)' : '(vazio)',
+      data_nascimento: body.data_nascimento
+    });
 
     // Tenta diferentes actions para garantir compatibilidade
     // IMPORTANTE: Enviamos body diretamente, o request() extrai data se necessário

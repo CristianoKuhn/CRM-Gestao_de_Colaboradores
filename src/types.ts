@@ -162,6 +162,7 @@ export interface GoogleScriptConfig {
   webAppUrl: string;
   driveFolderId: string;
   isConnected: boolean;
+  useApiProxy?: boolean;
 }
 
 export type DataSourceProvider = 'local' | 'googlescript' | 'supabase';

@@ -435,7 +435,42 @@ export class GoogleScriptDataService implements IDataService {
     // Usa a URL configurada ou a padrão
     const webAppUrl = this.config.webAppUrl || DEFAULT_WEBAPP_URL;
     
-    // Constrói a URL com parâmetros
+    // Se useApiProxy estiver habilitado, usa o endpoint /api/googlescript
+    if (this.config.useApiProxy) {
+      const apiUrl = new URL('/api/googlescript', window.location.origin);
+      apiUrl.searchParams.set('action', action);
+      
+      if (payload) {
+        const dataParam = encodeURIComponent(JSON.stringify(payload.data || payload));
+        apiUrl.searchParams.set('data', dataParam);
+      }
+      
+      try {
+        const response = await fetch(apiUrl.toString(), {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-google-script-url': webAppUrl
+          }
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Erro na chamada: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        if (result.status === 'error' || result.success === false) {
+          throw new Error(result.message || 'Erro reportado.');
+        }
+        
+        return (result.data || result) as T;
+      } catch (err) {
+        console.warn('API proxy request falhou:', err);
+        // Tenta fallback direto se o proxy falhar
+      }
+    }
+    
+    // Constrói a URL com parâmetros (chamada direta ao Google Apps Script)
     const url = new URL(webAppUrl);
     url.searchParams.set('action', action);
     

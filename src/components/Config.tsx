@@ -130,6 +130,7 @@ export default function Config({
   const handleSaveGoogle = (e: React.FormEvent) => {
     e.preventDefault();
     onSaveGoogleConfig({
+      ...googleConfig,
       webAppUrl,
       driveFolderId,
       isConnected: !!webAppUrl,
@@ -170,6 +171,7 @@ export default function Config({
 
       setTestStatus('success');
       onSaveGoogleConfig({
+        ...googleConfig,
         webAppUrl,
         driveFolderId,
         isConnected: true,

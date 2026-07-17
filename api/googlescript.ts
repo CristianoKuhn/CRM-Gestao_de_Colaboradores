@@ -14,13 +14,16 @@ export default async function handler(req: any, res: any) {
     const url = new URL(scriptUrl);
     url.searchParams.set('action', String(action));
 
+    // Forward the 'data' parameter for GET requests (Google Apps Script works best with query params)
+    if (req.query.data) {
+      url.searchParams.set('data', String(req.query.data));
+    }
+
+    // For POST requests, also include the data in the body
     const options: RequestInit = {
-      method: req.method,
+      method: 'GET',
       headers: { 'Content-Type': 'application/json' },
     };
-    if (req.method === 'POST') {
-      options.body = JSON.stringify(req.body);
-    }
 
     const response = await fetch(url.toString(), options);
     const data = await response.json();

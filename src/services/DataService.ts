@@ -564,6 +564,12 @@ export class GoogleScriptDataService implements IDataService {
         const extractDate = (dateStr: unknown): string => {
           if (!dateStr) return '';
           
+          // Se já for um Date object, converte direto
+          if (dateStr instanceof Date) {
+            if (isNaN(dateStr.getTime())) return '';
+            return dateStr.toISOString().split('T')[0];
+          }
+          
           const str = String(dateStr);
           
           // Se já está no formato YYYY-MM-DD, retorna direto
@@ -572,6 +578,16 @@ export class GoogleScriptDataService implements IDataService {
           // Tenta extrair a parte da data de formatos ISO ou outros
           const match = str.match(/^\d{4}-\d{2}-\d{2}/);
           if (match) return match[0];
+          
+          // Tenta criar Date de string
+          try {
+            const date = new Date(str);
+            if (!isNaN(date.getTime())) {
+              return date.toISOString().split('T')[0];
+            }
+          } catch (e) {
+            // ignora
+          }
           
           // Se for um timestamp ou número, tenta converter
           if (typeof dateStr === 'number' || /^\d+$/.test(str)) {
@@ -756,14 +772,19 @@ export class GoogleScriptDataService implements IDataService {
     await this.localFallback.saveColaborador(colaborador);
     
     // Função para formatar data como YYYY-MM-DD
-    const formatDate = (dateStr: string | undefined): string => {
-      if (!dateStr || dateStr === 'undefined' || dateStr === 'null') return '';
+    const formatDate = (dateStr: any): string => {
+      if (!dateStr || dateStr === 'undefined' || dateStr === 'null' || dateStr === 'Invalid Date') return '';
       try {
+        // Se já for Date object
+        if (dateStr instanceof Date) {
+          if (isNaN(dateStr.getTime())) return '';
+          return dateStr.toISOString().split('T')[0];
+        }
         const date = new Date(dateStr);
-        if (isNaN(date.getTime())) return dateStr;
+        if (isNaN(date.getTime())) return '';
         return date.toISOString().split('T')[0];
       } catch {
-        return dateStr;
+        return '';
       }
     };
     

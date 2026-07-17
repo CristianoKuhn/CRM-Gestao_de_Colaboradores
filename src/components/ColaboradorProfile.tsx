@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { DataService } from '../services/DataService';
 import {
   Colaborador,
@@ -79,6 +79,14 @@ export default function ColaboradorProfile({
   const photoInputRef = useRef<HTMLInputElement>(null);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [isUploadingAnexo, setIsUploadingAnexo] = useState(false);
+  
+  // Estado local para foto (sincronizado após upload)
+  const [localFotoUrl, setLocalFotoUrl] = useState(colaborador.fotoUrl);
+  
+  // Sincronizar localFotoUrl quando a prop mudar
+  useEffect(() => {
+    setLocalFotoUrl(colaborador.fotoUrl);
+  }, [colaborador.fotoUrl]);
 
   // Estados locais para filtros da timeline
   const [timelineSearch, setTimelineSearch] = useState('');
@@ -231,6 +239,8 @@ export default function ColaboradorProfile({
         ...colaborador,
         fotoUrl: novaUrl
       });
+      // Atualizar a URL da foto localmente para mostrar imediatamente
+      setLocalFotoUrl(novaUrl);
     } catch (err) {
       console.error('Erro ao alterar foto do colaborador:', err);
     } finally {
@@ -366,7 +376,7 @@ export default function ColaboradorProfile({
             {/* Editable Profile Photo */}
             <div className="relative group/photo mb-3">
               <img
-                src={colaborador.fotoUrl}
+                src={localFotoUrl}
                 alt={colaborador.nome}
                 className="w-24 h-24 rounded-full object-cover border-4 border-white shadow-md group-hover/photo:brightness-75 transition-all"
               />

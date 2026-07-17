@@ -245,8 +245,11 @@ export default function Dashboard({
     // 3. Alertas de Aniversário de Casa (Admissão)
     for (const col of colaboradores) {
       if (col.situacao === 'Desligado') continue;
+      if (!col.dataAdmissao) continue;
 
       const dataAdmissao = new Date(col.dataAdmissao);
+      if (isNaN(dataAdmissao.getTime())) continue;
+      
       const proximoAniversario = proximaOcorrencia(dataAdmissao, ANO_ATUAL, HOJE);
       const diasRestantes = calcularDiasRestantes(proximoAniversario, HOJE);
 
@@ -275,8 +278,10 @@ export default function Dashboard({
     // 4. Alertas de Avaliação 180º
     for (const col of colaboradores) {
       if (col.situacao === 'Desligado' || col.realizarExperiencia === false) continue;
+      if (!col.dataAdmissao) continue;
 
       const dataAdmissao = new Date(col.dataAdmissao);
+      if (isNaN(dataAdmissao.getTime())) continue;
       
       // Ignorar colaboradores admitidos antes de janeiro de 2026
       // (data de início do processo de avaliação 180°)
@@ -693,7 +698,9 @@ export default function Dashboard({
 
   // Aniversários de admissão do mês
   const aniversariosMes = colaboradores.filter((c) => {
+    if (!c.dataAdmissao) return false;
     const dataAdmissao = new Date(c.dataAdmissao);
+    if (isNaN(dataAdmissao.getTime())) return false;
     return dataAdmissao.getMonth() === HOJE.getMonth();
   });
 
@@ -701,6 +708,7 @@ export default function Dashboard({
   const aniversariantesNascimento = colaboradores.filter((c) => {
     if (!c.dataNascimento) return false;
     const dataNasc = new Date(c.dataNascimento);
+    if (isNaN(dataNasc.getTime())) return false;
     return dataNasc.getMonth() === HOJE.getMonth();
   });
 

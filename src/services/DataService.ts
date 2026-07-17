@@ -561,14 +561,31 @@ export class GoogleScriptDataService implements IDataService {
         }
         
         // Função para extrair apenas YYYY-MM-DD de qualquer formato de data
-        const extractDate = (dateStr: string): string => {
+        const extractDate = (dateStr: unknown): string => {
           if (!dateStr) return '';
+          
+          const str = String(dateStr);
+          
           // Se já está no formato YYYY-MM-DD, retorna direto
-          if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+          if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+          
           // Tenta extrair a parte da data de formatos ISO ou outros
-          const match = String(dateStr).match(/^\d{4}-\d{2}-\d{2}/);
+          const match = str.match(/^\d{4}-\d{2}-\d{2}/);
           if (match) return match[0];
-          return String(dateStr);
+          
+          // Se for um timestamp ou número, tenta converter
+          if (typeof dateStr === 'number' || /^\d+$/.test(str)) {
+            try {
+              const date = new Date(Number(dateStr));
+              if (!isNaN(date.getTime())) {
+                return date.toISOString().split('T')[0];
+              }
+            } catch (e) {
+              // ignora
+            }
+          }
+          
+          return str;
         };
 
         return {
@@ -739,8 +756,8 @@ export class GoogleScriptDataService implements IDataService {
     await this.localFallback.saveColaborador(colaborador);
     
     // Função para formatar data como YYYY-MM-DD
-    const formatDate = (dateStr: string): string => {
-      if (!dateStr) return '';
+    const formatDate = (dateStr: string | undefined): string => {
+      if (!dateStr || dateStr === 'undefined' || dateStr === 'null') return '';
       try {
         const date = new Date(dateStr);
         if (isNaN(date.getTime())) return dateStr;

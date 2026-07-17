@@ -122,8 +122,12 @@ export default function Colaboradores({
   const [auxSetoresPermitidos, setAuxSetoresPermitidos] = useState<string[]>([]);
 
   // Função para calcular o tempo de empresa de forma legível
-  function calcularTempoEmpresa(dataAdmissaoStr: string): string {
+  function calcularTempoEmpresa(dataAdmissaoStr: string | undefined): string {
+    if (!dataAdmissaoStr) return '-';
+    
     const admissao = new Date(dataAdmissaoStr);
+    if (isNaN(admissao.getTime())) return '-';
+    
     const hoje = new Date();
 
     let anos = hoje.getFullYear() - admissao.getFullYear();
@@ -466,7 +470,7 @@ export default function Colaboradores({
                       <td className="p-4">
                         <div>
                           <p className="text-slate-800 font-medium">{calcularTempoEmpresa(col.dataAdmissao)}</p>
-                          <p className="text-[11px] text-slate-400">Desde {new Date(col.dataAdmissao).toLocaleDateString('pt-BR')}</p>
+                          <p className="text-[11px] text-slate-400">Desde {col.dataAdmissao ? new Date(col.dataAdmissao).toLocaleDateString('pt-BR') : '-'}</p>
                         </div>
                       </td>
 

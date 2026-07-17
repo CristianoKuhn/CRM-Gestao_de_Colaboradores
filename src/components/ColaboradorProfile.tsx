@@ -115,8 +115,12 @@ export default function ColaboradorProfile({
   const liderObj = lideres.find((l) => l.id === colaborador.liderId);
 
   // Calcular tempo de empresa
-  function calcularTempoEmpresa(dataAdmissaoStr: string): string {
+  function calcularTempoEmpresa(dataAdmissaoStr: string | undefined): string {
+    if (!dataAdmissaoStr) return '-';
+    
     const admissao = new Date(dataAdmissaoStr);
+    if (isNaN(admissao.getTime())) return '-';
+    
     const hoje = new Date();
 
     let anos = hoje.getFullYear() - admissao.getFullYear();
@@ -466,7 +470,7 @@ export default function ColaboradorProfile({
                 <div className="min-w-0">
                   <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider leading-none">Admissão & Tempo</p>
                   <p className="font-semibold text-slate-800 mt-0.5">
-                    {new Date(colaborador.dataAdmissao).toLocaleDateString('pt-BR')} &middot;{' '}
+                    {colaborador.dataAdmissao ? new Date(colaborador.dataAdmissao).toLocaleDateString('pt-BR') : '-'} &middot;{' '}
                     <span className="text-teal-600 font-bold">{calcularTempoEmpresa(colaborador.dataAdmissao)}</span>
                   </p>
                 </div>
@@ -810,7 +814,7 @@ export default function ColaboradorProfile({
                   <span className="text-[10px] font-semibold text-slate-500 uppercase">Tempo de Empresa</span>
                 </div>
                 <p className="text-sm font-bold text-slate-900">{calcularTempoEmpresa(colaborador.dataAdmissao)}</p>
-                <p className="text-[10px] text-slate-400">Desde {new Date(colaborador.dataAdmissao).toLocaleDateString('pt-BR')}</p>
+                <p className="text-[10px] text-slate-400">Desde {colaborador.dataAdmissao ? new Date(colaborador.dataAdmissao).toLocaleDateString('pt-BR') : '-'}</p>
               </div>
 
               {/* Próximo Aniversário */}
@@ -842,8 +846,9 @@ export default function ColaboradorProfile({
                   <PartyPopper size={14} className="text-blue-500" />
                   <span className="text-[10px] font-semibold text-blue-600 uppercase">Aniversário de Empresa</span>
                 </div>
-                {(() => {
+                {colaborador.dataAdmissao ? (() => {
                   const admissao = new Date(colaborador.dataAdmissao);
+                  if (isNaN(admissao.getTime())) return <p className="text-sm text-slate-400">-</p>;
                   const hoje = new Date();
                   let proximoAniv = new Date(hoje.getFullYear(), admissao.getMonth(), admissao.getDate());
                   if (proximoAniv < hoje) proximoAniv.setFullYear(hoje.getFullYear() + 1);
@@ -854,7 +859,7 @@ export default function ColaboradorProfile({
                       <p className="text-[10px] text-blue-500">Em {diff} dia{diff !== 1 ? 's' : ''}</p>
                     </>
                   );
-                })()}
+                })() : <p className="text-sm text-slate-400">-</p>}
               </div>
 
               {/* Status de Férias */}
@@ -863,8 +868,9 @@ export default function ColaboradorProfile({
                   <Palmtree size={14} className="text-emerald-500" />
                   <span className="text-[10px] font-semibold text-emerald-600 uppercase">Status de Férias</span>
                 </div>
-                {(() => {
+                {colaborador.dataAdmissao ? (() => {
                   const admissao = new Date(colaborador.dataAdmissao);
+                  if (isNaN(admissao.getTime())) return <p className="text-sm text-slate-400">-</p>;
                   const hoje = new Date();
                   const umAno = new Date(admissao);
                   umAno.setFullYear(umAno.getFullYear() + 1);
@@ -891,7 +897,7 @@ export default function ColaboradorProfile({
                       <p className="text-[10px] text-emerald-500">Prazo máximo: {diff > 0 ? `${diff}d` : 'Vencido'}</p>
                     </>
                   );
-                })()}
+                })() : <p className="text-sm text-slate-400">-</p>}
               </div>
 
               {/* DayOff */}

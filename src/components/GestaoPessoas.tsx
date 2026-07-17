@@ -77,8 +77,12 @@ const HOJE = new Date();
 const ANO_ATUAL = HOJE.getFullYear();
 const MES_ATUAL = HOJE.getMonth();
 
-function calcularTempoDeEmpresa(dataAdmissao: string): { texto: string; dias: number } {
+function calcularTempoDeEmpresa(dataAdmissao: string | undefined): { texto: string; dias: number } {
+  if (!dataAdmissao) return { texto: '-', dias: 0 };
+  
   const admissao = new Date(dataAdmissao);
+  if (isNaN(admissao.getTime())) return { texto: '-', dias: 0 };
+  
   const diffMs = HOJE.getTime() - admissao.getTime();
   const dias = Math.floor(diffMs / (1000 * 60 * 60 * 24));
   const anos = Math.floor(dias / 365);
@@ -111,8 +115,12 @@ function calcularProximoAniversario(dataNascimento: string | undefined): { data:
   };
 }
 
-function calcularProximoAniversarioEmpresa(dataAdmissao: string): { data: string; diasRestantes: number } {
+function calcularProximoAniversarioEmpresa(dataAdmissao: string | undefined): { data: string; diasRestantes: number } {
+  if (!dataAdmissao) return { data: '', diasRestantes: 0 };
+  
   const admissao = new Date(dataAdmissao);
+  if (isNaN(admissao.getTime())) return { data: '', diasRestantes: 0 };
+  
   let proximoAniversario = new Date(ANO_ATUAL, admissao.getMonth(), admissao.getDate());
   
   if (proximoAniversario < HOJE) {
@@ -128,8 +136,12 @@ function calcularProximoAniversarioEmpresa(dataAdmissao: string): { data: string
   };
 }
 
-function calcularElegibilidadeFerias(dataAdmissao: string): { elegivel: boolean; dataElegibilidade: string; diasRestantes: number } {
+function calcularElegibilidadeFerias(dataAdmissao: string | undefined): { elegivel: boolean; dataElegibilidade: string; diasRestantes: number } {
+  if (!dataAdmissao) return { elegivel: false, dataElegibilidade: '', diasRestantes: 0 };
+  
   const admissao = new Date(dataAdmissao);
+  if (isNaN(admissao.getTime())) return { elegivel: false, dataElegibilidade: '', diasRestantes: 0 };
+  
   const dataElegibilidade = new Date(admissao);
   dataElegibilidade.setDate(dataElegibilidade.getDate() + 365);
   
@@ -143,8 +155,12 @@ function calcularElegibilidadeFerias(dataAdmissao: string): { elegivel: boolean;
   };
 }
 
-function calcularPrazoMaximoFerias(dataAdmissao: string): { data: string; diasRestantes: number } {
+function calcularPrazoMaximoFerias(dataAdmissao: string | undefined): { data: string; diasRestantes: number } {
+  if (!dataAdmissao) return { data: '', diasRestantes: 0 };
+  
   const admissao = new Date(dataAdmissao);
+  if (isNaN(admissao.getTime())) return { data: '', diasRestantes: 0 };
+  
   const prazoMaximo = new Date(admissao);
   prazoMaximo.setDate(prazoMaximo.getDate() + 730); // 2 anos para gozar
   
@@ -408,7 +424,9 @@ export default function GestaoPessoas({
     anos.add(ANO_ATUAL);
     
     colaboradores.forEach(col => {
+      if (!col.dataAdmissao) return;
       const dataAdmissao = new Date(col.dataAdmissao);
+      if (isNaN(dataAdmissao.getTime())) return;
       for (let ano = dataAdmissao.getFullYear(); ano <= ANO_ATUAL + 2; ano++) {
         anos.add(ano);
       }
@@ -625,7 +643,9 @@ export default function GestaoPessoas({
   const aniversarioEmpresaDoMes = useMemo(() => {
     return colaboradores.filter(col => {
       if (col.situacao === 'Desligado') return false;
+      if (!col.dataAdmissao) return false;
       const admissao = new Date(col.dataAdmissao);
+      if (isNaN(admissao.getTime())) return false;
       return admissao.getMonth() === MES_ATUAL;
     });
   }, [colaboradores]);
@@ -708,7 +728,9 @@ export default function GestaoPessoas({
     // Aniversários de empresa
     colaboradores.forEach(col => {
       if (col.situacao === 'Desligado') return;
+      if (!col.dataAdmissao) return;
       const admissao = new Date(col.dataAdmissao);
+      if (isNaN(admissao.getTime())) return;
       let proximoAniversario = new Date(ANO_ATUAL, admissao.getMonth(), admissao.getDate());
       if (proximoAniversario < HOJE) {
         proximoAniversario.setFullYear(ANO_ATUAL + 1);

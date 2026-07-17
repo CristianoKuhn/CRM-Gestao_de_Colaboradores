@@ -575,6 +575,7 @@ export class GoogleScriptDataService implements IDataService {
           prazoAvaliacao180: Number(c.prazo_avaliacao_180 ?? c.prazoAvaliacao180 ?? 6),
           realizarExperiencia: c.realizar_experiencia === true || c.realizar_experiencia === 'true' || c.realizar_experiencia === 1 || c.realizar_experiencia === '1' || c.realizar_experiencia === undefined || c.realizarExperiencia === true,
           avaliacoesCompletas: completed,
+          dataNascimento: String(c.data_nascimento || c.dataNascimento || ''),
         };
       });
     } catch (e) {
@@ -1103,7 +1104,33 @@ export class GoogleScriptDataService implements IDataService {
     folderName: 'Fotos Colaboradores' | 'Anexos' | 'documentos',
     colaboradorNome: string
   ): Promise<string> {
-    return this.localFallback.uploadFile(file, folderName, colaboradorNome);
+    try {
+      // Converter arquivo para base64
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = reader.result as string;
+          resolve(result);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      // Chamar Google Apps Script para salvar no Drive
+      const result = await this.request<{ url: string }>('salvarArquivoDrive', {
+        folderName,
+        colaboradorNome,
+        fileName: file.name,
+        fileData: base64,
+        mimeType: file.type
+      });
+
+      return result.url;
+    } catch (err) {
+      console.warn('Erro ao fazer upload no Google Drive, usando fallback local:', err);
+      // Fallback: retorna base64 local
+      return this.localFallback.uploadFile(file, folderName, colaboradorNome);
+    }
   }
 
   // P6: Gestão de Pessoas - Usa fallback local (dados não sincronizados com Google Sheets)

@@ -210,7 +210,7 @@ export default function App() {
   // Tratar alteração rápida de situação ou atualização de dados do colaborador
   const handleUpdateColaborador = async (col: Colaborador) => {
     await DataService.saveColaborador(col);
-    loadAllData();
+    await loadAllData();
   };
 
   // Sincronizar ao criar colaborador - com auto onboarding e avaliações de experiência
@@ -249,12 +249,12 @@ export default function App() {
       await DataService.saveAvaliacaoExperiencia(avaliacao);
     }
 
-    loadAllData();
+    await loadAllData();
   };
 
   const handleDeleteColaborador = async (id: string) => {
     await DataService.deleteColaborador(id);
-    loadAllData();
+    await loadAllData();
   };
 
   // Métodos rápidos para entidades auxiliares

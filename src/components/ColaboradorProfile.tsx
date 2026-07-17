@@ -60,7 +60,7 @@ interface ColaboradorProfileProps {
   lideres: Lider[];
   empresas: Empresa[];
   onBack: () => void;
-  onUpdateColaborador: (col: Colaborador) => void;
+  onUpdateColaborador: (col: Colaborador) => Promise<Colaborador>;
   onAddTimelineRegistro: (reg: TimelineRegistro) => void;
 }
 
@@ -227,7 +227,7 @@ export default function ColaboradorProfile({
     setIsUploadingPhoto(true);
     try {
       const novaUrl = await DataService.uploadFile(file, 'Fotos Colaboradores', colaborador.nome);
-      onUpdateColaborador({
+      await onUpdateColaborador({
         ...colaborador,
         fotoUrl: novaUrl
       });

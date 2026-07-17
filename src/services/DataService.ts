@@ -558,6 +558,17 @@ export class GoogleScriptDataService implements IDataService {
         } else if (Array.isArray(c.avaliacoesCompletas)) {
           completed = c.avaliacoesCompletas;
         }
+        
+        // Função para extrair apenas YYYY-MM-DD de qualquer formato de data
+        const extractDate = (dateStr: string): string => {
+          if (!dateStr) return '';
+          // Se já está no formato YYYY-MM-DD, retorna direto
+          if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+          // Tenta extrair a parte da data de formatos ISO ou outros
+          const match = String(dateStr).match(/^\d{4}-\d{2}-\d{2}/);
+          if (match) return match[0];
+          return String(dateStr);
+        };
 
         return {
           id: String(c.id || ''),
@@ -567,7 +578,7 @@ export class GoogleScriptDataService implements IDataService {
           cargoId: String(c.cargo_id || c.cargoId || ''),
           setorId: String(c.setor_id || c.setorId || ''),
           liderId: String(c.lider_id || c.liderId || ''),
-          dataAdmissao: String(c.data_admissao || c.dataAdmissao || ''),
+          dataAdmissao: extractDate(c.data_admissao || c.dataAdmissao || ''),
           situacao: (c.situacao || (c.ativo === false ? 'Desligado' : 'Ativo')) as any,
           empresaId: String(c.empresa_id || c.empresaId || ''),
           telefone: String(c.telefone || ''),
@@ -575,7 +586,7 @@ export class GoogleScriptDataService implements IDataService {
           prazoAvaliacao180: Number(c.prazo_avaliacao_180 ?? c.prazoAvaliacao180 ?? 6),
           realizarExperiencia: c.realizar_experiencia === true || c.realizar_experiencia === 'true' || c.realizar_experiencia === 1 || c.realizar_experiencia === '1' || c.realizar_experiencia === undefined || c.realizarExperiencia === true,
           avaliacoesCompletas: completed,
-          dataNascimento: String(c.data_nascimento || c.dataNascimento || ''),
+          dataNascimento: extractDate(c.data_nascimento || c.dataNascimento || ''),
         };
       });
     } catch (e) {
@@ -725,6 +736,19 @@ export class GoogleScriptDataService implements IDataService {
 
   async saveColaborador(colaborador: Colaborador): Promise<void> {
     await this.localFallback.saveColaborador(colaborador);
+    
+    // Função para formatar data como YYYY-MM-DD
+    const formatDate = (dateStr: string): string => {
+      if (!dateStr) return '';
+      try {
+        const date = new Date(dateStr);
+        if (isNaN(date.getTime())) return dateStr;
+        return date.toISOString().split('T')[0];
+      } catch {
+        return dateStr;
+      }
+    };
+    
     const body = {
       id: colaborador.id,
       nome: colaborador.nome,
@@ -733,7 +757,7 @@ export class GoogleScriptDataService implements IDataService {
       cargo_id: colaborador.cargoId,
       setor_id: colaborador.setorId,
       lider_id: colaborador.liderId,
-      data_admissao: colaborador.dataAdmissao,
+      data_admissao: formatDate(colaborador.dataAdmissao),
       situacao: colaborador.situacao,
       empresa_id: colaborador.empresaId,
       foto_url: colaborador.fotoUrl,
@@ -742,7 +766,7 @@ export class GoogleScriptDataService implements IDataService {
       prazo_avaliacao_180: colaborador.prazoAvaliacao180 ?? 6,
       realizar_experiencia: colaborador.realizarExperiencia ?? true,
       avaliacoes_completas: colaborador.avaliacoesCompletas || [],
-      data_nascimento: colaborador.dataNascimento || '',
+      data_nascimento: formatDate(colaborador.dataNascimento),
     };
 
     try {

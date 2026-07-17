@@ -766,7 +766,7 @@ export class GoogleScriptDataService implements IDataService {
       prazo_avaliacao_180: colaborador.prazoAvaliacao180 ?? 6,
       realizar_experiencia: colaborador.realizarExperiencia ?? true,
       avaliacoes_completas: colaborador.avaliacoesCompletas || [],
-      data_nascimento: formatDate(colaborador.dataNascimento),
+      data_nascimento: formatDate(colaborador.dataNascimento || ''),
     };
 
     try {

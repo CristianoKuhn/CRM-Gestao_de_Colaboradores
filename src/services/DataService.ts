@@ -435,8 +435,7 @@ export class GoogleScriptDataService implements IDataService {
     // Usa a URL configurada ou a padrão
     const webAppUrl = this.config.webAppUrl || DEFAULT_WEBAPP_URL;
     
-    // Sempre usa chamadas diretas ao Google Apps Script
-    // Para POST, usa método GET com parâmetros (via CORS do Apps Script)
+    // Constrói a URL com parâmetros
     const url = new URL(webAppUrl);
     url.searchParams.set('action', action);
     
@@ -455,27 +454,30 @@ export class GoogleScriptDataService implements IDataService {
       return result.data as T;
     }
     
-    // Para POST, tenta usar método POST via fetch
-    // Google Apps Script com doPost pode ter restrições de CORS
+    // Para POST requests com payload, usa GET com parâmetros codificados
+    // Google Apps Script funciona melhor com GET para receber dados via query string
+    // Codifica os dados como JSON stringificado no parâmetro 'data'
+    const dataParam = encodeURIComponent(JSON.stringify(payload.data || payload));
+    url.searchParams.set('data', dataParam);
+    
     try {
       const response = await fetch(url.toString(), {
-        method: 'POST',
-        mode: 'no-cors', // Adiciona modo no-cors para evitar problemas de CORS
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          action,
-          ...payload,
-        }),
+        method: 'GET',
       });
       
-      // Com no-cors, não podemos ler a resposta, então assumimos sucesso
-      // O fallback local já salvou os dados
-      return {} as T;
+      if (!response.ok) {
+        throw new Error(`Erro na chamada: ${response.statusText}`);
+      }
+      
+      const result = await response.json();
+      if (result.status === 'error' || result.success === false) {
+        throw new Error(result.message || 'Erro reportado.');
+      }
+      
+      return (result.data || result) as T;
     } catch (err) {
       // Se falhar, os dados já estão salvos no fallback local
-      console.warn('Google Apps Script POST falhou (dados salvos localmente):', err);
+      console.warn('Google Apps Script request falhou (dados salvos localmente):', err);
       return {} as T;
     }
   }

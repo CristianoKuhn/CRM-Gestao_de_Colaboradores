@@ -111,6 +111,15 @@ function processRequest(e) {
     // --- GRAVAÇÕES POST (UPSERT) ---
     var dataObj = params.data || params;
     
+    // Se dataObj for string (via GET query), tenta fazer parse
+    if (typeof dataObj === 'string' && dataObj.trim()) {
+      try {
+        dataObj = JSON.parse(dataObj);
+      } catch (e) {
+        // Se falhar, mantém como está
+      }
+    }
+    
     if (action === "saveEmpresa") {
       saveRow(SHEETS.EMPRESAS, dataObj, ["id", "nome"]);
       return renderSuccess("Empresa salva.");

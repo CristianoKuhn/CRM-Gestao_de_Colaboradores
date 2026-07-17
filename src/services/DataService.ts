@@ -441,9 +441,17 @@ export class GoogleScriptDataService implements IDataService {
     
     console.log(`[request] action=${action}, hasData=${!!dataToSend}, webAppUrl=${webAppUrl}`);
     
-    // NOVO: Sempre tenta usar o proxy API primeiro (evita CORS e problemas de requisição)
-    // Apenas pula o proxy se useApiProxy for explicitamente false
-    if (this.config.useApiProxy !== false) {
+    // Verifica se deve usar o proxy API
+    // Só usa o proxy se:
+    // 1. useApiProxy não for explicitamente false
+    // 2. Estivermos em ambiente de desenvolvimento (localhost) ou a URL for válida
+    const shouldUseProxy = this.config.useApiProxy !== false && 
+                           (typeof window !== 'undefined') &&
+                           (window.location.hostname === 'localhost' || 
+                            window.location.hostname === '127.0.0.1' ||
+                            this.config.useApiProxy === true);
+    
+    if (shouldUseProxy) {
       try {
         const apiUrl = new URL('/api/googlescript', window.location.origin);
         apiUrl.searchParams.set('action', action);
@@ -454,7 +462,7 @@ export class GoogleScriptDataService implements IDataService {
           apiUrl.searchParams.set('data', dataParam);
         }
         
-        console.log(`[request] URL completa: ${apiUrl.toString()}`);
+        console.log(`[request] Usando proxy: ${apiUrl.toString()}`);
         
         const response = await fetch(apiUrl.toString(), {
           method: 'GET',
@@ -473,7 +481,7 @@ export class GoogleScriptDataService implements IDataService {
           throw new Error(result.message || 'Erro reportado.');
         }
         
-        console.log(`[request] Resposta:`, result);
+        console.log(`[request] Sucesso via proxy`);
         return (result.data || result) as T;
       } catch (err) {
         console.warn('API proxy request falhou, tentando chamada direta:', err);
@@ -481,7 +489,7 @@ export class GoogleScriptDataService implements IDataService {
       }
     }
     
-    // Fallback: Chamada direta ao Google Apps Script (pode ter problemas de CORS)
+    // Chamada direta ao Google Apps Script
     const url = new URL(webAppUrl);
     url.searchParams.set('action', action);
     
@@ -490,7 +498,7 @@ export class GoogleScriptDataService implements IDataService {
       url.searchParams.set('data', dataParam);
     }
     
-    console.log(`[request] URL direta: ${url.toString()}`);
+    console.log(`[request] Chamada direta: ${url.toString().substring(0, 100)}...`);
     
     try {
       const response = await fetch(url.toString(), {

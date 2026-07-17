@@ -435,17 +435,27 @@ export class GoogleScriptDataService implements IDataService {
     // Usa a URL configurada ou a padrão
     const webAppUrl = this.config.webAppUrl || DEFAULT_WEBAPP_URL;
     
-    // Se useApiProxy estiver habilitado, usa o endpoint /api/googlescript
-    if (this.config.useApiProxy) {
-      const apiUrl = new URL('/api/googlescript', window.location.origin);
-      apiUrl.searchParams.set('action', action);
-      
-      if (payload) {
-        const dataParam = encodeURIComponent(JSON.stringify(payload.data || payload));
-        apiUrl.searchParams.set('data', dataParam);
-      }
-      
+    // O payload pode ser diretamente os dados (para saveColaborador) ou { data: dados }
+    // Precisamos extrair os dados para enviar como 'data' para o Google Apps Script
+    const dataToSend = payload?.data || payload;
+    
+    console.log(`[request] action=${action}, hasData=${!!dataToSend}, webAppUrl=${webAppUrl}`);
+    
+    // NOVO: Sempre tenta usar o proxy API primeiro (evita CORS e problemas de requisição)
+    // Apenas pula o proxy se useApiProxy for explicitamente false
+    if (this.config.useApiProxy !== false) {
       try {
+        const apiUrl = new URL('/api/googlescript', window.location.origin);
+        apiUrl.searchParams.set('action', action);
+        
+        if (dataToSend) {
+          // Envia como JSON stringificado codificado
+          const dataParam = encodeURIComponent(JSON.stringify(dataToSend));
+          apiUrl.searchParams.set('data', dataParam);
+        }
+        
+        console.log(`[request] URL completa: ${apiUrl.toString()}`);
+        
         const response = await fetch(apiUrl.toString(), {
           method: 'GET',
           headers: {
@@ -463,37 +473,24 @@ export class GoogleScriptDataService implements IDataService {
           throw new Error(result.message || 'Erro reportado.');
         }
         
+        console.log(`[request] Resposta:`, result);
         return (result.data || result) as T;
       } catch (err) {
-        console.warn('API proxy request falhou:', err);
-        // Tenta fallback direto se o proxy falhar
+        console.warn('API proxy request falhou, tentando chamada direta:', err);
+        // Continua para tentar chamada direta abaixo
       }
     }
     
-    // Constrói a URL com parâmetros (chamada direta ao Google Apps Script)
+    // Fallback: Chamada direta ao Google Apps Script (pode ter problemas de CORS)
     const url = new URL(webAppUrl);
     url.searchParams.set('action', action);
     
-    // Para GET requests ou quando não há payload, usa GET direto
-    if (!payload) {
-      const response = await fetch(url.toString(), {
-        method: 'GET',
-      });
-      if (!response.ok) {
-        throw new Error(`Erro na chamada: ${response.statusText}`);
-      }
-      const result = await response.json();
-      if (result.status === 'error' || result.success === false) {
-        throw new Error(result.message || 'Erro reportado.');
-      }
-      return result.data as T;
+    if (dataToSend) {
+      const dataParam = encodeURIComponent(JSON.stringify(dataToSend));
+      url.searchParams.set('data', dataParam);
     }
     
-    // Para POST requests com payload, usa GET com parâmetros codificados
-    // Google Apps Script funciona melhor com GET para receber dados via query string
-    // Codifica os dados como JSON stringificado no parâmetro 'data'
-    const dataParam = encodeURIComponent(JSON.stringify(payload.data || payload));
-    url.searchParams.set('data', dataParam);
+    console.log(`[request] URL direta: ${url.toString()}`);
     
     try {
       const response = await fetch(url.toString(), {
@@ -511,9 +508,8 @@ export class GoogleScriptDataService implements IDataService {
       
       return (result.data || result) as T;
     } catch (err) {
-      // Se falhar, os dados já estão salvos no fallback local
-      console.warn('Google Apps Script request falhou (dados salvos localmente):', err);
-      return {} as T;
+      console.error('Google Apps Script request falhou:', err);
+      throw err;
     }
   }
 
@@ -804,13 +800,13 @@ export class GoogleScriptDataService implements IDataService {
   }
 
   async saveColaborador(colaborador: Colaborador): Promise<void> {
+    // Sempre salva no local primeiro
     await this.localFallback.saveColaborador(colaborador);
     
     // Função para formatar data como YYYY-MM-DD
     const formatDate = (dateStr: any): string => {
       if (!dateStr || dateStr === 'undefined' || dateStr === 'null' || dateStr === 'Invalid Date') return '';
       try {
-        // Se já for Date object
         if (dateStr instanceof Date) {
           if (isNaN(dateStr.getTime())) return '';
           return dateStr.toISOString().split('T')[0];
@@ -824,38 +820,48 @@ export class GoogleScriptDataService implements IDataService {
     };
     
     const body = {
-      id: colaborador.id,
-      nome: colaborador.nome,
-      email: colaborador.email,
-      telefone: colaborador.telefone || '',
-      cargo_id: colaborador.cargoId,
-      setor_id: colaborador.setorId,
-      lider_id: colaborador.liderId,
+      id: String(colaborador.id || ''),
+      nome: String(colaborador.nome || ''),
+      email: String(colaborador.email || ''),
+      telefone: String(colaborador.telefone || ''),
+      cargo_id: String(colaborador.cargoId || ''),
+      setor_id: String(colaborador.setorId || ''),
+      lider_id: String(colaborador.liderId || ''),
       data_admissao: formatDate(colaborador.dataAdmissao),
-      situacao: colaborador.situacao,
-      empresa_id: colaborador.empresaId,
-      foto_url: colaborador.fotoUrl,
+      situacao: String(colaborador.situacao || 'Ativo'),
+      empresa_id: String(colaborador.empresaId || ''),
+      foto_url: String(colaborador.fotoUrl || ''),
       ativo: colaborador.situacao !== 'Desligado',
-      cidade_base: colaborador.cidadeBase || '',
-      prazo_avaliacao_180: colaborador.prazoAvaliacao180 ?? 6,
+      cidade_base: String(colaborador.cidadeBase || ''),
+      prazo_avaliacao_180: Number(colaborador.prazoAvaliacao180 ?? 6),
       realizar_experiencia: colaborador.realizarExperiencia ?? true,
-      avaliacoes_completas: colaborador.avaliacoesCompletas || [],
+      avaliacoes_completas: Array.isArray(colaborador.avaliacoesCompletas) 
+        ? JSON.stringify(colaborador.avaliacoesCompletas) 
+        : '[]',
       data_nascimento: formatDate(colaborador.dataNascimento || ''),
     };
 
-    try {
-      await this.request('saveColaborador', { data: body });
-    } catch (err) {
+    console.log('[saveColaborador] Salvando:', body);
+
+    // Tenta diferentes actions para garantir compatibilidade
+    // IMPORTANTE: Enviamos body diretamente, o request() extrai data se necessário
+    const actions = ['saveColaborador', 'salvarColaborador', 'novoColaborador'];
+    let ultimoErro: any = null;
+    
+    for (const action of actions) {
       try {
-        await this.request('salvarColaborador', { data: body });
-      } catch (err2) {
-        try {
-          await this.request('novoColaborador', body);
-        } catch (err3) {
-          console.warn('Erro ao sincronizar colaborador com GoogleScript (usando fallback local):', err3);
-        }
+        console.log(`[saveColaborador] Tentando action: ${action}`);
+        await this.request(action, body);
+        console.log(`[saveColaborador] Sucesso com action: ${action}`);
+        return; // Sucesso, sai da função
+      } catch (err: any) {
+        console.warn(`[saveColaborador] Action ${action} falhou:`, err.message);
+        ultimoErro = err;
       }
     }
+    
+    // Se todas falharem, loga erro mas não lança (dados já estão no local)
+    console.error('Erro ao sincronizar colaborador com GoogleScript (dados salvos localmente):', ultimoErro);
   }
 
   async deleteColaborador(id: string): Promise<void> {

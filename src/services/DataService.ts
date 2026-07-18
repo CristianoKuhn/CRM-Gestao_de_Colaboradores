@@ -503,6 +503,15 @@ export class GoogleScriptDataService implements IDataService {
     // Google Apps Script não trata OPTIONS — então precisamos evitar o preflight.
     const bodyStr = JSON.stringify({ action, data: dataToSend });
 
+    // Erro "de aplicação": a requisição chegou ao servidor e ele respondeu, mas com
+    // status de erro (ex.: permissão negada no Drive, ação desconhecida, etc). Nesse
+    // caso, tentar de novo via GET não vai resolver — e para payloads grandes (fotos)
+    // o GET vai falhar com 413, mascarando o erro real. Então marcamos esse tipo de
+    // erro para NÃO cair no fallback de GET.
+    class AppError extends Error {
+      isAppError = true;
+    }
+
     console.log(`[request] action=${action}, hasData=${!!dataToSend}, bodySize=${bodyStr.length}, webAppUrl=${webAppUrl}`);
     
     // Verifica se deve usar o proxy API
@@ -533,14 +542,19 @@ export class GoogleScriptDataService implements IDataService {
         
         const result = await response.json();
         if (result.status === 'error' || result.success === false) {
-          throw new Error(result.message || 'Erro reportado.');
+          throw new AppError(result.message || 'Erro reportado.');
         }
         
         console.log(`[request] Sucesso via proxy`);
         return (result.data || result) as T;
-      } catch (err) {
+      } catch (err: any) {
+        if (err?.isAppError) {
+          // O proxy chegou ao Apps Script e ele respondeu com erro real — não
+          // adianta tentar de novo pela chamada direta, é o mesmo backend.
+          throw err;
+        }
         console.warn('API proxy request falhou, tentando chamada direta:', err);
-        // Continua para tentar chamada direta abaixo
+        // Continua para tentar chamada direta abaixo (falha de rede/proxy)
       }
     }
     
@@ -562,11 +576,19 @@ export class GoogleScriptDataService implements IDataService {
       
       const result = await response.json();
       if (result.status === 'error' || result.success === false) {
-        throw new Error(result.message || 'Erro reportado.');
+        throw new AppError(result.message || 'Erro reportado.');
       }
       
       return (result.data || result) as T;
-    } catch (err) {
+    } catch (err: any) {
+      if (err?.isAppError) {
+        // Erro real vindo do Apps Script (ex.: "Acesso negado: DriveApp").
+        // Repetir via GET não resolve e, para payloads grandes, só gera um
+        // segundo erro (413) que mascara a causa raiz. Propaga direto.
+        console.error('Google Apps Script respondeu com erro de aplicação:', err.message);
+        throw err;
+      }
+
       console.error('Google Apps Script request (POST) falhou, tentando GET como último recurso:', err);
 
       // Último recurso: GET com dados na URL. Só funciona para payloads pequenos,

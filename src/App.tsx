@@ -624,6 +624,10 @@ export default function App() {
                 cargos={cargos}
                 lideres={lideres}
                 empresas={empresas}
+                documentos={documentos}
+                reconhecimentos={reconhecimentos}
+                configReconhecimento={configReconhecimento}
+                tarefas={tarefas}
                 onBack={() => setSelectedColaboradorId(null)}
                 onUpdateColaborador={handleUpdateColaborador}
                 onAddTimelineRegistro={handleAddTimelineRegistro}

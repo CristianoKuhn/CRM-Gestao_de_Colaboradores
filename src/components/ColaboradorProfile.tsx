@@ -17,7 +17,12 @@ import {
   StatusRegistro,
   Anexo,
   SituacaoColaborador,
+  Documento,
+  Reconhecimento,
+  ConfiguracaoReconhecimento,
+  Tarefa,
 } from '../types';
+import LinhaDoTempoInteligente from './LinhaDoTempoInteligente';
 import {
   Calendar,
   Briefcase,
@@ -59,6 +64,10 @@ interface ColaboradorProfileProps {
   cargos: Cargo[];
   lideres: Lider[];
   empresas: Empresa[];
+  documentos: Documento[];
+  reconhecimentos: Reconhecimento[];
+  configReconhecimento: ConfiguracaoReconhecimento;
+  tarefas: Tarefa[];
   onBack: () => void;
   onUpdateColaborador: (col: Colaborador) => Promise<Colaborador>;
   onAddTimelineRegistro: (reg: TimelineRegistro) => void;
@@ -71,6 +80,10 @@ export default function ColaboradorProfile({
   cargos,
   lideres,
   empresas,
+  documentos,
+  reconhecimentos,
+  configReconhecimento,
+  tarefas,
   onBack,
   onUpdateColaborador,
   onAddTimelineRegistro,
@@ -995,6 +1008,19 @@ export default function ColaboradorProfile({
               </div>
             </div>
           </div>
+
+          {/* VISÃO UNIFICADA: registros + documentos + reconhecimentos + tarefas num só lugar,
+              com exportação em PDF/Excel. Complementa o feed detalhado abaixo (que continua
+              sendo o lugar de criar/editar registros individuais). */}
+          <LinhaDoTempoInteligente
+            registros={timeline}
+            documentos={documentos}
+            reconhecimentos={reconhecimentos}
+            tarefas={tarefas}
+            configReconhecimento={configReconhecimento}
+            colaboradorNome={colaborador.nome}
+            colaboradorId={colaborador.id}
+          />
 
           {/* CHRONOLOGICAL TIMELINE STREAM */}
           <div className="space-y-4">

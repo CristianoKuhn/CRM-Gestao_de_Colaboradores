@@ -46,6 +46,62 @@ export function fileToBase64(file: File): Promise<string> {
   });
 }
 
+// Redimensiona/comprime imagens (fotos de colaboradores) no navegador antes do upload.
+// Mantém o payload pequeno (mais rápido, menos chance de esbarrar em limites do
+// Apps Script) sem depender de nada no servidor. Para arquivos não-imagem (ex.: PDF
+// em "documentos"), retorna o base64 original sem tocar no conteúdo.
+async function fileToOptimizedBase64(
+  file: File,
+  maxDimension = 800,
+  quality = 0.85
+): Promise<{ base64: string; mimeType: string }> {
+  if (!file.type.startsWith('image/') || file.type === 'image/svg+xml') {
+    const base64 = await fileToBase64(file);
+    return { base64, mimeType: file.type };
+  }
+
+  try {
+    const original = await fileToBase64(file);
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = reject;
+      image.src = original;
+    });
+
+    let { width, height } = img;
+    if (width > maxDimension || height > maxDimension) {
+      if (width >= height) {
+        height = Math.round((height * maxDimension) / width);
+        width = maxDimension;
+      } else {
+        width = Math.round((width * maxDimension) / height);
+        height = maxDimension;
+      }
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return { base64: original, mimeType: file.type };
+    ctx.drawImage(img, 0, 0, width, height);
+
+    const outputType = 'image/jpeg';
+    const compressed = canvas.toDataURL(outputType, quality);
+
+    // Só usa a versão comprimida se realmente for menor.
+    if (compressed.length < original.length) {
+      return { base64: compressed, mimeType: outputType };
+    }
+    return { base64: original, mimeType: file.type };
+  } catch {
+    // Se algo falhar na compressão (ex.: navegador sem suporte), usa o original.
+    const base64 = await fileToBase64(file);
+    return { base64, mimeType: file.type };
+  }
+}
+
 function parseSetoresPermitidos(value: unknown, setorId: unknown): string[] {
   if (Array.isArray(value)) {
     return value.map(String).filter(Boolean);
@@ -438,13 +494,18 @@ export class GoogleScriptDataService implements IDataService {
     // O payload pode ser diretamente os dados (para saveColaborador) ou { data: dados }
     // Precisamos extrair os dados para enviar como 'data' para o Google Apps Script
     const dataToSend = payload?.data || payload;
-    
-    console.log(`[request] action=${action}, hasData=${!!dataToSend}, webAppUrl=${webAppUrl}`);
+
+    // IMPORTANTE: usamos SEMPRE POST com corpo JSON (nunca mais GET com dados na URL).
+    // Motivo: dados grandes (fotos em base64, anexos, textos com acentuação) estouram o
+    // limite de tamanho de URL e faziam a chamada falhar silenciosamente, caindo no
+    // fallback local. O Content-Type 'text/plain' é usado de propósito: é um dos poucos
+    // tipos "simples" que o navegador NÃO faz preflight (OPTIONS) antes de enviar, e o
+    // Google Apps Script não trata OPTIONS — então precisamos evitar o preflight.
+    const bodyStr = JSON.stringify({ action, data: dataToSend });
+
+    console.log(`[request] action=${action}, hasData=${!!dataToSend}, bodySize=${bodyStr.length}, webAppUrl=${webAppUrl}`);
     
     // Verifica se deve usar o proxy API
-    // Só usa o proxy se:
-    // 1. useApiProxy não for explicitamente false
-    // 2. Estivermos em ambiente de desenvolvimento (localhost) ou a URL for válida
     const shouldUseProxy = this.config.useApiProxy !== false && 
                            (typeof window !== 'undefined') &&
                            (window.location.hostname === 'localhost' || 
@@ -454,22 +515,16 @@ export class GoogleScriptDataService implements IDataService {
     if (shouldUseProxy) {
       try {
         const apiUrl = new URL('/api/googlescript', window.location.origin);
-        apiUrl.searchParams.set('action', action);
-        
-        if (dataToSend) {
-          // Envia como JSON stringificado codificado
-          const dataParam = encodeURIComponent(JSON.stringify(dataToSend));
-          apiUrl.searchParams.set('data', dataParam);
-        }
-        
-        console.log(`[request] Usando proxy: ${apiUrl.toString()}`);
+
+        console.log(`[request] Usando proxy (POST): ${apiUrl.toString()}`);
         
         const response = await fetch(apiUrl.toString(), {
-          method: 'GET',
+          method: 'POST',
           headers: {
-            'Content-Type': 'application/json',
+            'Content-Type': 'text/plain;charset=utf-8',
             'x-google-script-url': webAppUrl
-          }
+          },
+          body: bodyStr,
         });
         
         if (!response.ok) {
@@ -489,20 +544,16 @@ export class GoogleScriptDataService implements IDataService {
       }
     }
     
-    // Chamada direta ao Google Apps Script
-    const url = new URL(webAppUrl);
-    url.searchParams.set('action', action);
-    
-    if (dataToSend) {
-      const dataParam = encodeURIComponent(JSON.stringify(dataToSend));
-      url.searchParams.set('data', dataParam);
-    }
-    
-    console.log(`[request] Chamada direta: ${url.toString().substring(0, 100)}...`);
+    // Chamada direta ao Google Apps Script (POST, sem preflight)
+    console.log(`[request] Chamada direta (POST) action=${action}, bodySize=${bodyStr.length}`);
     
     try {
-      const response = await fetch(url.toString(), {
-        method: 'GET',
+      const response = await fetch(webAppUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'text/plain;charset=utf-8',
+        },
+        body: bodyStr,
       });
       
       if (!response.ok) {
@@ -516,8 +567,28 @@ export class GoogleScriptDataService implements IDataService {
       
       return (result.data || result) as T;
     } catch (err) {
-      console.error('Google Apps Script request falhou:', err);
-      throw err;
+      console.error('Google Apps Script request (POST) falhou, tentando GET como último recurso:', err);
+
+      // Último recurso: GET com dados na URL. Só funciona para payloads pequenos,
+      // mas mantemos como fallback para não quebrar leituras (get*) em ambientes
+      // onde o POST por algum motivo seja bloqueado (proxy corporativo, etc).
+      try {
+        const url = new URL(webAppUrl);
+        url.searchParams.set('action', action);
+        if (dataToSend) {
+          url.searchParams.set('data', encodeURIComponent(JSON.stringify(dataToSend)));
+        }
+        const response = await fetch(url.toString(), { method: 'GET' });
+        if (!response.ok) throw new Error(`Erro na chamada: ${response.statusText}`);
+        const result = await response.json();
+        if (result.status === 'error' || result.success === false) {
+          throw new Error(result.message || 'Erro reportado.');
+        }
+        return (result.data || result) as T;
+      } catch (fallbackErr) {
+        console.error('Google Apps Script request (GET fallback) também falhou:', fallbackErr);
+        throw err;
+      }
     }
   }
 
@@ -836,6 +907,22 @@ export class GoogleScriptDataService implements IDataService {
       }
     };
     
+    // Proteção contra fotos antigas que ficaram salvas como base64 gigante no
+    // localStorage (efeito do bug anterior, quando o upload para o Drive falhava
+    // silenciosamente). Uma célula do Google Sheets tem limite de ~50.000
+    // caracteres; enviar um base64 desse tamanho quebraria o saveColaborador
+    // inteiro. Nesse caso, não reenviamos a foto (mantém a existente na planilha)
+    // e avisamos no console para o usuário reenviar a foto pela tela normal.
+    const MAX_SHEET_CELL_CHARS = 45000;
+    let fotoUrlParaEnviar = String(colaborador.fotoUrl || '');
+    if (fotoUrlParaEnviar.startsWith('data:') && fotoUrlParaEnviar.length > MAX_SHEET_CELL_CHARS) {
+      console.warn(
+        '[saveColaborador] foto_url é um base64 muito grande (upload antigo que falhou). ' +
+        'Não será enviada para a planilha nesta chamada — refaça o upload da foto na tela do colaborador.'
+      );
+      fotoUrlParaEnviar = '';
+    }
+
     const body = {
       id: String(colaborador.id || ''),
       nome: String(colaborador.nome || ''),
@@ -847,7 +934,7 @@ export class GoogleScriptDataService implements IDataService {
       data_admissao: formatDate(colaborador.dataAdmissao),
       situacao: String(colaborador.situacao || 'Ativo'),
       empresa_id: String(colaborador.empresaId || ''),
-      foto_url: String(colaborador.fotoUrl || ''),
+      foto_url: fotoUrlParaEnviar,
       ativo: colaborador.situacao !== 'Desligado',
       cidade_base: String(colaborador.cidadeBase || ''),
       prazo_avaliacao_180: Number(colaborador.prazoAvaliacao180 ?? 6),
@@ -1239,16 +1326,13 @@ export class GoogleScriptDataService implements IDataService {
     colaboradorNome: string
   ): Promise<string> {
     try {
-      // Converter arquivo para base64
-      const base64 = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-          const result = reader.result as string;
-          resolve(result);
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
+      // Fotos de colaboradores são redimensionadas/comprimidas no navegador antes do
+      // envio (mais rápido e mais seguro contra limites de payload). Documentos e
+      // anexos (podem ser PDF etc.) são enviados sem alteração.
+      const { base64, mimeType } =
+        folderName === 'Fotos Colaboradores'
+          ? await fileToOptimizedBase64(file)
+          : { base64: await fileToBase64(file), mimeType: file.type };
 
       // Chamar Google Apps Script para salvar no Drive
       const result = await this.request<{ url: string }>('salvarArquivoDrive', {
@@ -1256,7 +1340,7 @@ export class GoogleScriptDataService implements IDataService {
         colaboradorNome,
         fileName: file.name,
         fileData: base64,
-        mimeType: file.type
+        mimeType,
       });
 
       return result.url;

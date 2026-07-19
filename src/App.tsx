@@ -3,1131 +3,821 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useRef, useEffect } from 'react';
-import { DataService } from '../services/DataService';
+import { useState, useEffect } from 'react';
+import { StorageAPI, initializeStorage } from './utils/storage';
+import { DataService } from './services/DataService';
 import {
   Colaborador,
   TimelineRegistro,
+  Tarefa,
   Setor,
   Cargo,
   Lider,
   Empresa,
-  TipoRegistro,
-  PrioridadeRegistro,
-  StatusRegistro,
-  Anexo,
-  SituacaoColaborador,
-} from '../types';
-import {
-  Calendar,
-  Briefcase,
-  Layers,
-  User,
-  Phone,
-  Mail,
-  ChevronLeft,
-  FileText,
-  AlertTriangle,
-  Award,
-  BookOpen,
-  MessageSquare,
-  ShieldAlert,
-  ThumbsUp,
-  Search,
-  Upload,
-  X,
-  FileIcon,
-  CheckCircle,
-  PlusCircle,
-  Clock,
-  ExternalLink,
-  MapPin,
-  ClipboardList,
-  RefreshCw,
-  Palmtree,
-  Gift,
-  Cake,
-  PartyPopper,
-  CheckCircle2,
-  TrendingUp,
-} from 'lucide-react';
+  SupabaseConfig,
+  GoogleScriptConfig,
+  DataSourceProvider,
+  Usuario,
+  OnboardingItem,
+  OnboardingChecklist,
+  AvaliacaoExperiencia,
+  Documento,
+  Reconhecimento,
+  ConfiguracaoReconhecimento,
+  MetaLideranca,
+  MetaSetor,
+  AcompanhamentoRealizado,
+  AlertaInteligente,
+  ConfiguracaoAlertas,
+} from './types';
+import Sidebar from './components/Sidebar';
+import Dashboard from './components/Dashboard';
+import Colaboradores from './components/Colaboradores';
+import ColaboradorProfile from './components/ColaboradorProfile';
+import Tarefas from './components/Tarefas';
+import Analytics from './components/Analytics';
+import Config from './components/Config';
+import Usuarios from './components/Usuarios';
+import Login from './components/Login';
+import CentralDocumentos from './components/CentralDocumentos';
+import SistemaReconhecimento from './components/SistemaReconhecimento';
+import MetasLideranca from './components/MetasLideranca';
+import SistemaNotificacoes from './components/SistemaNotificacoes';
+import GestaoPessoas from './components/GestaoPessoas';
+import { Users2, X, PlusCircle } from 'lucide-react';
 
-interface ColaboradorProfileProps {
-  colaborador: Colaborador;
-  timeline: TimelineRegistro[];
-  setores: Setor[];
-  cargos: Cargo[];
-  lideres: Lider[];
-  empresas: Empresa[];
-  onBack: () => void;
-  onUpdateColaborador: (col: Colaborador) => Promise<Colaborador>;
-  onAddTimelineRegistro: (reg: TimelineRegistro) => void;
-}
+export default function App() {
+  const [currentUser, setCurrentUser] = useState<Usuario | null>(null);
 
-export default function ColaboradorProfile({
-  colaborador,
-  timeline,
-  setores,
-  cargos,
-  lideres,
-  empresas,
-  onBack,
-  onUpdateColaborador,
-  onAddTimelineRegistro,
-}: ColaboradorProfileProps) {
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const photoInputRef = useRef<HTMLInputElement>(null);
-  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
-  const [isUploadingAnexo, setIsUploadingAnexo] = useState(false);
-  
-  // Estado local para foto (sincronizado após upload)
-  const [localFotoUrl, setLocalFotoUrl] = useState(colaborador.fotoUrl);
-  
-  // Sincronizar localFotoUrl quando a prop mudar
+  // Inicializa o LocalStorage com os dados padrões (seed) se não existirem
   useEffect(() => {
-    setLocalFotoUrl(colaborador.fotoUrl);
-  }, [colaborador.fotoUrl]);
-
-  // Estados locais para filtros da timeline
-  const [timelineSearch, setTimelineSearch] = useState('');
-  const [filterTipo, setFilterTipo] = useState<string>('Todos');
-
-  // Controle de formulário para NOVO REGISTRO na Timeline
-  const [isFormOpen, setIsFormOpen] = useState(false);
-  const [regTipo, setRegTipo] = useState<TipoRegistro>('Feedback Positivo');
-  const [regTitulo, setRegTitulo] = useState('');
-  const [regDescricao, setRegDescricao] = useState('');
-  const [regData, setRegData] = useState(new Date().toISOString().split('T')[0]);
-  const [regLiderId, setRegLiderId] = useState(colaborador.liderId);
-  const [regPrioridade, setRegPrioridade] = useState<PrioridadeRegistro>('Média');
-  const [regStatus, setRegStatus] = useState<StatusRegistro>('Concluído');
-  const [regPrazo, setRegPrazo] = useState('');
-  const [regGerarTarefa, setRegGerarTarefa] = useState(false);
-  const [regAnexos, setRegAnexos] = useState<Anexo[]>([]);
-
-  // Filtro de Drag and Drop
-  const [isDragging, setIsDragging] = useState(false);
-
-  // Dados auxiliares do colaborador
-  const cargoNome = cargos.find((c) => c.id === colaborador.cargoId)?.nome || 'Não definido';
-  const setorNome = setores.find((s) => s.id === colaborador.setorId)?.nome || 'Não definido';
-  const empresaNome = empresas.find((e) => e.id === colaborador.empresaId)?.nome || 'Não definida';
-  const liderObj = lideres.find((l) => l.id === colaborador.liderId);
-
-  // Calcular tempo de empresa
-  function calcularTempoEmpresa(dataAdmissaoStr: string | undefined): string {
-    if (!dataAdmissaoStr) return '-';
-    
-    const admissao = new Date(dataAdmissaoStr);
-    if (isNaN(admissao.getTime())) return '-';
-    
-    const hoje = new Date();
-
-    let anos = hoje.getFullYear() - admissao.getFullYear();
-    let meses = hoje.getMonth() - admissao.getMonth();
-
-    if (meses < 0) {
-      anos--;
-      meses += 12;
+    initializeStorage();
+    loadAllData();
+    // Restaurar sessão de login
+    const savedUser = localStorage.getItem('gc_logged_in_user');
+    if (savedUser) {
+      try {
+        setCurrentUser(JSON.parse(savedUser));
+      } catch (e) {
+        console.error('Erro ao restaurar sessão de login:', e);
+      }
     }
+  }, []);
 
-    if (anos === 0) {
-      if (meses === 0) return 'Recém-admitido';
-      return `${meses} ${meses === 1 ? 'mês' : 'meses'}`;
-    }
+  const handleLoginSuccess = (user: Usuario) => {
+    setCurrentUser(user);
+    localStorage.setItem('gc_logged_in_user', JSON.stringify(user));
+  };
 
-    const anosStr = `${anos} ${anos === 1 ? 'ano' : 'anos'}`;
-    const mesesStr = meses > 0 ? ` e ${meses} ${meses === 1 ? 'mês' : 'meses'}` : '';
-    return `${anosStr}${mesesStr}`;
-  }
+  const handleLogout = () => {
+    setCurrentUser(null);
+    localStorage.removeItem('gc_logged_in_user');
+    setActiveTab('dashboard');
+  };
 
-  // Filtrar timeline deste colaborador
-  const timelineColaborador = timeline.filter((reg) => reg.colaboradorId === colaborador.id);
-
-  // Aplicar busca e filtros
-  const timelineFiltrada = timelineColaborador.filter((reg) => {
-    const matchesSearch =
-      reg.titulo.toLowerCase().includes(timelineSearch.toLowerCase()) ||
-      reg.descricao.toLowerCase().includes(timelineSearch.toLowerCase());
-
-    let matchesTipo = true;
-    if (filterTipo === 'Feedbacks') {
-      matchesTipo = reg.tipo.includes('Feedback');
-    } else if (filterTipo === 'PDIs') {
-      matchesTipo = reg.tipo === 'Plano de Desenvolvimento Individual (PDI)';
-    } else if (filterTipo === 'Incidentes') {
-      matchesTipo = reg.tipo === 'Advertência' || reg.tipo === 'Suspensão' || reg.tipo === 'Reclamação de Cliente';
-    } else if (filterTipo === 'Elogios') {
-      matchesTipo = reg.tipo === 'Elogio de Cliente' || reg.tipo === 'Reconhecimento';
-    } else if (filterTipo !== 'Todos') {
-      matchesTipo = reg.tipo === filterTipo;
-    }
-
-    return matchesSearch && matchesTipo;
+  // Estados globais da aplicação
+  const [activeTab, setActiveTab] = useState<string>('dashboard');
+  const [colaboradores, setColaboradores] = useState<Colaborador[]>([]);
+  const [timeline, setTimeline] = useState<TimelineRegistro[]>([]);
+  const [tarefas, setTarefas] = useState<Tarefa[]>([]);
+  const [setores, setSetores] = useState<Setor[]>([]);
+  const [cargos, setCargos] = useState<Cargo[]>([]);
+  const [lideres, setLideres] = useState<Lider[]>([]);
+  const [empresas, setEmpresas] = useState<Empresa[]>([]);
+  const [usuarios, setUsuarios] = useState<Usuario[]>([]);
+  const [supabaseConfig, setSupabaseConfig] = useState<SupabaseConfig>({
+    supabaseUrl: '',
+    supabaseAnonKey: '',
+    isConnected: false,
+  });
+  const [googleScriptConfig, setGoogleScriptConfig] = useState<GoogleScriptConfig>({
+    webAppUrl: '',
+    driveFolderId: '',
+    isConnected: false,
+  });
+  const [activeProvider, setActiveProvider] = useState<DataSourceProvider>('local');
+  const [onboardingItems, setOnboardingItems] = useState<OnboardingItem[]>([]);
+  const [onboardingChecklists, setOnboardingChecklists] = useState<OnboardingChecklist[]>([]);
+  const [avaliacoesExperiencia, setAvaliacoesExperiencia] = useState<AvaliacaoExperiencia[]>([]);
+  const [configuracaoAlertas, setConfiguracaoAlertas] = useState<ConfiguracaoAlertas>({
+    diasSemInteracao: 30,
+    diasAntecedenciaAniversario: 15,
+    diasAntecedenciaAvaliacao180: 30,
+    alertasPersistentes: true,
   });
 
-  // Alterar situação rápida do colaborador
-  const handleChangeSituacao = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const novaSituacao = e.target.value as SituacaoColaborador;
+  // P3: Documentos
+  const [documentos, setDocumentos] = useState<Documento[]>([]);
+
+  // P4: Reconhecimento
+  const [reconhecimentos, setReconhecimentos] = useState<Reconhecimento[]>([]);
+  const [configReconhecimento, setConfigReconhecimento] = useState<ConfiguracaoReconhecimento>({
+    tipos: [],
+    permitirIndicacaoPeer: true,
+    permiteUploadCertificado: true,
+    notificacoesAutomaticas: true,
+  });
+
+  // P5: Metas
+  const [metasLideranca, setMetasLideranca] = useState<MetaLideranca[]>([]);
+  const [metasSetor, setMetasSetor] = useState<MetaSetor[]>([]);
+  const [acompanhamentos, setAcompanhamentos] = useState<AcompanhamentoRealizado[]>([]);
+
+  // Sistema de Notificações e Alertas
+  const [alertas, setAlertas] = useState<AlertaInteligente[]>([]);
+  const [configAlertas, setConfigAlertas] = useState<ConfiguracaoAlertas>({
+    diasSemInteracao: 14,
+    diasAntecedenciaAniversario: 15,
+    diasAntecedenciaAvaliacao180: 30,
+    alertasPersistentes: true,
+  });
+
+  // Estado para colaborador selecionado (CRM detalhado)
+  const [selectedColaboradorId, setSelectedColaboradorId] = useState<string | null>(null);
+
+  // Estados para filtros pré-selecionados ao navegar de widgets clicáveis
+  const [preselectedFilters, setPreselectedFilters] = useState<any>({});
+
+  // Modal rápido de seleção de colaborador para lançar feedback
+  const [isQuickFeedbackModalOpen, setIsQuickFeedbackModalOpen] = useState(false);
+
+  // Carregar dados de forma reativa do serviço ativo
+  const loadAllData = async () => {
+    try {
+      const [cols, timelineData, tarefasData, setoresData, cargosData, lideresData, empresasData, usuariosData, onbItems, onbChecklists, avaliacoesExpData, docsData, recsData, configRecData, metasLidData, metasSetData, acompData] = await Promise.all([
+        DataService.getColaboradores(),
+        DataService.getTimeline(),
+        DataService.getTarefas(),
+        DataService.getSetores(),
+        DataService.getCargos(),
+        DataService.getLideres(),
+        DataService.getEmpresas(),
+        DataService.getUsuarios(),
+        DataService.getOnboardingItems(),
+        DataService.getOnboardingChecklists(),
+        // Avaliações de Experiência
+        DataService.getAvaliacoesExperiencia(),
+        // P3: Documentos
+        DataService.getDocumentos(),
+        // P4: Reconhecimento
+        DataService.getReconhecimentos(),
+        DataService.getConfiguracaoReconhecimento(),
+        // P5: Metas
+        DataService.getMetasLideranca(),
+        DataService.getMetasSetor(),
+        DataService.getAcompanhamentos(),
+        // Sistema de Notificações
+        DataService.getAlertasInteligentes(),
+        DataService.getConfiguracaoAlertas(),
+      ]);
+
+      setColaboradores(cols);
+      setTimeline(timelineData);
+      setTarefas(tarefasData);
+      setSetores(setoresData);
+      setCargos(cargosData);
+      setLideres(lideresData);
+      setEmpresas(empresasData);
+      setUsuarios(usuariosData);
+      setOnboardingItems(onbItems);
+      setOnboardingChecklists(onbChecklists);
+      setAvaliacoesExperiencia(avaliacoesExpData);
+
+      // P3: Documentos
+      setDocumentos(docsData);
+
+      // P4: Reconhecimento
+      setReconhecimentos(recsData);
+      setConfigReconhecimento(configRecData);
+
+      // P5: Metas
+      setMetasLideranca(metasLidData);
+      setMetasSetor(metasSetData);
+      setAcompanhamentos(acompData);
+
+      // Sistema de Notificações
+      setAlertas(await DataService.getAlertasInteligentes());
+      setConfigAlertas(await DataService.getConfiguracaoAlertas());
+      
+      setSupabaseConfig(StorageAPI.getSupabaseConfig());
+      setGoogleScriptConfig(StorageAPI.getGoogleScriptConfig());
+      setActiveProvider(StorageAPI.getDataSourceProvider());
+    } catch (error) {
+      console.error('Erro ao carregar dados do DataService:', error);
+    }
+  };
+
+  // Tratar alteração rápida de situação ou atualização de dados do colaborador
+  const handleUpdateColaborador = async (col: Colaborador): Promise<Colaborador> => {
+    await DataService.saveColaborador(col);
+    await loadAllData();
+    return col;
+  };
+
+  // Sincronizar ao criar colaborador - com auto onboarding e avaliações de experiência
+  const handleAddColaborador = async (col: Colaborador) => {
+    await DataService.saveColaborador(col);
+
+    // Gerar Onboarding Checklist baseado nos itens configurados para o setor
+    const onboardingItems = await DataService.getOnboardingItems();
+    const itensDoSetor = onboardingItems.filter(item => item.setorIds.includes(col.setorId));
     
-    // Se mudar para Desligado, marcamos todas as avaliações como concluídas para limpar pendências
-    const novasCompletas = novaSituacao === 'Desligado' 
-      ? Array.from(new Set([...(colaborador.avaliacoesCompletas || []), '15', '30', '60', '90', '180']))
-      : colaborador.avaliacoesCompletas;
+    if (itensDoSetor.length > 0) {
+      const checklist: OnboardingChecklist = {
+        id: `oc-${Date.now()}`,
+        colaboradorId: col.id,
+        itemsConcluidos: [],
+        dataCriacao: new Date().toISOString(),
+      };
+      await DataService.saveOnboardingChecklist(checklist);
+    }
 
-    onUpdateColaborador({
-      ...colaborador,
-      situacao: novaSituacao,
-      avaliacoesCompletas: novasCompletas,
-    });
+    // Gerar Avaliações de Experiência (15, 30, 60, 90 dias)
+    const dataAdmissao = new Date(col.dataAdmissao);
+    const diasAvaliacoes = [15, 30, 60, 90];
+    
+    for (const dias of diasAvaliacoes) {
+      const dataVencimento = new Date(dataAdmissao);
+      dataVencimento.setDate(dataVencimento.getDate() + dias);
+      
+      const avaliacao: AvaliacaoExperiencia = {
+        id: `av-${col.id}-${dias}`,
+        colaboradorId: col.id,
+        dias,
+        dataVencimento: dataVencimento.toISOString().split('T')[0],
+        status: 'pendente',
+      };
+      await DataService.saveAvaliacaoExperiencia(avaliacao);
+    }
+
+    await loadAllData();
   };
 
-  // Ícones dinâmicos por tipo de registro da timeline
-  const getTimelineIcon = (tipo: TipoRegistro) => {
-    switch (tipo) {
-      case 'Feedback Positivo':
-        return <ThumbsUp className="text-emerald-500" size={18} />;
-      case 'Feedback Corretivo':
-        return <MessageSquare className="text-orange-500" size={18} />;
-      case 'Reconhecimento':
-        return <Award className="text-amber-500" size={18} />;
-      case 'Conversa Individual (1:1)':
-        return <User className="text-blue-500" size={18} />;
-      case 'Plano de Desenvolvimento Individual (PDI)':
-        return <BookOpen className="text-indigo-500" size={18} />;
-      case 'Advertência':
-        return <AlertTriangle className="text-rose-500" size={18} />;
-      case 'Suspensão':
-        return <ShieldAlert className="text-rose-700" size={18} />;
-      case 'Elogio de Cliente':
-        return <ThumbsUp className="text-teal-500" size={18} />;
-      case 'Reclamação de Cliente':
-        return <AlertTriangle className="text-red-500" size={18} />;
-      case 'Acompanhamento':
-        return <ClipboardList className="text-sky-500" size={18} />;
-      default:
-        return <FileText className="text-slate-500" size={18} />;
+  const handleDeleteColaborador = async (id: string) => {
+    await DataService.deleteColaborador(id);
+    await loadAllData();
+  };
+
+  // Métodos rápidos para entidades auxiliares
+  const handleAddEmpresa = async (nome: string) => {
+    await DataService.saveEmpresa({ id: `emp-${Date.now()}`, nome });
+    loadAllData();
+  };
+
+  const handleAddSetor = async (nome: string) => {
+    await DataService.saveSetor({ id: `set-${Date.now()}`, nome });
+    loadAllData();
+  };
+
+  const handleAddCargo = async (nome: string) => {
+    await DataService.saveCargo({ id: `car-${Date.now()}`, nome });
+    loadAllData();
+  };
+
+  const handleAddLider = async (lider: Lider) => {
+    await DataService.saveLider(lider);
+    loadAllData();
+  };
+
+  // Handlers para Update (Dashboard Admin)
+  const handleUpdateSetor = async (setor: Setor) => {
+    await DataService.saveSetor(setor);
+    loadAllData();
+  };
+
+  const handleUpdateCargo = async (cargo: Cargo) => {
+    await DataService.saveCargo(cargo);
+    loadAllData();
+  };
+
+  const handleUpdateLider = async (lider: Lider) => {
+    await DataService.saveLider(lider);
+    loadAllData();
+  };
+
+  const handleAddOnboardingItem = async (item: OnboardingItem) => {
+    await DataService.saveOnboardingItem(item);
+    loadAllData();
+  };
+
+  const handleDeleteOnboardingItem = async (id: string) => {
+    await DataService.deleteOnboardingItem(id);
+    loadAllData();
+  };
+
+  const handleSaveOnboardingChecklist = async (checklist: OnboardingChecklist) => {
+    await DataService.saveOnboardingChecklist(checklist);
+    loadAllData();
+  };
+
+  const handleUpdateAvaliacaoExperiencia = async (avaliacao: AvaliacaoExperiencia) => {
+    await DataService.saveAvaliacaoExperiencia(avaliacao);
+    loadAllData();
+  };
+
+  const handleSaveConfiguracaoAlertas = async (config: ConfiguracaoAlertas) => {
+    await DataService.saveConfiguracaoAlertas(config);
+    setConfiguracaoAlertas(config);
+  };
+
+  // Tratar Toggle e Criação de Tarefas
+  const handleToggleTarefa = async (id: string) => {
+    await DataService.toggleTarefa(id);
+    loadAllData();
+  };
+
+  const handleAddTarefa = async (task: Tarefa) => {
+    await DataService.saveTarefa(task);
+    loadAllData();
+  };
+
+  // Tratar inserção na Timeline + auto-geração de tarefas de acompanhamento
+  const handleAddTimelineRegistro = async (reg: TimelineRegistro) => {
+    // 1. Salvar o registro no histórico oficial
+    await DataService.saveTimelineRegistro(reg);
+
+    // 2. Se habilitado 'gerarTarefaFutura', criar ação pendente automática vinculada ao colaborador e líder aplicador
+    if (reg.gerarTarefaFutura) {
+      const col = colaboradores.find((c) => c.id === reg.colaboradorId);
+      const novaTarefa: Tarefa = {
+        id: `tar-${Date.now()}`,
+        colaboradorId: reg.colaboradorId,
+        titulo: `Acompanhamento: ${reg.tipo} - ${col?.nome || 'Colaborador'}`,
+        descricao: `Plano acertado em: "${reg.titulo}" pelo responsável.`,
+        vencimento: reg.prazoAcompanhamento || '2026-07-20',
+        concluida: false,
+        tipoOrigem: reg.tipo,
+        registroId: reg.id,
+        responsavelId: reg.responsavelId,
+      };
+      await DataService.saveTarefa(novaTarefa);
+    }
+
+    loadAllData();
+  };
+
+  // Tratar salvamento e exclusão de Usuários
+  const handleSaveUsuario = async (user: Usuario) => {
+    await DataService.saveUsuario(user);
+    loadAllData();
+  };
+
+  const handleDeleteUsuario = async (id: string) => {
+    await DataService.deleteUsuario(id);
+    loadAllData();
+  };
+
+  // Tratar salvar configuração do Supabase
+  const handleSaveSupabaseConfig = (config: SupabaseConfig) => {
+    StorageAPI.saveSupabaseConfig(config);
+    setSupabaseConfig(config);
+    loadAllData();
+  };
+
+  // Tratar salvar configuração do Google Apps Script
+  const handleSaveGoogleScriptConfig = (config: GoogleScriptConfig) => {
+    StorageAPI.saveGoogleScriptConfig(config);
+    setGoogleScriptConfig(config);
+    loadAllData();
+  };
+
+  // P3: Handlers de Documentos
+  const handleAddDocumento = async (doc: Documento) => {
+    await DataService.saveDocumento(doc);
+    loadAllData();
+  };
+
+  const handleDeleteDocumento = async (id: string) => {
+    await DataService.deleteDocumento(id);
+    loadAllData();
+  };
+
+  // P4: Handlers de Reconhecimento
+  const handleSaveReconhecimento = async (rec: Reconhecimento) => {
+    await DataService.saveReconhecimento(rec);
+    loadAllData();
+  };
+
+  const handleDeleteReconhecimento = async (id: string) => {
+    await DataService.deleteReconhecimento(id);
+    loadAllData();
+  };
+
+  const handleSaveConfigReconhecimento = async (config: ConfiguracaoReconhecimento) => {
+    await DataService.saveConfiguracaoReconhecimento(config);
+    loadAllData();
+  };
+
+  // P5: Handlers de Metas
+  const handleSaveMetaLideranca = async (meta: MetaLideranca) => {
+    await DataService.saveMetaLideranca(meta);
+    loadAllData();
+  };
+
+  const handleDeleteMetaLideranca = async (id: string) => {
+    await DataService.deleteMetaLideranca(id);
+    loadAllData();
+  };
+
+  const handleSaveMetaSetor = async (meta: MetaSetor) => {
+    await DataService.saveMetaSetor(meta);
+    loadAllData();
+  };
+
+  const handleDeleteMetaSetor = async (id: string) => {
+    await DataService.deleteMetaSetor(id);
+    loadAllData();
+  };
+
+  const handleSaveAcompanhamento = async (acomp: AcompanhamentoRealizado) => {
+    await DataService.saveAcompanhamento(acomp);
+    loadAllData();
+  };
+
+  // Handlers de Alertas
+  const handleReconhecerAlerta = async (id: string) => {
+    const alerta = alertas.find(a => a.id === id);
+    if (alerta) {
+      const atualizado = { ...alerta, status: 'reconhecido' as const, dataReconhecimento: new Date().toISOString().split('T')[0] };
+      await DataService.saveAlertaInteligente(atualizado);
+      loadAllData();
     }
   };
 
-  const getTimelineBadgeColor = (tipo: TipoRegistro) => {
-    switch (tipo) {
-      case 'Feedback Positivo':
-        return 'bg-emerald-50 text-emerald-700 border-emerald-100';
-      case 'Feedback Corretivo':
-        return 'bg-orange-50 text-orange-700 border-orange-100';
-      case 'Reconhecimento':
-        return 'bg-amber-50 text-amber-700 border-amber-100';
-      case 'Conversa Individual (1:1)':
-        return 'bg-blue-50 text-blue-700 border-blue-100';
-      case 'Plano de Desenvolvimento Individual (PDI)':
-        return 'bg-indigo-50 text-indigo-700 border-indigo-100';
-      case 'Advertência':
-      case 'Suspensão':
-      case 'Reclamação de Cliente':
-        return 'bg-rose-50 text-rose-700 border-rose-100';
-      default:
-        return 'bg-slate-50 text-slate-700 border-slate-100';
+  const handleResolverAlerta = async (id: string) => {
+    const alerta = alertas.find(a => a.id === id);
+    if (alerta) {
+      const atualizado = { ...alerta, status: 'resolvido' as const, dataResolucao: new Date().toISOString().split('T')[0] };
+      await DataService.saveAlertaInteligente(atualizado);
+      loadAllData();
     }
   };
 
-  // Tratar alteração da foto do colaborador
-  const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const handleIgnorarAlerta = async (id: string) => {
+    await DataService.deleteAlertaInteligente(id);
+    loadAllData();
+  };
 
-    setIsUploadingPhoto(true);
-    try {
-      const novaUrl = await DataService.uploadFile(file, 'Fotos Colaboradores', colaborador.nome);
-      await onUpdateColaborador({
-        ...colaborador,
-        fotoUrl: novaUrl
-      });
-      // Atualizar a URL da foto localmente para mostrar imediatamente
-      setLocalFotoUrl(novaUrl);
-    } catch (err) {
-      console.error('Erro ao alterar foto do colaborador:', err);
-    } finally {
-      setIsUploadingPhoto(false);
+  const handleLimparAlertasResolvidos = async () => {
+    // Remover alertas resolvidos do localStorage
+    const ativos = alertas.filter(a => a.status !== 'resolvido');
+    // Salvar apenas os ativos
+    for (const alerta of ativos) {
+      await DataService.saveAlertaInteligente(alerta);
+    }
+    // Recarregar
+    loadAllData();
+  };
+
+  // Tratar alteração do provedor de dados ativo
+  const handleChangeProvider = (provider: DataSourceProvider) => {
+    StorageAPI.saveDataSourceProvider(provider);
+    setActiveProvider(provider);
+    loadAllData();
+  };
+
+  // Reset Geral para demonstração
+  const handleResetDemoData = async () => {
+    await DataService.resetData();
+    setSelectedColaboradorId(null);
+    setActiveTab('dashboard');
+    loadAllData();
+  };
+
+  // Navegação inteligente vinda de indicadores clicáveis do Dashboard
+  const handleNavigateFromDashboard = (tab: string, filters?: any) => {
+    setPreselectedFilters(filters || {});
+    setActiveTab(tab);
+    setSelectedColaboradorId(null);
+  };
+
+  // Iniciar fluxo para lançar novo feedback
+  const handleQuickFeedbackTrigger = (colaboradorId?: string) => {
+    if (colaboradorId) {
+      setSelectedColaboradorId(colaboradorId);
+      setActiveTab('colaboradores');
+      setIsQuickFeedbackModalOpen(false);
+    } else {
+      setIsQuickFeedbackModalOpen(true);
     }
   };
 
-  // Upload real para o Google Drive
-  const handleFileUpload = async (files: FileList | null) => {
-    if (!files) return;
-
-    setIsUploadingAnexo(true);
-    try {
-      const novosAnexos: Anexo[] = [];
-      const folderName = regTipo === 'Plano de Desenvolvimento Individual (PDI)' ? 'documentos' : 'Anexos';
-
-      for (const file of Array.from(files)) {
-        try {
-          const fileUrl = await DataService.uploadFile(file, folderName, colaborador.nome);
-
-          let sizeFriendly = `${(file.size / 1024).toFixed(0)} KB`;
-          if (file.size > 1024 * 1024) {
-            sizeFriendly = `${(file.size / (1024 * 1024)).toFixed(1)} MB`;
-          }
-
-          let tipoFormatado = 'documento';
-          if (file.type.startsWith('image/')) tipoFormatado = 'imagem';
-          else if (file.type.includes('pdf')) tipoFormatado = 'pdf';
-          else if (file.type.startsWith('audio/')) tipoFormatado = 'audio';
-          else if (file.type.startsWith('video/')) tipoFormatado = 'video';
-          else if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls') || file.type.includes('excel') || file.type.includes('spreadsheet')) {
-            tipoFormatado = 'excel';
-          }
-
-          novosAnexos.push({
-            id: `anx-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-            nome: file.name,
-            tipo: tipoFormatado,
-            url: fileUrl,
-            tamanho: sizeFriendly,
-          });
-        } catch (uploadError) {
-          console.error(`Erro ao fazer upload de ${file.name}:`, uploadError);
-        }
-      }
-
-      setRegAnexos((prev) => [...prev, ...novosAnexos]);
-    } catch (err) {
-      console.error('Erro no upload de arquivos:', err);
-    } finally {
-      setIsUploadingAnexo(false);
-    }
+  // Selecionar colaborador para ver ficha CRM completa
+  const handleSelectColaborador = (id: string) => {
+    setSelectedColaboradorId(id);
+    setActiveTab('colaboradores');
   };
 
-  const removeAnexo = (id: string) => {
-    setRegAnexos((prev) => prev.filter((a) => a.id !== id));
-  };
+  // Aplicar a permissão por setor em um único ponto para proteger todas as telas.
+  const acessoGlobal = currentUser?.perfil !== 'Lider';
+  const setoresPermitidos = currentUser?.setoresPermitidos?.length
+    ? currentUser.setoresPermitidos
+    : currentUser?.setor_id
+      ? [currentUser.setor_id]
+      : [];
 
-  // Tratar Drag & Drop
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-  };
+  const colaboradoresVisiveis = acessoGlobal
+    ? colaboradores
+    : colaboradores.filter((col) => setoresPermitidos.includes(col.setorId));
+  const idsColaboradoresVisiveis = new Set(colaboradoresVisiveis.map((col) => col.id));
+  const timelineVisivel = acessoGlobal
+    ? timeline
+    : timeline.filter((registro) => idsColaboradoresVisiveis.has(registro.colaboradorId));
+  const tarefasVisiveis = tarefas.filter((tarefa) => {
+    const col = colaboradores.find(c => c.id === tarefa.colaboradorId);
+    if (!col || col.situacao === 'Desligado') return false;
+    if (acessoGlobal) return true;
+    return setoresPermitidos.includes(col.setorId);
+  });
+  const setoresVisiveis = acessoGlobal
+    ? setores
+    : setores.filter((setor) => setoresPermitidos.includes(setor.id));
+  const colaboradorSelecionado = selectedColaboradorId
+    ? colaboradoresVisiveis.find((col) => col.id === selectedColaboradorId)
+    : undefined;
 
-  const handleDragLeave = () => {
-    setIsDragging(false);
-  };
+  // Contadores dinâmicos para barra lateral
+  const tarefasPendentesCount = tarefasVisiveis.filter((t) => !t.concluida).length;
 
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    handleFileUpload(e.dataTransfer.files);
-  };
-
-  // Submit Novo Registro
-  const handleCreateRegistro = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!regTitulo || !regDescricao) return;
-
-    const novoReg: TimelineRegistro = {
-      id: `reg-${Date.now()}`,
-      colaboradorId: colaborador.id,
-      tipo: regTipo,
-      data: regData,
-      titulo: regTitulo,
-      descricao: regDescricao,
-      responsavelId: regLiderId,
-      prioridade: regPrioridade,
-      status: regStatus,
-      prazoAcompanhamento: regPrazo || undefined,
-      gerarTarefaFutura: regGerarTarefa,
-      anexos: regAnexos,
-    };
-
-    onAddTimelineRegistro(novoReg);
-
-    // Reset Form
-    setIsFormOpen(false);
-    setRegTitulo('');
-    setRegDescricao('');
-    setRegPrazo('');
-    setRegGerarTarefa(false);
-    setRegAnexos([]);
-  };
-
-  // Estatísticas de timeline rápidas
-  const feedPositivosCount = timelineColaborador.filter((r) => r.tipo === 'Feedback Positivo').length;
-  const feedCorretivosCount = timelineColaborador.filter((r) => r.tipo === 'Feedback Corretivo').length;
-  const pdisCount = timelineColaborador.filter((r) => r.tipo === 'Plano de Desenvolvimento Individual (PDI)').length;
+  if (currentUser === null) {
+    return <Login onLoginSuccess={handleLoginSuccess} />;
+  }
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto p-4 animate-fade-in">
-      {/* Back Button */}
-      <div>
-        <button
-          id="btn-profile-back"
-          onClick={onBack}
-          className="inline-flex items-center gap-1 text-sm font-bold text-slate-500 hover:text-slate-800 cursor-pointer transition bg-white px-4 py-2 rounded-xl border border-slate-200 shadow-sm"
-        >
-          <ChevronLeft size={16} />
-          Voltar para Lista
-        </button>
-      </div>
+    <div id="app-root-layout" className="flex h-screen bg-slate-50 overflow-hidden font-sans antialiased text-slate-800">
+      {/* Lateral Menu Navigation Panel */}
+      <Sidebar
+        activeTab={selectedColaboradorId ? 'colaboradores' : activeTab}
+        setActiveTab={(tab) => {
+          setActiveTab(tab);
+          setSelectedColaboradorId(null);
+          setPreselectedFilters({});
+        }}
+        onReset={handleResetDemoData}
+        colaboradoresCount={colaboradoresVisiveis.length}
+        tarefasPendentesCount={tarefasPendentesCount}
+        currentUser={currentUser}
+        onLogout={handleLogout}
+      />
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* LEFT COLUMN: CRM Dossier */}
-        <div className="lg:col-span-4 bg-white border border-slate-100 rounded-3xl overflow-hidden shadow-sm flex flex-col">
-          {/* Aesthetic cover profile pattern */}
-          <div className="h-28 bg-gradient-to-r from-teal-500/30 to-indigo-500/20 relative" />
+      {/* Main Content View Frame */}
+      <main className="flex-1 flex flex-col h-screen overflow-hidden">
+        {/* Dynamic Nav Header Bar */}
+        <header className="h-16 border-b border-slate-100 bg-white flex items-center justify-between px-8 shrink-0">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">
+              {selectedColaboradorId ? 'Histórico de Colaborador (CRM)' : activeTab}
+            </span>
+          </div>
 
-          {/* Profile Card Main Body */}
-          <div className="p-6 pt-0 relative -mt-12 flex flex-col items-center border-b border-slate-100">
-            {/* Editable Profile Photo */}
-            <div className="relative group/photo mb-3">
-              <img
-                src={localFotoUrl}
-                alt={colaborador.nome}
-                className="w-24 h-24 rounded-full object-cover border-4 border-white shadow-md group-hover/photo:brightness-75 transition-all"
+          <div className="flex items-center gap-4">
+            {/* Sistema de Notificações */}
+            <SistemaNotificacoes
+              alertas={alertas}
+              configAlertas={configAlertas}
+              colaboradores={colaboradores}
+              timeline={timeline}
+              onReconhecerAlerta={handleReconhecerAlerta}
+              onResolverAlerta={handleResolverAlerta}
+              onIgnorarAlerta={handleIgnorarAlerta}
+              onLimparResolvidos={handleLimparAlertasResolvidos}
+            />
+            
+            <div className="text-right">
+              <span className="text-xs font-bold text-slate-900 block leading-tight">{currentUser.nome}</span>
+              <span className="text-[10px] text-slate-400 font-bold block">{currentUser.email}</span>
+            </div>
+            <div className="h-9 w-9 rounded-full bg-slate-900 border border-slate-100 flex items-center justify-center font-bold text-xs text-teal-400 shadow-sm">
+              {currentUser.nome.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+            </div>
+          </div>
+        </header>
+
+        {/* Outer view viewport scrollbar */}
+        <div className="flex-1 overflow-y-auto bg-slate-50/50">
+          {/* Renders Selected View */}
+          {activeTab === 'dashboard' && (
+              <Dashboard
+                colaboradores={colaboradoresVisiveis}
+                timeline={timelineVisivel}
+                tarefas={tarefasVisiveis}
+                onNavigateToList={handleNavigateFromDashboard}
+                onSelectColaborador={handleSelectColaborador}
+                onOpenNewRegistroModal={handleQuickFeedbackTrigger}
+                currentUser={currentUser}
+                onUpdateColaborador={handleUpdateColaborador}
+                onboardingItems={onboardingItems}
+                onboardingChecklists={onboardingChecklists}
+                onSaveOnboardingChecklist={handleSaveOnboardingChecklist}
+                avaliacoesExperiencia={avaliacoesExperiencia}
+                onUpdateAvaliacaoExperiencia={handleUpdateAvaliacaoExperiencia}
+                configuracaoAlertas={configuracaoAlertas}
               />
-              <button
-                type="button"
-                onClick={() => photoInputRef.current?.click()}
-                className="absolute inset-0 flex items-center justify-center bg-slate-950/40 text-white rounded-full opacity-0 group-hover/photo:opacity-100 transition-opacity cursor-pointer duration-150"
-                title="Alterar Foto de Perfil"
-              >
-                <Upload size={18} />
-              </button>
-              <input
-                ref={photoInputRef}
-                type="file"
-                accept="image/*"
-                onChange={handlePhotoChange}
-                className="hidden"
+          )}
+
+          {activeTab === 'colaboradores' && (
+            selectedColaboradorId && colaboradorSelecionado ? (
+              <ColaboradorProfile
+                colaborador={colaboradorSelecionado}
+                timeline={timelineVisivel}
+                setores={setoresVisiveis}
+                cargos={cargos}
+                lideres={lideres}
+                empresas={empresas}
+                documentos={documentos}
+                reconhecimentos={reconhecimentos}
+                configReconhecimento={configReconhecimento}
+                tarefas={tarefas}
+                onBack={() => setSelectedColaboradorId(null)}
+                onUpdateColaborador={handleUpdateColaborador}
+                onAddTimelineRegistro={handleAddTimelineRegistro}
               />
-            </div>
-            {isUploadingPhoto && (
-              <span className="text-[10px] font-bold text-teal-600 animate-pulse mb-2">Atualizando foto...</span>
-            )}
-            <h2 className="text-xl font-extrabold text-slate-900 text-center tracking-tight">{colaborador.nome}</h2>
-            <p className="text-xs text-slate-400 font-medium text-center">{colaborador.email}</p>
+            ) : (
+              <Colaboradores
+                colaboradores={colaboradoresVisiveis}
+                setores={setoresVisiveis}
+                cargos={cargos}
+                lideres={lideres}
+                empresas={empresas}
+                onSelectColaborador={handleSelectColaborador}
+                onAddColaborador={handleAddColaborador}
+                onAddEmpresa={handleAddEmpresa}
+                onAddSetor={handleAddSetor}
+                onAddCargo={handleAddCargo}
+                onAddLider={handleAddLider}
+                onUpdateColaborador={handleUpdateColaborador}
+                onDeleteColaborador={handleDeleteColaborador}
+                currentUser={currentUser}
+                preselectedFilters={preselectedFilters}
+              />
+            )
+          )}
 
-            {/* Quick Status Dropdown Selection */}
-            <div className="mt-4 flex items-center gap-2">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-wide">Situação:</span>
-              <select
-                id="profile-situacao-select"
-                value={colaborador.situacao}
-                onChange={handleChangeSituacao}
-                className="px-2.5 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 cursor-pointer focus:outline-none focus:ring-1 focus:ring-teal-500"
-              >
-                <option value="Ativo">Ativo</option>
-                <option value="Em Acompanhamento">Em Acompanhamento</option>
-                <option value="Suspenso">Suspenso</option>
-                <option value="Desligado">Desligado</option>
-              </select>
-            </div>
-          </div>
+          {activeTab === 'tarefas' && (
+            <Tarefas
+              tarefas={tarefasVisiveis}
+              colaboradores={colaboradoresVisiveis}
+              lideres={lideres}
+              cargos={cargos}
+              onToggleTarefa={handleToggleTarefa}
+              onAddTarefa={handleAddTarefa}
+            />
+          )}
 
-          {/* Dossier Admin Information */}
-          <div className="p-6 space-y-4 border-b border-slate-100">
-            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Ficha Cadastral</h3>
+          {activeTab === 'analytics' && (
+            <Analytics
+              colaboradores={colaboradoresVisiveis}
+              timeline={timelineVisivel}
+              setores={setoresVisiveis}
+              tarefas={tarefasVisiveis}
+            />
+          )}
 
-            <div className="space-y-3.5 text-sm text-slate-700">
-              <div className="flex items-center gap-3">
-                <div className="text-slate-400 shrink-0"><Briefcase size={16} /></div>
-                <div className="min-w-0">
-                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider leading-none">Cargo</p>
-                  <p className="font-semibold text-slate-800 mt-0.5 truncate">{cargoNome}</p>
-                </div>
-              </div>
+          {activeTab === 'usuarios' && (
+            <Usuarios
+              usuarios={usuarios}
+              setores={setores}
+              onSaveUsuario={handleSaveUsuario}
+              onDeleteUsuario={handleDeleteUsuario}
+            />
+          )}
 
-              <div className="flex items-center gap-3">
-                <div className="text-slate-400 shrink-0"><Layers size={16} /></div>
-                <div className="min-w-0">
-                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider leading-none">Setor</p>
-                  <p className="font-semibold text-slate-800 mt-0.5 truncate">{setorNome}</p>
-                </div>
-              </div>
+          {activeTab === 'documentos' && (
+            <CentralDocumentos
+              colaborador={{ id: 'todos', nome: 'Todos', email: '', fotoUrl: '', cargoId: '', setorId: '', liderId: '', dataAdmissao: '', situacao: 'Ativo', empresaId: '' } as Colaborador}
+              documentos={documentos}
+              onAddDocumento={handleAddDocumento}
+              onDeleteDocumento={handleDeleteDocumento}
+              currentUserId={currentUser?.id || ''}
+            />
+          )}
 
-              <div className="flex items-center gap-3">
-                <div className="text-slate-400 shrink-0"><User size={16} /></div>
-                <div className="min-w-0">
-                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider leading-none">Líder Responsável</p>
-                  {liderObj ? (
-                    <div className="flex items-center gap-1.5 mt-0.5">
-                      {liderObj.fotoUrl && (
-                        <img
-                          src={liderObj.fotoUrl}
-                          alt={liderObj.nome}
-                          className="w-5 h-5 rounded-full object-cover border border-slate-100"
-                        />
-                      )}
-                      <p className="font-semibold text-slate-800 truncate">{liderObj.nome}</p>
-                    </div>
-                  ) : (
-                    <p className="text-slate-500 font-semibold mt-0.5">Sem líder direto</p>
-                  )}
-                </div>
-              </div>
+          {activeTab === 'reconhecimento' && (
+            <SistemaReconhecimento
+              reconhecimentos={reconhecimentos}
+              configuracao={configReconhecimento}
+              colaboradores={colaboradores}
+              lideres={lideres}
+              currentUserId={currentUser?.id || ''}
+              onSaveReconhecimento={handleSaveReconhecimento}
+              onDeleteReconhecimento={handleDeleteReconhecimento}
+              onSaveConfiguracao={handleSaveConfigReconhecimento}
+            />
+          )}
 
-              <div className="flex items-center gap-3">
-                <div className="text-slate-400 shrink-0"><Calendar size={16} /></div>
-                <div className="min-w-0">
-                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider leading-none">Admissão & Tempo</p>
-                  <p className="font-semibold text-slate-800 mt-0.5">
-                    {colaborador.dataAdmissao ? new Date(colaborador.dataAdmissao).toLocaleDateString('pt-BR') : '-'} &middot;{' '}
-                    <span className="text-teal-600 font-bold">{calcularTempoEmpresa(colaborador.dataAdmissao)}</span>
-                  </p>
-                </div>
-              </div>
+          {activeTab === 'metas' && (
+            <MetasLideranca
+              metasLideranca={metasLideranca}
+              metasSetor={metasSetor}
+              acompanhamentos={acompanhamentos}
+              lideres={lideres}
+              setores={setores}
+              colaboradores={colaboradores}
+              currentUserId={currentUser?.id || ''}
+              onSaveMetaLideranca={handleSaveMetaLideranca}
+              onDeleteMetaLideranca={handleDeleteMetaLideranca}
+              onSaveMetaSetor={handleSaveMetaSetor}
+              onDeleteMetaSetor={handleDeleteMetaSetor}
+              onSaveAcompanhamento={handleSaveAcompanhamento}
+            />
+          )}
 
-              {colaborador.telefone && (
-                <div className="flex items-center gap-3">
-                  <div className="text-slate-400 shrink-0"><Phone size={16} /></div>
-                  <div className="min-w-0">
-                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider leading-none">Telefone</p>
-                    <p className="font-semibold text-slate-800 mt-0.5">{colaborador.telefone}</p>
-                  </div>
-                </div>
-              )}
+          {activeTab === 'config' && (
+            <Config
+              config={supabaseConfig}
+              onSaveConfig={setSupabaseConfig}
+              googleConfig={googleScriptConfig}
+              onSaveGoogleConfig={setGoogleScriptConfig}
+              activeProvider={activeProvider}
+              onChangeProvider={setActiveProvider}
+              setores={setores}
+              onboardingItems={onboardingItems}
+              onAddOnboardingItem={handleAddOnboardingItem}
+              onDeleteOnboardingItem={handleDeleteOnboardingItem}
+              currentUser={currentUser!}
+              empresas={empresas}
+              cargos={cargos}
+              lideres={lideres}
+              colaboradores={colaboradores}
+              onAddEmpresa={handleAddEmpresa}
+              onAddSetor={handleAddSetor}
+              onAddCargo={handleAddCargo}
+              onAddLider={handleAddLider}
+              onUpdateSetor={handleUpdateSetor}
+              onUpdateCargo={handleUpdateCargo}
+              onUpdateLider={handleUpdateLider}
+            />
+          )}
 
-              <div className="flex items-center gap-3">
-                <div className="text-slate-400 shrink-0"><MapPin size={16} /></div>
-                <div className="min-w-0">
-                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider leading-none">Empresa</p>
-                  <p className="font-semibold text-slate-800 mt-0.5">{empresaNome}</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Stat Blocks Indicators */}
-          <div className="p-6 grid grid-cols-2 gap-3.5 bg-slate-50/50">
-            <div className="bg-white p-3 border border-slate-100 rounded-2xl">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Registros</span>
-              <span className="text-xl font-extrabold text-slate-950 block mt-0.5">{timelineColaborador.length}</span>
-            </div>
-            <div className="bg-white p-3 border border-slate-100 rounded-2xl">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Feedbacks (+)</span>
-              <span className="text-xl font-extrabold text-emerald-600 block mt-0.5">{feedPositivosCount}</span>
-            </div>
-            <div className="bg-white p-3 border border-slate-100 rounded-2xl">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Feedbacks (-)</span>
-              <span className="text-xl font-extrabold text-orange-600 block mt-0.5">{feedCorretivosCount}</span>
-            </div>
-            <div className="bg-white p-3 border border-slate-100 rounded-2xl">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Planos (PDI)</span>
-              <span className="text-xl font-extrabold text-indigo-600 block mt-0.5">{pdisCount}</span>
-            </div>
-          </div>
+          {activeTab === 'gestao-pessoas' && (
+            <GestaoPessoas
+              colaboradores={colaboradoresVisiveis}
+              setores={setoresVisiveis}
+              cargos={cargos}
+              timeline={timelineVisivel}
+              tarefas={tarefasVisiveis}
+              reconhecimentos={reconhecimentos}
+              avaliacoesExperiencia={avaliacoesExperiencia}
+              currentUserId={currentUser?.id || ''}
+            />
+          )}
         </div>
+      </main>
 
-        {/* RIGHT COLUMN: Interactive Timeline & Registry Creation */}
-        <div className="lg:col-span-8 space-y-6">
-          {/* Timeline Action Bar */}
-          <div className="bg-white border border-slate-100 p-4 rounded-2xl shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-            {/* Quick search timeline */}
-            <div className="relative flex-1">
-              <Search size={16} className="absolute left-3 top-2.5 text-slate-400" />
-              <input
-                id="search-timeline"
-                type="text"
-                placeholder="Pesquisar nos históricos..."
-                value={timelineSearch}
-                onChange={(e) => setTimelineSearch(e.target.value)}
-                className="w-full pl-9 pr-4 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none"
-              />
+      {/* MODAL: SELECIONAR COLABORADOR RÁPIDO PARA AVALIAR */}
+      {isQuickFeedbackModalOpen && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-6 animate-scale-up border border-slate-100">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3 mb-4">
+              <h3 className="font-bold text-slate-950 text-sm uppercase tracking-wider flex items-center gap-1.5">
+                <Users2 size={16} className="text-teal-500" /> Selecionar Colaborador
+              </h3>
+              <button
+                onClick={() => setIsQuickFeedbackModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 font-bold text-lg cursor-pointer"
+              >
+                &times;
+              </button>
             </div>
 
-            {/* Quick category filter tabs */}
-            <div className="flex flex-wrap gap-1.5">
-              {['Todos', 'Feedbacks', 'PDIs', 'Incidentes', 'Elogios'].map((item) => (
-                <button
-                  key={item}
-                  onClick={() => setFilterTipo(item)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold cursor-pointer transition ${
-                    filterTipo === item
-                      ? 'bg-slate-900 text-white'
-                      : 'bg-slate-50 text-slate-500 hover:bg-slate-100'
-                  }`}
+            <p className="text-xs text-slate-500 leading-relaxed mb-4">
+              Escolha de qual integrante da equipe você deseja preencher o histórico agora. Você será direcionado para a timeline dele.
+            </p>
+
+            <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+              {colaboradoresVisiveis.map((col) => (
+                <div
+                  key={col.id}
+                  onClick={() => handleQuickFeedbackTrigger(col.id)}
+                  className="flex items-center gap-3 p-2.5 border border-slate-100 rounded-2xl hover:bg-slate-50 hover:border-teal-100 cursor-pointer transition duration-150 group"
                 >
-                  {item}
-                </button>
+                  <img
+                    src={col.fotoUrl}
+                    alt={col.nome}
+                    className="w-8 h-8 rounded-full object-cover border border-slate-100"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <h4 className="text-xs font-bold text-slate-800 group-hover:text-teal-600 truncate">{col.nome}</h4>
+                    <p className="text-[10px] text-slate-400 truncate">
+                      {cargos.find((c) => c.id === col.cargoId)?.nome}
+                    </p>
+                  </div>
+                  <PlusCircle size={14} className="text-slate-300 group-hover:text-teal-500 shrink-0" />
+                </div>
               ))}
             </div>
 
-            {/* Add timeline entry button */}
-            <button
-              id="btn-open-timeline-form"
-              onClick={() => setIsFormOpen(!isFormOpen)}
-              className="flex items-center gap-1 px-4 py-1.5 bg-teal-500 text-slate-950 font-bold rounded-xl text-xs hover:bg-teal-400 cursor-pointer transition shadow-sm"
-            >
-              <PlusCircle size={14} />
-              Novo Registro
-            </button>
-          </div>
-
-          {/* INLINE COLLAPSIBLE FORM: ADD TIMELINE ENTRY */}
-          {isFormOpen && (
-            <div className="bg-white border border-teal-100 rounded-3xl p-6 shadow-md animate-slide-down space-y-4">
-              <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-                <div>
-                  <h3 className="font-extrabold text-slate-900">Adicionar Histórico à Timeline</h3>
-                  <p className="text-xs text-slate-400 mt-0.5">Este registro formará a timeline cronológica oficial do colaborador.</p>
-                </div>
-                <button
-                  onClick={() => setIsFormOpen(false)}
-                  className="text-slate-400 hover:text-slate-600 font-bold cursor-pointer"
-                >
-                  Fechar &times;
-                </button>
-              </div>
-
-              <form onSubmit={handleCreateRegistro} className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Tipo de Registro</label>
-                    <select
-                      value={regTipo}
-                      onChange={(e) => setRegTipo(e.target.value as TipoRegistro)}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-1 focus:ring-teal-500 cursor-pointer"
-                    >
-                      <option value="Feedback Positivo">Feedback Positivo</option>
-                      <option value="Feedback Corretivo">Feedback Corretivo</option>
-                      <option value="Reconhecimento">Reconhecimento</option>
-                      <option value="Conversa Individual (1:1)">Conversa Individual (1:1)</option>
-                      <option value="Plano de Desenvolvimento Individual (PDI)">Plano de Desenvolvimento Individual (PDI)</option>
-                      <option value="Advertência">Advertência</option>
-                      <option value="Suspensão">Suspensão</option>
-                      <option value="Elogio de Cliente">Elogio de Cliente</option>
-                      <option value="Reclamação de Cliente">Reclamação de Cliente</option>
-                      <option value="Observação Geral">Observação Geral</option>
-                      <option value="Acompanhamento">Acompanhamento</option>
-                      <option value="Avaliação 180°">Avaliação 180°</option>
-                      <option value="Outros">Outros</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Data do Acontecimento</label>
-                    <input
-                      type="date"
-                      required
-                      value={regData}
-                      onChange={(e) => setRegData(e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-teal-500 cursor-pointer"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Título / Tópico Curto</label>
-                    <input
-                      type="text"
-                      required
-                      value={regTitulo}
-                      onChange={(e) => setRegTitulo(e.target.value)}
-                      placeholder="Ex: Entrega do Projeto ou Alinhamento 1:1"
-                      className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Líder Aplicador / Responsável</label>
-                    <select
-                      value={regLiderId}
-                      onChange={(e) => setRegLiderId(e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-1 focus:ring-teal-500 cursor-pointer"
-                    >
-                      {lideres.map((l) => (
-                        <option key={l.id} value={l.id}>
-                          {l.nome} ({l.cargo})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Descrição Detalhada do Registro</label>
-                  <textarea
-                    required
-                    rows={4}
-                    value={regDescricao}
-                    onChange={(e) => setRegDescricao(e.target.value)}
-                    placeholder="Escreva as anotações, combinados, planos acertados ou observações detalhadas aqui..."
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Prioridade / Criticidade</label>
-                    <select
-                      value={regPrioridade}
-                      onChange={(e) => setRegPrioridade(e.target.value as PrioridadeRegistro)}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-1 focus:ring-teal-500 cursor-pointer"
-                    >
-                      <option value="Baixa">Baixa</option>
-                      <option value="Média">Média</option>
-                      <option value="Alta">Alta</option>
-                      <option value="Crítica">Crítica</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Situação Atual</label>
-                    <select
-                      value={regStatus}
-                      onChange={(e) => setRegStatus(e.target.value as StatusRegistro)}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-1 focus:ring-teal-500 cursor-pointer"
-                    >
-                      <option value="Concluído">Concluído</option>
-                      <option value="Em Andamento">Em Andamento</option>
-                      <option value="Pendente">Pendente</option>
-                      <option value="Atrasado">Atrasado</option>
-                      <option value="Cancelado">Cancelado</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Prazo de Acompanhamento (Opcional)</label>
-                    <input
-                      type="date"
-                      value={regPrazo}
-                      onChange={(e) => setRegPrazo(e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-teal-500 cursor-pointer"
-                    />
-                  </div>
-                </div>
-
-                {/* Checklist toggle to Auto-generate Task */}
-                <div className="bg-slate-50 p-3.5 rounded-2xl flex items-center gap-3 border border-slate-100">
-                  <input
-                    type="checkbox"
-                    id="chk-gerar-tarefa"
-                    checked={regGerarTarefa}
-                    onChange={(e) => setRegGerarTarefa(e.target.checked)}
-                    className="w-4 h-4 text-teal-600 border-slate-300 rounded focus:ring-teal-500 cursor-pointer"
-                  />
-                  <label htmlFor="chk-gerar-tarefa" className="text-xs text-slate-600 font-semibold cursor-pointer">
-                    Gerar tarefa futura de acompanhamento para o líder na lista de tarefas automaticamente.
-                  </label>
-                </div>
-
-                {/* SUPABASE STORAGE: FILE UPLOAD ZONE */}
-                <div className="space-y-2">
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">
-                    Anexar Arquivos (Imagens, PDFs, Áudios, Vídeos)
-                  </label>
-
-                  {/* Drag and Drop Zone */}
-                  <div
-                    onDragOver={handleDragOver}
-                    onDragLeave={handleDragLeave}
-                    onDrop={handleDrop}
-                    onClick={() => !isUploadingAnexo && fileInputRef.current?.click()}
-                    className={`border-2 border-dashed rounded-2xl p-6 flex flex-col items-center justify-center cursor-pointer transition ${
-                      isDragging
-                        ? 'border-teal-500 bg-teal-50/20'
-                        : 'border-slate-200 bg-slate-50 hover:bg-slate-100/50 hover:border-slate-300'
-                    } ${isUploadingAnexo ? 'pointer-events-none opacity-60' : ''}`}
-                  >
-                    {isUploadingAnexo ? (
-                      <>
-                        <RefreshCw size={24} className="text-teal-500 mb-1.5 animate-spin" />
-                        <p className="text-xs font-bold text-teal-600 animate-pulse">Enviando arquivos ao Google Drive...</p>
-                        <p className="text-[10px] text-slate-400 mt-1">Sempre criando uma subpasta organizada para o colaborador</p>
-                      </>
-                    ) : (
-                      <>
-                        <Upload size={24} className="text-slate-400 mb-1.5" />
-                        <p className="text-xs font-semibold text-slate-700">Arrastar arquivos aqui ou clicar para selecionar</p>
-                        <p className="text-[10px] text-slate-400 mt-1">Imagens, PDFs, Planilhas Excel ou Vídeos</p>
-                      </>
-                    )}
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      multiple
-                      onChange={(e) => handleFileUpload(e.target.files)}
-                      className="hidden"
-                    />
-                  </div>
-
-                  {/* Attachment List */}
-                  {regAnexos.length > 0 && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1.5">
-                      {regAnexos.map((anx) => (
-                        <div
-                          key={anx.id}
-                          className="bg-white border border-slate-100 rounded-xl p-2 px-3 flex items-center justify-between gap-3 shadow-xs"
-                        >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <FileIcon size={14} className="text-slate-400 shrink-0" />
-                            <div className="min-w-0">
-                              <p className="text-xs font-bold text-slate-800 truncate leading-tight">{anx.nome}</p>
-                              <p className="text-[10px] text-slate-400">{anx.tamanho}</p>
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => removeAnexo(anx.id)}
-                            className="text-slate-400 hover:text-slate-600 cursor-pointer font-bold shrink-0 p-1"
-                          >
-                            <X size={14} />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Form Buttons */}
-                <div className="flex justify-end gap-2 pt-4 border-t border-slate-100">
-                  <button
-                    type="button"
-                    onClick={() => setIsFormOpen(false)}
-                    className="px-4 py-2 border border-slate-200 text-slate-600 bg-slate-50 rounded-xl text-xs font-semibold hover:bg-slate-100 cursor-pointer transition"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="submit"
-                    className="px-5 py-2 bg-teal-500 text-slate-950 font-bold rounded-xl text-xs hover:bg-teal-400 cursor-pointer transition"
-                  >
-                    Lançar no Histórico
-                  </button>
-                </div>
-              </form>
-            </div>
-          )}
-
-          {/* CICLO DE VIDA */}
-          <div className="bg-white border border-slate-100 rounded-2xl p-6 shadow-sm">
-            <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2 mb-4">
-              <TrendingUp size={16} className="text-teal-500" />
-              Ciclo de Vida
-            </h3>
-            
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {/* Tempo de Empresa */}
-              <div className="bg-slate-50 rounded-xl p-3">
-                <div className="flex items-center gap-2 mb-2">
-                  <Briefcase size={14} className="text-slate-400" />
-                  <span className="text-[10px] font-semibold text-slate-500 uppercase">Tempo de Empresa</span>
-                </div>
-                <p className="text-sm font-bold text-slate-900">{calcularTempoEmpresa(colaborador.dataAdmissao)}</p>
-                <p className="text-[10px] text-slate-400">Desde {colaborador.dataAdmissao ? new Date(colaborador.dataAdmissao).toLocaleDateString('pt-BR') : '-'}</p>
-              </div>
-
-              {/* Próximo Aniversário */}
-              {colaborador.dataNascimento && (
-                <div className="bg-pink-50 rounded-xl p-3">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Cake size={14} className="text-pink-500" />
-                    <span className="text-[10px] font-semibold text-pink-600 uppercase">Próximo Aniversário</span>
-                  </div>
-                  {(() => {
-                    const nasc = new Date(colaborador.dataNascimento!);
-                    const hoje = new Date();
-                    let proximoAniv = new Date(hoje.getFullYear(), nasc.getMonth(), nasc.getDate());
-                    if (proximoAniv < hoje) proximoAniv.setFullYear(hoje.getFullYear() + 1);
-                    const diff = Math.ceil((proximoAniv.getTime() - hoje.getTime()) / (1000 * 60 * 60 * 24));
-                    return (
-                      <>
-                        <p className="text-sm font-bold text-pink-700">{proximoAniv.toLocaleDateString('pt-BR', { day: 'numeric', month: 'short' })}</p>
-                        <p className="text-[10px] text-pink-500">Em {diff} dia{diff !== 1 ? 's' : ''}</p>
-                      </>
-                    );
-                  })()}
-                </div>
-              )}
-
-              {/* Próximo Aniversário de Empresa */}
-              <div className="bg-blue-50 rounded-xl p-3">
-                <div className="flex items-center gap-2 mb-2">
-                  <PartyPopper size={14} className="text-blue-500" />
-                  <span className="text-[10px] font-semibold text-blue-600 uppercase">Aniversário de Empresa</span>
-                </div>
-                {colaborador.dataAdmissao ? (() => {
-                  const admissao = new Date(colaborador.dataAdmissao);
-                  if (isNaN(admissao.getTime())) return <p className="text-sm text-slate-400">-</p>;
-                  const hoje = new Date();
-                  let proximoAniv = new Date(hoje.getFullYear(), admissao.getMonth(), admissao.getDate());
-                  if (proximoAniv < hoje) proximoAniv.setFullYear(hoje.getFullYear() + 1);
-                  const diff = Math.ceil((proximoAniv.getTime() - hoje.getTime()) / (1000 * 60 * 60 * 24));
-                  return (
-                    <>
-                      <p className="text-sm font-bold text-blue-700">{proximoAniv.toLocaleDateString('pt-BR', { day: 'numeric', month: 'short' })}</p>
-                      <p className="text-[10px] text-blue-500">Em {diff} dia{diff !== 1 ? 's' : ''}</p>
-                    </>
-                  );
-                })() : <p className="text-sm text-slate-400">-</p>}
-              </div>
-
-              {/* Status de Férias */}
-              <div className="bg-emerald-50 rounded-xl p-3">
-                <div className="flex items-center gap-2 mb-2">
-                  <Palmtree size={14} className="text-emerald-500" />
-                  <span className="text-[10px] font-semibold text-emerald-600 uppercase">Status de Férias</span>
-                </div>
-                {colaborador.dataAdmissao ? (() => {
-                  const admissao = new Date(colaborador.dataAdmissao);
-                  if (isNaN(admissao.getTime())) return <p className="text-sm text-slate-400">-</p>;
-                  const hoje = new Date();
-                  const umAno = new Date(admissao);
-                  umAno.setFullYear(umAno.getFullYear() + 1);
-                  const doisAnos = new Date(admissao);
-                  doisAnos.setFullYear(doisAnos.getFullYear() + 2);
-                  
-                  const elegivel = hoje >= umAno;
-                  const prazoMax = doisAnos;
-                  const diff = Math.ceil((prazoMax.getTime() - hoje.getTime()) / (1000 * 60 * 60 * 24));
-                  
-                  if (!elegivel) {
-                    const paraElegibilidade = Math.ceil((umAno.getTime() - hoje.getTime()) / (1000 * 60 * 60 * 24));
-                    return (
-                      <>
-                        <p className="text-sm font-bold text-slate-600">Em período aquisitivo</p>
-                        <p className="text-[10px] text-slate-400">Elegível em {paraElegibilidade}d</p>
-                      </>
-                    );
-                  }
-                  
-                  return (
-                    <>
-                      <p className="text-sm font-bold text-emerald-700">Elegível</p>
-                      <p className="text-[10px] text-emerald-500">Prazo máximo: {diff > 0 ? `${diff}d` : 'Vencido'}</p>
-                    </>
-                  );
-                })() : <p className="text-sm text-slate-400">-</p>}
-              </div>
-
-              {/* DayOff */}
-              <div className="bg-violet-50 rounded-xl p-3">
-                <div className="flex items-center gap-2 mb-2">
-                  <Gift size={14} className="text-violet-500" />
-                  <span className="text-[10px] font-semibold text-violet-600 uppercase">DayOff</span>
-                </div>
-                <p className="text-sm font-bold text-violet-700">Disponível</p>
-                <p className="text-[10px] text-violet-500">No mês do aniversário</p>
-              </div>
-
-              {/* Último Feedback */}
-              <div className="bg-orange-50 rounded-xl p-3">
-                <div className="flex items-center gap-2 mb-2">
-                  <MessageSquare size={14} className="text-orange-500" />
-                  <span className="text-[10px] font-semibold text-orange-600 uppercase">Último Feedback</span>
-                </div>
-                {(() => {
-                  const feedbacks = timeline.filter(r => r.colaboradorId === colaborador.id && r.tipo.includes('Feedback')).sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime());
-                  if (feedbacks.length === 0) {
-                    return <p className="text-sm text-slate-400">Nenhum registro</p>;
-                  }
-                  const ultimo = feedbacks[0];
-                  return (
-                    <>
-                      <p className="text-sm font-bold text-orange-700 truncate">{ultimo.tipo.replace('Feedback ', '')}</p>
-                      <p className="text-[10px] text-orange-500">{new Date(ultimo.data).toLocaleDateString('pt-BR')}</p>
-                    </>
-                  );
-                })()}
-              </div>
-
-              {/* Última Avaliação */}
-              <div className="bg-red-50 rounded-xl p-3">
-                <div className="flex items-center gap-2 mb-2">
-                  <CheckCircle2 size={14} className="text-red-500" />
-                  <span className="text-[10px] font-semibold text-red-600 uppercase">Última Avaliação</span>
-                </div>
-                {(() => {
-                  const avs = (colaborador.avaliacoesCompletas || []).slice().sort().reverse();
-                  if (avs.length === 0) {
-                    return <p className="text-sm text-slate-400">Em período de experiência</p>;
-                  }
-                  const ultima = avs[0];
-                  return (
-                    <>
-                      <p className="text-sm font-bold text-red-700">{ultima} dias</p>
-                      <p className="text-[10px] text-red-500">Avaliação concluída</p>
-                    </>
-                  );
-                })()}
-              </div>
-
-              {/* Último PDI */}
-              <div className="bg-indigo-50 rounded-xl p-3">
-                <div className="flex items-center gap-2 mb-2">
-                  <BookOpen size={14} className="text-indigo-500" />
-                  <span className="text-[10px] font-semibold text-indigo-600 uppercase">Último PDI</span>
-                </div>
-                {(() => {
-                  const pdis = timeline.filter(r => r.colaboradorId === colaborador.id && r.tipo === 'Plano de Desenvolvimento Individual (PDI)').sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime());
-                  if (pdis.length === 0) {
-                    return <p className="text-sm text-slate-400">Nenhum PDI</p>;
-                  }
-                  const ultimo = pdis[0];
-                  return (
-                    <>
-                      <p className="text-sm font-bold text-indigo-700 truncate">{ultimo.titulo}</p>
-                      <p className="text-[10px] text-indigo-500">{new Date(ultimo.data).toLocaleDateString('pt-BR')}</p>
-                    </>
-                  );
-                })()}
-              </div>
-
-              {/* Último Reconhecimento */}
-              <div className="bg-amber-50 rounded-xl p-3">
-                <div className="flex items-center gap-2 mb-2">
-                  <Award size={14} className="text-amber-500" />
-                  <span className="text-[10px] font-semibold text-amber-600 uppercase">Último Reconhecimento</span>
-                </div>
-                {(() => {
-                  const recs = timeline.filter(r => r.colaboradorId === colaborador.id && (r.tipo === 'Reconhecimento' || r.tipo === 'Elogio de Cliente')).sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime());
-                  if (recs.length === 0) {
-                    return <p className="text-sm text-slate-400">Nenhum registro</p>;
-                  }
-                  const ultimo = recs[0];
-                  return (
-                    <>
-                      <p className="text-sm font-bold text-amber-700 truncate">{ultimo.titulo}</p>
-                      <p className="text-[10px] text-amber-500">{new Date(ultimo.data).toLocaleDateString('pt-BR')}</p>
-                    </>
-                  );
-                })()}
-              </div>
-            </div>
-          </div>
-
-          {/* CHRONOLOGICAL TIMELINE STREAM */}
-          <div className="space-y-4">
-            <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2 pl-1.5">
-              <span>Linha do Tempo Cronológica</span>
-              <span className="bg-slate-100 text-slate-600 font-semibold text-xs px-2 py-0.5 rounded-full">
-                {timelineFiltrada.length}
-              </span>
-            </h3>
-
-            <div className="relative before:absolute before:left-6 before:top-4 before:bottom-4 before:w-0.5 before:bg-slate-150 space-y-6">
-              {timelineFiltrada.length === 0 ? (
-                <div className="bg-white border border-slate-100 p-12 rounded-3xl text-center text-slate-400 shadow-xs">
-                  <ClipboardList className="mx-auto text-slate-300 mb-2" size={36} />
-                  <p className="text-sm font-semibold text-slate-500">Nenhum registro encontrado nesta linha do tempo</p>
-                  <p className="text-xs mt-1">Experimente remover os termos de busca ou filtros de tipo.</p>
-                </div>
-              ) : (
-                timelineFiltrada.map((reg) => {
-                  const appliedLider = lideres.find((l) => l.id === reg.responsavelId);
-                  const hoje = new Date();
-                  const isOverdue = reg.status !== 'Concluído' && reg.prazoAcompanhamento && new Date(reg.prazoAcompanhamento) < hoje;
-
-                  return (
-                    <div key={reg.id} className="flex gap-4 items-start relative group">
-                      {/* Timeline Node Icon Circle */}
-                      <div className="relative z-10 w-12 h-12 rounded-2xl bg-white border border-slate-150 flex items-center justify-center shrink-0 shadow-sm group-hover:scale-105 transition-all">
-                        {getTimelineIcon(reg.tipo)}
-                      </div>
-
-                      {/* Timeline Registry Content Card */}
-                      <div className="flex-1 bg-white border border-slate-100 p-5 rounded-2xl shadow-xs hover:shadow-md transition duration-150 space-y-3">
-                        {/* Header Details */}
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-50 pb-2.5">
-                          <div>
-                            <div className="flex flex-wrap items-center gap-1.5">
-                              <span className={`text-[10px] font-bold tracking-wider px-2 py-0.5 rounded-md border uppercase ${getTimelineBadgeColor(reg.tipo)}`}>
-                                {reg.tipo}
-                              </span>
-                              {reg.prioridade && (
-                                <span className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded uppercase ${
-                                  reg.prioridade === 'Crítica' || reg.prioridade === 'Alta'
-                                    ? 'bg-rose-50 text-rose-700 font-bold'
-                                    : 'bg-slate-50 text-slate-500'
-                                }`}>
-                                  {reg.prioridade}
-                                </span>
-                              )}
-                            </div>
-                            <h4 className="text-md font-extrabold text-slate-900 mt-1">{reg.titulo}</h4>
-                          </div>
-
-                          <div className="text-right sm:text-right">
-                            <span className="text-xs text-slate-400 font-semibold block">
-                              {new Date(reg.data).toLocaleDateString('pt-BR')}
-                            </span>
-                            <span className={`inline-block text-[10px] font-semibold mt-0.5 px-1.5 py-0.5 rounded-md ${
-                              reg.status === 'Concluído'
-                                ? 'bg-emerald-50 text-emerald-700'
-                                : reg.status === 'Em Andamento'
-                                ? 'bg-orange-50 text-orange-700'
-                                : 'bg-slate-100 text-slate-600'
-                            }`}>
-                              {reg.status}
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* Description Text */}
-                        <p className="text-xs text-slate-600 leading-relaxed whitespace-pre-wrap">{reg.descricao}</p>
-
-                        {/* Anexos (File Attachments) */}
-                        {reg.anexos && reg.anexos.length > 0 && (
-                          <div className="pt-2">
-                            <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider mb-1.5">Anexos Vinculados (Storage)</p>
-                            <div className="flex flex-wrap gap-2">
-                              {reg.anexos.map((anx) => (
-                                <a
-                                  key={anx.id}
-                                  href={anx.url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="inline-flex items-center gap-2 bg-slate-50 hover:bg-slate-100 border border-slate-100 px-3 py-1.5 rounded-xl text-xs text-slate-700 font-semibold transition"
-                                >
-                                  <FileText size={12} className="text-slate-400 shrink-0" />
-                                  <span className="truncate max-w-[150px]">{anx.nome}</span>
-                                  <span className="text-[9px] text-slate-400 shrink-0">{anx.tamanho}</span>
-                                  <ExternalLink size={10} className="text-slate-400 shrink-0" />
-                                </a>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Footer Details (Lider applied + Deadlines) */}
-                        <div className="pt-2 border-t border-slate-50 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs text-slate-500">
-                          <div className="flex items-center gap-2">
-                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Aplicado por:</span>
-                            {appliedLider && (
-                              <div className="flex items-center gap-1.5">
-                                {appliedLider.fotoUrl && (
-                                  <img
-                                    src={appliedLider.fotoUrl}
-                                    alt={appliedLider.nome}
-                                    className="w-5 h-5 rounded-full object-cover border border-slate-100"
-                                  />
-                                )}
-                                <span className="font-semibold text-slate-700">{appliedLider.nome}</span>
-                              </div>
-                            )}
-                          </div>
-
-                          {reg.prazoAcompanhamento && (
-                            <div className="flex items-center gap-1.5 font-medium">
-                              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Prazo de Feedback:</span>
-                              <span className={`font-semibold ${
-                                isOverdue ? 'text-rose-600 font-extrabold bg-rose-50 px-1.5 py-0.5 rounded' : 'text-slate-700'
-                              }`}>
-                                {new Date(reg.prazoAcompanhamento).toLocaleDateString('pt-BR')}
-                                {isOverdue && ' (Atrasado!)'}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
+            <div className="flex justify-end pt-4 mt-4 border-t border-slate-100">
+              <button
+                onClick={() => setIsQuickFeedbackModalOpen(false)}
+                className="px-4 py-2 border border-slate-200 text-slate-600 bg-slate-50 rounded-xl text-xs font-semibold hover:bg-slate-100 cursor-pointer"
+              >
+                Cancelar
+              </button>
             </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

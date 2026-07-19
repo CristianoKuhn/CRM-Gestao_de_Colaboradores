@@ -1265,21 +1265,85 @@ export class GoogleScriptDataService implements IDataService {
     }
   }
 
-  // Alertas Inteligentes (usando localStorage como fallback)
+  // Alertas Inteligentes (sincronizados com o Google Sheets — compartilhados entre gestores)
   async getAlertasInteligentes(): Promise<AlertaInteligente[]> {
-    return this.localFallback.getAlertasInteligentes();
+    try {
+      const raw = await this.request<any[]>('getAlertasInteligentes');
+      return (raw || []).map((r) => ({
+        id: r.id,
+        tipo: r.tipo,
+        colaboradorId: r.colaborador_id,
+        titulo: r.titulo,
+        descricao: r.descricao,
+        dataReferencia: r.data_referencia,
+        diasRestantes: Number(r.dias_restantes) || 0,
+        status: r.status,
+        dataCriacao: r.data_criacao,
+        dataReconhecimento: r.data_reconhecimento || undefined,
+        dataResolucao: r.data_resolucao || undefined,
+        parametroDias: r.parametro_dias !== '' ? Number(r.parametro_dias) : undefined,
+      }));
+    } catch (e) {
+      return this.localFallback.getAlertasInteligentes();
+    }
   }
   async saveAlertaInteligente(alerta: AlertaInteligente): Promise<void> {
     await this.localFallback.saveAlertaInteligente(alerta);
+    try {
+      const body = {
+        id: alerta.id,
+        tipo: alerta.tipo,
+        colaborador_id: alerta.colaboradorId,
+        titulo: alerta.titulo,
+        descricao: alerta.descricao,
+        data_referencia: alerta.dataReferencia,
+        dias_restantes: alerta.diasRestantes,
+        status: alerta.status,
+        data_criacao: alerta.dataCriacao,
+        data_reconhecimento: alerta.dataReconhecimento || '',
+        data_resolucao: alerta.dataResolucao || '',
+        parametro_dias: alerta.parametroDias ?? '',
+      };
+      await this.request('saveAlertaInteligente', { data: body });
+    } catch (e) {
+      console.warn('Erro ao salvar alerta inteligente no GoogleScript:', e);
+    }
   }
   async deleteAlertaInteligente(id: string): Promise<void> {
     await this.localFallback.deleteAlertaInteligente(id);
+    try {
+      await this.request('deleteAlertaInteligente', { id });
+    } catch (e) {
+      console.warn('Erro ao excluir alerta inteligente no GoogleScript:', e);
+    }
   }
   async getConfiguracaoAlertas(): Promise<ConfiguracaoAlertas> {
-    return this.localFallback.getConfiguracaoAlertas();
+    try {
+      const raw = await this.request<any>('getConfiguracaoAlertas');
+      if (!raw) return this.localFallback.getConfiguracaoAlertas();
+      return {
+        diasSemInteracao: Number(raw.dias_sem_interacao) || 14,
+        diasAntecedenciaAniversario: Number(raw.dias_antecedencia_aniversario) || 15,
+        diasAntecedenciaAvaliacao180: Number(raw.dias_antecedencia_avaliacao180) || 30,
+        alertasPersistentes: raw.alertas_persistentes === true || raw.alertas_persistentes === 'true' || raw.alertas_persistentes === 1,
+      };
+    } catch (e) {
+      return this.localFallback.getConfiguracaoAlertas();
+    }
   }
   async saveConfiguracaoAlertas(config: ConfiguracaoAlertas): Promise<void> {
     await this.localFallback.saveConfiguracaoAlertas(config);
+    try {
+      const body = {
+        dias_sem_interacao: config.diasSemInteracao,
+        dias_antecedencia_aniversario: config.diasAntecedenciaAniversario,
+        dias_antecedencia_avaliacao180: config.diasAntecedenciaAvaliacao180,
+        alertas_persistentes: config.alertasPersistentes,
+      };
+      await this.request('saveConfiguracaoAlertas', { data: body });
+    } catch (e) {
+      console.warn('Erro ao salvar configuração de alertas no GoogleScript:', e);
+    }
   }
   async gerarIdAlerta(): Promise<string> {
     return this.localFallback.gerarIdAlerta();
@@ -1417,15 +1481,55 @@ export class GoogleScriptDataService implements IDataService {
     await this.localFallback.saveConfiguracaoGestaoPessoas(config);
   }
 
-  // Férias Inteligentes
+  // Férias Inteligentes (Alertas de Férias sincronizados com o Google Sheets)
   async getAlertasFerias(): Promise<AlertaFerias[]> {
-    return this.localFallback.getAlertasFerias();
+    try {
+      const raw = await this.request<any[]>('getAlertasFerias');
+      return (raw || []).map((r) => ({
+        id: r.id,
+        colaboradorId: r.colaborador_id,
+        tipo: r.tipo,
+        titulo: r.titulo,
+        descricao: r.descricao,
+        severidade: r.severidade,
+        diasRestantes: r.dias_restantes !== '' ? Number(r.dias_restantes) : undefined,
+        dataReferencia: r.data_referencia || undefined,
+        recomendacao: r.recomendacao || undefined,
+        status: r.status,
+        createdAt: r.created_at,
+      }));
+    } catch (e) {
+      return this.localFallback.getAlertasFerias();
+    }
   }
   async saveAlertaFerias(alerta: AlertaFerias): Promise<void> {
     await this.localFallback.saveAlertaFerias(alerta);
+    try {
+      const body = {
+        id: alerta.id,
+        colaborador_id: alerta.colaboradorId,
+        tipo: alerta.tipo,
+        titulo: alerta.titulo,
+        descricao: alerta.descricao,
+        severidade: alerta.severidade,
+        dias_restantes: alerta.diasRestantes ?? '',
+        data_referencia: alerta.dataReferencia || '',
+        recomendacao: alerta.recomendacao || '',
+        status: alerta.status,
+        created_at: alerta.createdAt,
+      };
+      await this.request('saveAlertaFerias', { data: body });
+    } catch (e) {
+      console.warn('Erro ao salvar alerta de férias no GoogleScript:', e);
+    }
   }
   async deleteAlertaFerias(id: string): Promise<void> {
     await this.localFallback.deleteAlertaFerias(id);
+    try {
+      await this.request('deleteAlertaFerias', { id });
+    } catch (e) {
+      console.warn('Erro ao excluir alerta de férias no GoogleScript:', e);
+    }
   }
   async getConfiguracaoFerias(): Promise<ConfiguracaoFerias> {
     return this.localFallback.getConfiguracaoFerias();

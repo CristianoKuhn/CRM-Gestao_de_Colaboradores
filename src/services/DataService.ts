@@ -1400,21 +1400,79 @@ export class GoogleScriptDataService implements IDataService {
     }
   }
 
-  // P4: Reconhecimento
+  // P4: Reconhecimento (sincronizado com o Google Sheets)
   async getConfiguracaoReconhecimento(): Promise<ConfiguracaoReconhecimento> {
-    return this.localFallback.getConfiguracaoReconhecimento();
+    try {
+      const raw = await this.request<any>('getConfiguracaoReconhecimento');
+      if (!raw) return this.localFallback.getConfiguracaoReconhecimento();
+      return {
+        tipos: raw.tipos || [],
+        permitirIndicacaoPeer: raw.permitir_indicacao_peer === true || raw.permitir_indicacao_peer === 'true',
+        permiteUploadCertificado: raw.permite_upload_certificado === true || raw.permite_upload_certificado === 'true',
+        notificacoesAutomaticas: raw.notificacoes_automaticas === true || raw.notificacoes_automaticas === 'true',
+      };
+    } catch (e) {
+      return this.localFallback.getConfiguracaoReconhecimento();
+    }
   }
   async saveConfiguracaoReconhecimento(config: ConfiguracaoReconhecimento): Promise<void> {
     await this.localFallback.saveConfiguracaoReconhecimento(config);
+    try {
+      const body = {
+        tipos: config.tipos || [],
+        permitir_indicacao_peer: config.permitirIndicacaoPeer,
+        permite_upload_certificado: config.permiteUploadCertificado,
+        notificacoes_automaticas: config.notificacoesAutomaticas,
+      };
+      await this.request('saveConfiguracaoReconhecimento', { data: body });
+    } catch (e) {
+      console.warn('Erro ao salvar configuração de reconhecimento no GoogleScript:', e);
+    }
   }
   async getReconhecimentos(): Promise<Reconhecimento[]> {
-    return this.localFallback.getReconhecimentos();
+    try {
+      const raw = await this.request<any[]>('getReconhecimentos');
+      return (raw || []).map((r) => ({
+        id: r.id,
+        colaboradorId: r.colaborador_id,
+        tipoId: r.tipo_id,
+        titulo: r.titulo,
+        descricao: r.descricao,
+        concedidoPor: r.concedido_por,
+        dataConcessao: r.data_concessao,
+        visibleEquipe: r.visivel_equipe === true || r.visivel_equipe === 'true',
+        arquivoUrl: r.arquivo_url || undefined,
+      }));
+    } catch (e) {
+      return this.localFallback.getReconhecimentos();
+    }
   }
   async saveReconhecimento(rec: Reconhecimento): Promise<void> {
     await this.localFallback.saveReconhecimento(rec);
+    try {
+      const body = {
+        id: rec.id,
+        colaborador_id: rec.colaboradorId,
+        tipo_id: rec.tipoId,
+        titulo: rec.titulo,
+        descricao: rec.descricao,
+        concedido_por: rec.concedidoPor,
+        data_concessao: rec.dataConcessao,
+        visivel_equipe: rec.visibleEquipe,
+        arquivo_url: rec.arquivoUrl || '',
+      };
+      await this.request('saveReconhecimento', { data: body });
+    } catch (e) {
+      console.warn('Erro ao salvar reconhecimento no GoogleScript:', e);
+    }
   }
   async deleteReconhecimento(id: string): Promise<void> {
     await this.localFallback.deleteReconhecimento(id);
+    try {
+      await this.request('deleteReconhecimento', { id });
+    } catch (e) {
+      console.warn('Erro ao excluir reconhecimento no GoogleScript:', e);
+    }
   }
 
   // P5: Metas

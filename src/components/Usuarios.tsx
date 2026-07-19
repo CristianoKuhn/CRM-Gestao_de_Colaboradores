@@ -57,6 +57,7 @@ export default function Usuarios({
   const [senhaHash, setSenhaHash] = useState('');
   const [perfil, setPerfil] = useState<Usuario['perfil']>('Lider');
   const [setoresPermitidos, setSetoresPermitidos] = useState<string[]>([]);
+  const [lideresSupervisionados, setLideresSupervisionados] = useState<string[]>([]);
   const [ativo, setAtivo] = useState(true);
 
   // Abrir modal para novo usuário
@@ -67,6 +68,7 @@ export default function Usuarios({
     setSenhaHash('');
     setPerfil('Lider');
     setSetoresPermitidos([]);
+    setLideresSupervisionados([]);
     setAtivo(true);
     setIsModalOpen(true);
   };
@@ -85,6 +87,7 @@ export default function Usuarios({
           ? [usuario.setor_id]
           : []
     );
+    setLideresSupervisionados(usuario.lideresSupervisionados || []);
     setAtivo(usuario.ativo);
     setIsModalOpen(true);
   };
@@ -104,6 +107,9 @@ export default function Usuarios({
         perfil,
         setor_id: setoresPermitidos[0] || '',
         setoresPermitidos,
+        // Só faz sentido para Coordenador; limpa se o perfil for outro para não deixar
+        // configuração "fantasma" de uma troca de perfil anterior.
+        lideresSupervisionados: perfil === 'Coordenador' ? lideresSupervisionados : [],
         ativo,
         ultimo_login: editingUsuario?.ultimo_login || '',
       };
@@ -513,6 +519,43 @@ export default function Usuarios({
                     <option value="Lider">Líder</option>
                   </select>
                 </div>
+
+                {/* Líderes supervisionados (só para o perfil Coordenador) */}
+                {perfil === 'Coordenador' && (
+                  <div className="sm:col-span-2">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">
+                      Líderes Supervisionados
+                    </label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-40 overflow-y-auto p-3 bg-slate-50 border border-slate-200 rounded-2xl">
+                      {usuarios
+                        .filter((u) => u.perfil === 'Lider' && u.id !== editingUsuario?.id)
+                        .map((lider) => (
+                          <label key={lider.id} className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              disabled={isSaving}
+                              checked={lideresSupervisionados.includes(lider.id)}
+                              onChange={(e) => {
+                                setLideresSupervisionados((atuais) =>
+                                  e.target.checked
+                                    ? [...atuais, lider.id]
+                                    : atuais.filter((id) => id !== lider.id)
+                                );
+                              }}
+                              className="h-4 w-4 rounded border-slate-300 text-teal-500 focus:ring-teal-500 cursor-pointer disabled:opacity-50"
+                            />
+                            {lider.nome}
+                          </label>
+                        ))}
+                      {usuarios.filter((u) => u.perfil === 'Lider').length === 0 && (
+                        <span className="text-[10px] text-slate-400">Cadastre ao menos um líder antes de configurar a supervisão.</span>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-1.5">
+                      Este coordenador vai enxergar automaticamente os colaboradores de todos os líderes marcados aqui, além dos setores permitidos acima. Se nenhum líder for marcado, o coordenador continua vendo todos os colaboradores da empresa (comportamento padrão).
+                    </p>
+                  </div>
+                )}
 
                 {/* Setores autorizados */}
                 <div className="sm:col-span-2">

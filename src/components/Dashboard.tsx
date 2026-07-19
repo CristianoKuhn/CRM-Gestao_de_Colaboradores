@@ -170,176 +170,39 @@ export default function Dashboard({
     carregarDados();
   }, []);
 
-  // Gerar ID único para alertas
+  // NOTA: a geração dos alertas de aniversário, tempo sem interação e avaliação 180°
+  // deixou de acontecer aqui no navegador. Agora é feita pelo Apps Script (função
+  // gerarAlertasAutomaticos), rodando uma vez por dia via trigger no servidor — isso
+  // evita duplicidade (antes, cada gestor com a aba aberta gerava seus próprios
+  // alertas em paralelo) e faz os alertas existirem mesmo que ninguém abra o app
+  // naquele dia. Ver documentação, seção 9.7.
+  //
+  // Os alertas de FÉRIAS (prazo concessivo vencendo / vencido) continuam sendo
+  // gerados aqui no cliente, temporariamente: a origem desses dados (Períodos
+  // Aquisitivos) ainda não está sincronizada com o Google Sheets — só existe em
+  // localStorage — então o servidor não tem como calculá-los ainda. Isso deve ser
+  // removido daqui assim que a migração da Gestão de Pessoas para o Sheets
+  // acontecer (ver roadmap, item de "migrar Gestão de Pessoas").
   const gerarIdUnico = (): string => {
     return `alerta-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   };
 
-  // Gerar alertas automaticamente
-  const gerarAlertas = useCallback(async () => {
-    const novosAlertas: AlertaInteligente[] = [];
-
-    // 1. Alertas de Dias Sem Interação
+  const gerarAlertasFerias = useCallback(async () => {
     for (const col of colaboradores) {
       if (col.situacao === 'Desligado') continue;
 
-      const registrosColaborador = timeline.filter(r => r.colaboradorId === col.id);
-      if (registrosColaborador.length === 0) continue;
-
-      // Encontrar o registro mais recente
-      const ultimoRegistro = registrosColaborador
-        .map(r => new Date(r.data))
-        .sort((a, b) => b.getTime() - a.getTime())[0];
-
-      const diasSemInteracao = calcularDiasRestantes(HOJE, ultimoRegistro) * -1;
-
-      if (diasSemInteracao >= configAlertas.diasSemInteracao) {
-        // Verificar se já existe alerta similar pendente
-        const alertaExistente = alertas.find(
-          a => a.colaboradorId === col.id && a.tipo === 'sem_interacao' && a.status !== 'resolvido'
-        );
-
-        if (!alertaExistente) {
-          novosAlertas.push({
-            id: gerarIdUnico(),
-            tipo: 'sem_interacao',
-            colaboradorId: col.id,
-            titulo: 'Sem interação há muito tempo',
-            descricao: `${col.nome} não tem interação registrada há ${diasSemInteracao} dias. Última interação em ${ultimoRegistro.toLocaleDateString('pt-BR')}.`,
-            dataReferencia: formatarDataISO(ultimoRegistro),
-            diasRestantes: diasSemInteracao,
-            status: 'pendente',
-            dataCriacao: formatarDataISO(HOJE),
-            parametroDias: configAlertas.diasSemInteracao,
-          });
-        }
-      }
-    }
-
-    // 2. Alertas de Aniversário de Nascimento
-    for (const col of colaboradores) {
-      if (!col.dataNascimento || col.situacao === 'Desligado') continue;
-
-      const dataNasc = new Date(col.dataNascimento);
-      const proximoAniversario = proximaOcorrencia(dataNasc, ANO_ATUAL, HOJE);
-      const diasRestantes = calcularDiasRestantes(proximoAniversario, HOJE);
-
-      if (diasRestantes >= 0 && diasRestantes <= configAlertas.diasAntecedenciaAniversario) {
-        const alertaExistente = alertas.find(
-          a => a.colaboradorId === col.id && a.tipo === 'aniversario_nascimento' && a.status !== 'resolvido'
-        );
-
-        if (!alertaExistente) {
-          novosAlertas.push({
-            id: gerarIdUnico(),
-            tipo: 'aniversario_nascimento',
-            colaboradorId: col.id,
-            titulo: `Aniversário de ${col.nome} em breve!`,
-            descricao: `${col.nome} faz aniversário no dia ${proximoAniversario.toLocaleDateString('pt-BR', { day: 'numeric', month: 'long' })}. Faltam ${diasRestantes} dia(s).`,
-            dataReferencia: formatarDataISO(proximoAniversario),
-            diasRestantes: diasRestantes,
-            status: 'pendente',
-            dataCriacao: formatarDataISO(HOJE),
-            parametroDias: configAlertas.diasAntecedenciaAniversario,
-          });
-        }
-      }
-    }
-
-    // 3. Alertas de Aniversário de Casa (Admissão)
-    for (const col of colaboradores) {
-      if (col.situacao === 'Desligado') continue;
-      if (!col.dataAdmissao) continue;
-
-      const dataAdmissao = new Date(col.dataAdmissao);
-      if (isNaN(dataAdmissao.getTime())) continue;
-      
-      const proximoAniversario = proximaOcorrencia(dataAdmissao, ANO_ATUAL, HOJE);
-      const diasRestantes = calcularDiasRestantes(proximoAniversario, HOJE);
-
-      if (diasRestantes >= 0 && diasRestantes <= configAlertas.diasAntecedenciaAniversario) {
-        const alertaExistente = alertas.find(
-          a => a.colaboradorId === col.id && a.tipo === 'aniversario_casa' && a.status !== 'resolvido'
-        );
-
-        if (!alertaExistente) {
-          novosAlertas.push({
-            id: gerarIdUnico(),
-            tipo: 'aniversario_casa',
-            colaboradorId: col.id,
-            titulo: `Aniversário de casa: ${col.nome}`,
-            descricao: `${col.nome} completa ${proximoAniversario.getFullYear() - dataAdmissao.getFullYear()} ano(s) de empresa em ${proximoAniversario.toLocaleDateString('pt-BR', { day: 'numeric', month: 'long' })}. Faltam ${diasRestantes} dia(s).`,
-            dataReferencia: formatarDataISO(proximoAniversario),
-            diasRestantes: diasRestantes,
-            status: 'pendente',
-            dataCriacao: formatarDataISO(HOJE),
-            parametroDias: configAlertas.diasAntecedenciaAniversario,
-          });
-        }
-      }
-    }
-
-    // 4. Alertas de Avaliação 180º
-    for (const col of colaboradores) {
-      if (col.situacao === 'Desligado' || col.realizarExperiencia === false) continue;
-      if (!col.dataAdmissao) continue;
-
-      const dataAdmissao = new Date(col.dataAdmissao);
-      if (isNaN(dataAdmissao.getTime())) continue;
-      
-      // Ignorar colaboradores admitidos antes de janeiro de 2026
-      // (data de início do processo de avaliação 180°)
-      if (dataAdmissao < DATA_INICIO_PROCESSO) continue;
-
-      const prazoMeses = col.prazoAvaliacao180 || 6;
-      const dataAvaliacao180 = new Date(dataAdmissao);
-      dataAvaliacao180.setMonth(dataAvaliacao180.getMonth() + prazoMeses);
-
-      // Verificar se já não foi feita
-      if (col.avaliacoesCompletas?.includes('180')) continue;
-
-      const diasRestantes = calcularDiasRestantes(dataAvaliacao180, HOJE);
-
-      if (diasRestantes >= 0 && diasRestantes <= configAlertas.diasAntecedenciaAvaliacao180) {
-        const alertaExistente = alertas.find(
-          a => a.colaboradorId === col.id && a.tipo === 'avaliacao_180' && a.status !== 'resolvido'
-        );
-
-        if (!alertaExistente) {
-          novosAlertas.push({
-            id: gerarIdUnico(),
-            tipo: 'avaliacao_180',
-            colaboradorId: col.id,
-            titulo: `Avaliação 180º pendente: ${col.nome}`,
-            descricao: `A avaliação de ${prazoMeses} meses de ${col.nome} vence em ${dataAvaliacao180.toLocaleDateString('pt-BR')}. Faltam ${diasRestantes} dia(s).`,
-            dataReferencia: formatarDataISO(dataAvaliacao180),
-            diasRestantes: diasRestantes,
-            status: 'pendente',
-            dataCriacao: formatarDataISO(HOJE),
-            parametroDias: configAlertas.diasAntecedenciaAvaliacao180,
-          });
-        }
-      }
-    }
-
-    // 5. Alertas de Férias - Períodos Aquisitivos
-    for (const col of colaboradores) {
-      if (col.situacao === 'Desligado') continue;
-      
-      // Filtrar períodos do colaborador
       const periodosColaborador = periodosAquisitivos.filter(p => p.colaboradorId === col.id);
-      
+
       for (const periodo of periodosColaborador) {
         if (periodo.status !== 'ativo') continue;
-        
+
         const dataFim = new Date(periodo.dataFim);
         const diasRestantes = Math.ceil((dataFim.getTime() - HOJE.getTime()) / (1000 * 60 * 60 * 24));
-        
-        // Verificar se já existe alerta para este período
+
         const alertaExistente = alertasFerias.find(
           a => a.colaboradorId === col.id && a.tipo === 'prazo_concessivo_vencendo' && a.status !== 'resolvido'
         );
-        
+
         if (!alertaExistente && diasRestantes <= 90 && diasRestantes >= 0) {
           const novoAlertaFerias: AlertaFerias = {
             id: gerarIdUnico(),
@@ -356,17 +219,16 @@ export default function Dashboard({
             status: 'pendente',
             createdAt: formatarDataISO(HOJE),
           };
-          
+
           await DataService.saveAlertaFerias(novoAlertaFerias);
           setAlertasFerias(prev => [...prev, novoAlertaFerias]);
         }
-        
-        // Alerta de período vencido
+
         if (diasRestantes < 0) {
           const alertaVencido = alertasFerias.find(
             a => a.colaboradorId === col.id && a.tipo === 'ferias_vencendo' && a.status !== 'resolvido'
           );
-          
+
           if (!alertaVencido) {
             const alertaVencidoObj: AlertaFerias = {
               id: gerarIdUnico(),
@@ -380,31 +242,39 @@ export default function Dashboard({
               status: 'pendente',
               createdAt: formatarDataISO(HOJE),
             };
-            
+
             await DataService.saveAlertaFerias(alertaVencidoObj);
             setAlertasFerias(prev => [...prev, alertaVencidoObj]);
           }
         }
       }
     }
+  }, [colaboradores, periodosAquisitivos, alertasFerias, HOJE]);
 
-    // Salvar novos alertas
-    for (const alerta of novosAlertas) {
-      await DataService.saveAlertaInteligente(alerta);
-    }
-
-    // Atualizar estado local
-    if (novosAlertas.length > 0) {
-      setAlertas(prev => [...prev, ...novosAlertas]);
-    }
-  }, [colaboradores, timeline, alertas, configAlertas, HOJE, ANO_ATUAL]);
-
-  // Gerar alertas ao carregar e periodicamente
   useEffect(() => {
-    gerarAlertas();
-    const interval = setInterval(gerarAlertas, 60000); // A cada minuto
+    gerarAlertasFerias();
+    const interval = setInterval(gerarAlertasFerias, 60000);
     return () => clearInterval(interval);
-  }, [gerarAlertas]);
+  }, [gerarAlertasFerias]);
+
+  // Recarrega periodicamente os alertas gerados pelo servidor (aniversários, sem
+  // interação, avaliação 180°) para refletir o que o trigger diário criou, sem
+  // precisar recarregar a página inteira.
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        const [alertasData, alertasFeriasData] = await Promise.all([
+          DataService.getAlertasInteligentes(),
+          DataService.getAlertasFerias(),
+        ]);
+        setAlertas(alertasData);
+        setAlertasFerias(alertasFeriasData);
+      } catch (error) {
+        console.error('Erro ao atualizar alertas:', error);
+      }
+    }, 5 * 60 * 1000); // a cada 5 minutos
+    return () => clearInterval(interval);
+  }, []);
 
   // Funções para gerenciar alertas
   const reconhecerAlerta = async (id: string) => {

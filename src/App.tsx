@@ -395,11 +395,39 @@ export default function App() {
   // P4: Handlers de Reconhecimento
   const handleSaveReconhecimento = async (rec: Reconhecimento) => {
     await DataService.saveReconhecimento(rec);
+
+    // Ponte com a Linha do Tempo: todo reconhecimento concedido também vira um
+    // registro do tipo "Reconhecimento" na timeline oficial do colaborador — assim
+    // ele aparece junto com feedbacks, PDIs etc. em vez de ficar isolado só na tela
+    // de Reconhecimento. Une os dois conceitos que existiam separados (ver
+    // documentação técnica, item de roadmap "unificar Reconhecimento").
+    const tipoReconhecimento = configReconhecimento.tipos.find((t) => t.id === rec.tipoId);
+    const registroTimeline: TimelineRegistro = {
+      id: `reg-reconhecimento-${rec.id}`,
+      colaboradorId: rec.colaboradorId,
+      tipo: 'Reconhecimento',
+      data: rec.dataConcessao,
+      titulo: tipoReconhecimento ? `${tipoReconhecimento.nome}: ${rec.titulo}` : rec.titulo,
+      descricao: rec.descricao,
+      responsavelId: rec.concedidoPor,
+      prioridade: 'Média',
+      status: 'Concluído',
+      gerarTarefaFutura: false,
+      anexos: [],
+    };
+    await DataService.saveTimelineRegistro(registroTimeline);
+
     loadAllData();
   };
 
   const handleDeleteReconhecimento = async (id: string) => {
     await DataService.deleteReconhecimento(id);
+    // OBS: o registro espelhado na timeline (id "reg-reconhecimento-{id}") não é
+    // removido aqui — o sistema não tem uma ação de excluir Registro da timeline
+    // (nem os registros "normais" podem ser apagados hoje, só criados/editados).
+    // Fica como um registro histórico órfão, o que é aceitável: reconhecimentos
+    // raramente são excluídos, e mesmo excluído o "aconteceu" continua sendo um
+    // fato histórico válido da timeline.
     loadAllData();
   };
 

@@ -175,6 +175,11 @@ export interface Usuario {
   perfil: 'Administrador' | 'Coordenador' | 'Supervisor' | 'Lider';
   setor_id: string;
   setoresPermitidos?: string[];
+  // Hierarquia de supervisão: ids de outros Usuarios (tipicamente perfil "Lider") que este
+  // usuário supervisiona. Quando preenchido, a visibilidade dele passa a incluir também os
+  // colaboradores desses líderes, além dos seus próprios setoresPermitidos — sem precisar
+  // atribuir múltiplos líderes por colaborador (ver documentação técnica, seção 12).
+  lideresSupervisionados?: string[];
   ativo: boolean;
   ultimo_login?: string;
 }

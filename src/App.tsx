@@ -536,17 +536,31 @@ export default function App() {
     setActiveTab('colaboradores');
   };
 
-  // Aplicar a permissão por setor em um único ponto para proteger todas as telas.
-  const acessoGlobal = currentUser?.perfil !== 'Lider';
+  // Aplicar a permissão por setor / hierarquia em um único ponto para proteger todas as telas.
   const setoresPermitidos = currentUser?.setoresPermitidos?.length
     ? currentUser.setoresPermitidos
     : currentUser?.setor_id
       ? [currentUser.setor_id]
       : [];
 
+  // Hierarquia de supervisão: se o usuário tem líderes supervisionados configurados, ele
+  // enxerga também os colaboradores desses líderes — mesmo que estejam em setores fora do
+  // seu setoresPermitidos. Um "Coordenador" só perde o acesso global (empresa toda) quando
+  // essa hierarquia é explicitamente configurada; sem configurar, comportamento não muda em
+  // nada (retrocompatível — ver documentação, seção 12).
+  const lideresSupervisionados = currentUser?.lideresSupervisionados || [];
+  const temHierarquiaConfigurada = lideresSupervisionados.length > 0;
+
+  const acessoGlobal =
+    currentUser?.perfil === 'Administrador' ||
+    currentUser?.perfil === 'Supervisor' ||
+    (currentUser?.perfil === 'Coordenador' && !temHierarquiaConfigurada);
+
   const colaboradoresVisiveis = acessoGlobal
     ? colaboradores
-    : colaboradores.filter((col) => setoresPermitidos.includes(col.setorId));
+    : colaboradores.filter(
+        (col) => setoresPermitidos.includes(col.setorId) || lideresSupervisionados.includes(col.liderId)
+      );
   const idsColaboradoresVisiveis = new Set(colaboradoresVisiveis.map((col) => col.id));
   const timelineVisivel = acessoGlobal
     ? timeline
@@ -555,11 +569,14 @@ export default function App() {
     const col = colaboradores.find(c => c.id === tarefa.colaboradorId);
     if (!col || col.situacao === 'Desligado') return false;
     if (acessoGlobal) return true;
-    return setoresPermitidos.includes(col.setorId);
+    return idsColaboradoresVisiveis.has(col.id);
   });
+  const setorIdsDosColaboradoresVisiveis = new Set(colaboradoresVisiveis.map((col) => col.setorId));
   const setoresVisiveis = acessoGlobal
     ? setores
-    : setores.filter((setor) => setoresPermitidos.includes(setor.id));
+    : setores.filter(
+        (setor) => setoresPermitidos.includes(setor.id) || setorIdsDosColaboradoresVisiveis.has(setor.id)
+      );
   const colaboradorSelecionado = selectedColaboradorId
     ? colaboradoresVisiveis.find((col) => col.id === selectedColaboradorId)
     : undefined;

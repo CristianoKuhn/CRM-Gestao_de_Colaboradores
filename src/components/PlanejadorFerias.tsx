@@ -289,8 +289,16 @@ function gerarSugestoesDias(
   return sugestoes.sort((a, b) => a.score - b.score);
 }
 
+function formatarDataSegura(dataISO: string | undefined | null, formato: string, fallback = '—'): string {
+  if (!dataISO) return fallback;
+  const data = parseISO(dataISO);
+  if (isNaN(data.getTime())) return fallback;
+  return format(data, formato);
+}
+
 function formatarTempoDeEmpresa(dataAdmissao: string): string {
   const admissao = parseISO(dataAdmissao);
+  if (isNaN(admissao.getTime())) return '—';
   const hoje = new Date();
   const anos = differenceInDays(hoje, admissao) / 365;
   const anosInteiros = Math.floor(anos);
@@ -340,6 +348,8 @@ export const PlanejadorFerias: React.FC<PlanejadorFeriasProps> = ({
   const [sugestoes, setSugestoes] = useState<SugestaoDataFerias[]>([]);
   const [mostrarModalUtilizado, setMostrarModalUtilizado] = useState<string | null>(null);
   const [modoAvancado, setModoAvancado] = useState(false);
+  const [dataInicioManualPeriodo, setDataInicioManualPeriodo] = useState('');
+  const [criandoPeriodoManual, setCriandoPeriodoManual] = useState(false);
   
   // Carregar dados
   useEffect(() => {
@@ -356,8 +366,12 @@ export const PlanejadorFerias: React.FC<PlanejadorFeriasProps> = ({
       const feriasColaborador = feriasData.filter((f) => f.colaboradorId === colaborador.id);
       const alertasColaborador = alertasData.filter((a) => a.colaboradorId === colaborador.id);
       
-      // Se não existirem períodos, gerar automaticamente
-      if (periodosColaborador.length === 0) {
+      // Se não existirem períodos, gerar automaticamente a partir da data de admissão.
+      // Se a data de admissão estiver vazia/ inválida, não dá pra calcular nada — nesse
+      // caso deixamos a lista vazia mesmo, e a tela mostra a opção de criar manualmente
+      // (ver estado `dataInicioManualPeriodo` mais abaixo) em vez de falhar em silêncio.
+      const admissaoValida = colaborador.dataAdmissao && !isNaN(parseISO(colaborador.dataAdmissao).getTime());
+      if (periodosColaborador.length === 0 && admissaoValida) {
         const novosPeriodos = calcularPeriodosAquisitivos(colaborador.dataAdmissao);
         const periodosComColaborador = novosPeriodos.map((p) => ({
           ...p,
@@ -541,6 +555,50 @@ export const PlanejadorFerias: React.FC<PlanejadorFeriasProps> = ({
     
     setMostrarModalUtilizado(null);
   };
+
+  // Criação manual de período aquisitivo. Necessário para dois casos que o cálculo
+  // automático (a partir da data de admissão) não cobre: (1) colaborador sem data de
+  // admissão válida cadastrada, e (2) casos em que o ciclo real de férias do
+  // colaborador não bate com a conta simples de "12 meses após a admissão" — por
+  // exemplo, histórico migrado de outro sistema com datas diferentes.
+  const handleCriarPeriodoManual = async () => {
+    if (!dataInicioManualPeriodo) {
+      alert('Selecione a data de início do período aquisitivo.');
+      return;
+    }
+    const inicio = parseISO(dataInicioManualPeriodo);
+    if (isNaN(inicio.getTime())) {
+      alert('Data inválida.');
+      return;
+    }
+
+    setCriandoPeriodoManual(true);
+    try {
+      const fim = addMonths(inicio, 12);
+      const hoje = new Date();
+      let status: PeriodoAquisitivo['status'] = 'futuro';
+      if (inicio <= hoje && hoje <= fim) status = 'ativo';
+      else if (hoje > fim) status = 'vencido';
+
+      const novoPeriodo: PeriodoAquisitivo = {
+        id: `pa-manual-${Date.now()}`,
+        colaboradorId: colaborador.id,
+        anoBase: inicio.getFullYear(),
+        dataInicio: format(inicio, 'yyyy-MM-dd'),
+        dataFim: format(fim, 'yyyy-MM-dd'),
+        diasDisponiveis: 30,
+        diasUsados: 0,
+        diasRestantes: 30,
+        status,
+      };
+
+      await DataService.savePeriodoAquisitivo(novoPeriodo);
+      setPeriodosAquisitivos((atuais) => [...atuais, novoPeriodo]);
+      setDataInicioManualPeriodo('');
+    } finally {
+      setCriandoPeriodoManual(false);
+    }
+  };
   
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -610,7 +668,7 @@ export const PlanejadorFerias: React.FC<PlanejadorFeriasProps> = ({
                   <div>
                     <span className="text-gray-500">Admissão</span>
                     <p className="font-medium">
-                      {format(parseISO(colaborador.dataAdmissao), 'dd/MM/yyyy')}
+                      {formatarDataSegura(colaborador.dataAdmissao, 'dd/MM/yyyy', 'Não informada')}
                     </p>
                   </div>
                   <div>
@@ -633,6 +691,45 @@ export const PlanejadorFerias: React.FC<PlanejadorFeriasProps> = ({
                   </div>
                 </div>
               </div>
+
+              {/* Sem período aquisitivo: acontece quando a data de admissão está vazia/
+                  inválida, ou quando o ciclo automático não bate com a realidade do
+                  colaborador. Permite criar manualmente em vez de travar a tela. */}
+              {periodosAquisitivos.length === 0 && (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-3">
+                  <div>
+                    <p className="font-semibold text-amber-800">⚠️ Nenhum período aquisitivo cadastrado</p>
+                    <p className="text-sm text-amber-700 mt-1">
+                      {colaborador.dataAdmissao
+                        ? 'Não foi possível calcular automaticamente a partir da data de admissão cadastrada. Você pode criar o período manualmente abaixo.'
+                        : 'Este colaborador não tem data de admissão cadastrada, então o cálculo automático não pode rodar. Preencha a data de admissão no cadastro do colaborador, ou crie o período manualmente abaixo.'}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-end gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                        Data de início do período
+                      </label>
+                      <input
+                        type="date"
+                        value={dataInicioManualPeriodo}
+                        onChange={(e) => setDataInicioManualPeriodo(e.target.value)}
+                        className="border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                      />
+                    </div>
+                    <button
+                      onClick={handleCriarPeriodoManual}
+                      disabled={criandoPeriodoManual || !dataInicioManualPeriodo}
+                      className="px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
+                    >
+                      {criandoPeriodoManual ? 'Criando...' : '+ Criar Período Aquisitivo'}
+                    </button>
+                  </div>
+                  <p className="text-xs text-amber-600">
+                    Gera um período padrão de 30 dias, válido por 12 meses a partir da data escolhida — os mesmos parâmetros usados no cálculo automático.
+                  </p>
+                </div>
+              )}
               
               {/* Alertas */}
               {alertas.length > 0 && (

@@ -1349,15 +1349,55 @@ export class GoogleScriptDataService implements IDataService {
     return this.localFallback.gerarIdAlerta();
   }
 
-  // P3: Documentos
+  // P3: Documentos (sincronizados com o Google Sheets)
   async getDocumentos(): Promise<Documento[]> {
-    return this.localFallback.getDocumentos();
+    try {
+      const raw = await this.request<any[]>('getDocumentos');
+      return (raw || []).map((r) => ({
+        id: r.id,
+        colaboradorId: r.colaborador_id,
+        nome: r.nome,
+        categoria: r.categoria,
+        tipoArquivo: r.tipo_arquivo,
+        url: r.url,
+        driveFileId: r.drive_file_id || undefined,
+        tamanho: r.tamanho,
+        uploadedPor: r.uploaded_por,
+        dataUpload: r.data_upload,
+        descricao: r.descricao || undefined,
+      }));
+    } catch (e) {
+      return this.localFallback.getDocumentos();
+    }
   }
   async saveDocumento(doc: Documento): Promise<void> {
     await this.localFallback.saveDocumento(doc);
+    try {
+      const body = {
+        id: doc.id,
+        colaborador_id: doc.colaboradorId,
+        nome: doc.nome,
+        categoria: doc.categoria,
+        tipo_arquivo: doc.tipoArquivo,
+        url: doc.url,
+        drive_file_id: doc.driveFileId || '',
+        tamanho: doc.tamanho,
+        uploaded_por: doc.uploadedPor,
+        data_upload: doc.dataUpload,
+        descricao: doc.descricao || '',
+      };
+      await this.request('saveDocumento', { data: body });
+    } catch (e) {
+      console.warn('Erro ao salvar documento no GoogleScript:', e);
+    }
   }
   async deleteDocumento(id: string): Promise<void> {
     await this.localFallback.deleteDocumento(id);
+    try {
+      await this.request('deleteDocumento', { id });
+    } catch (e) {
+      console.warn('Erro ao excluir documento no GoogleScript:', e);
+    }
   }
 
   // P4: Reconhecimento

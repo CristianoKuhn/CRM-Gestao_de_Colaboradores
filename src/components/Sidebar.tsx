@@ -17,6 +17,7 @@ import {
   Trophy,
   Target,
   Award,
+  CalendarRange,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -42,6 +43,7 @@ export default function Sidebar({
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'colaboradores', label: 'Colaboradores', icon: Users, badge: colaboradoresCount },
     { id: 'gestao-pessoas', label: 'Gestão de Pessoas', icon: Users },
+    { id: 'escala-inteligente', label: 'Escala Inteligente', icon: CalendarRange },
     { id: 'usuarios', label: 'Gerenciar Usuários', icon: UserCog },
     { id: 'tarefas', label: 'Tarefas de Liderança', icon: CheckSquare, badge: tarefasPendentesCount },
     { id: 'documentos', label: 'Central Docs', icon: FolderOpen },

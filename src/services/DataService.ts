@@ -34,6 +34,19 @@ import {
   ConfiguracaoGestaoPessoas,
   AlertaFerias,
   ConfiguracaoFerias,
+  ConfiguracaoEscala,
+  TurnoPadrao,
+  JornadaTrabalho,
+  DisponibilidadeColaborador,
+  RestricaoIndividual,
+  FolgaFixaEscala,
+  RegraCobertura,
+  RegraDescanso,
+  FeriadoEscala,
+  ExcecaoEscala,
+  EscalaGerada,
+  TurnoEscalado,
+  BancoHorasMovimento,
 } from '../types';
 import { StorageAPI } from '../utils/storage';
 
@@ -120,6 +133,59 @@ function parseSetoresPermitidos(value: unknown, setorId: unknown): string[] {
 
   const setorLegado = String(setorId || '').trim();
   return setorLegado ? [setorLegado] : [];
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ESCALA INTELIGENTE — MÓDULO 1: helper genérico de persistência local
+// Usado só pelas 13 entidades novas deste módulo. Os módulos já existentes
+// seguem o padrão explícito do utils/storage.ts (uma função por entidade);
+// para não inflar aquele arquivo com dezenas de funções quase idênticas,
+// este módulo novo usa um pequeno helper genérico, só para o fallback local
+// (o "modo demo" e o cache-antes-de-sincronizar do GoogleScriptDataService).
+// Ver documento de arquitetura, seção 6.
+// ═══════════════════════════════════════════════════════════════════
+const ESCALA_LOCAL_PREFIX = 'gc_escala_';
+
+function escalaLocalGetArray<T>(key: string): T[] {
+  try {
+    const raw = localStorage.getItem(ESCALA_LOCAL_PREFIX + key);
+    return raw ? (JSON.parse(raw) as T[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function escalaLocalSetArray<T>(key: string, items: T[]): void {
+  localStorage.setItem(ESCALA_LOCAL_PREFIX + key, JSON.stringify(items));
+}
+
+function escalaLocalSaveItem<T extends { id: string }>(key: string, item: T): void {
+  const items = escalaLocalGetArray<T>(key);
+  const idx = items.findIndex((i) => i.id === item.id);
+  if (idx >= 0) items[idx] = item;
+  else items.push(item);
+  escalaLocalSetArray(key, items);
+}
+
+function escalaLocalDeleteItem(key: string, id: string): void {
+  const items = escalaLocalGetArray<{ id: string }>(key);
+  escalaLocalSetArray(
+    key,
+    items.filter((i) => i.id !== id)
+  );
+}
+
+function escalaLocalGetSingleton<T>(key: string): T | null {
+  try {
+    const raw = localStorage.getItem(ESCALA_LOCAL_PREFIX + key);
+    return raw ? (JSON.parse(raw) as T) : null;
+  } catch {
+    return null;
+  }
+}
+
+function escalaLocalSetSingleton<T>(key: string, value: T): void {
+  localStorage.setItem(ESCALA_LOCAL_PREFIX + key, JSON.stringify(value));
 }
 
 export interface IDataService {
@@ -213,6 +279,46 @@ export interface IDataService {
   deleteAlertaFerias(id: string): Promise<void>;
   getConfiguracaoFerias(): Promise<ConfiguracaoFerias>;
   saveConfiguracaoFerias(config: ConfiguracaoFerias): Promise<void>;
+
+  // Escala Inteligente — Módulo 1: Base da Escala
+  getConfiguracaoEscala(): Promise<ConfiguracaoEscala | null>;
+  saveConfiguracaoEscala(config: ConfiguracaoEscala): Promise<void>;
+  getTurnosPadrao(): Promise<TurnoPadrao[]>;
+  saveTurnoPadrao(turno: TurnoPadrao): Promise<void>;
+  deleteTurnoPadrao(id: string): Promise<void>;
+  getJornadasTrabalho(): Promise<JornadaTrabalho[]>;
+  saveJornadaTrabalho(jornada: JornadaTrabalho): Promise<void>;
+  deleteJornadaTrabalho(id: string): Promise<void>;
+  getDisponibilidadeColaborador(): Promise<DisponibilidadeColaborador[]>;
+  saveDisponibilidadeColaborador(disp: DisponibilidadeColaborador): Promise<void>;
+  deleteDisponibilidadeColaborador(id: string): Promise<void>;
+  getRestricoesIndividuais(): Promise<RestricaoIndividual[]>;
+  saveRestricaoIndividual(restricao: RestricaoIndividual): Promise<void>;
+  deleteRestricaoIndividual(id: string): Promise<void>;
+  getFolgasFixasEscala(): Promise<FolgaFixaEscala[]>;
+  saveFolgaFixaEscala(folga: FolgaFixaEscala): Promise<void>;
+  deleteFolgaFixaEscala(id: string): Promise<void>;
+  getRegrasCobertura(): Promise<RegraCobertura[]>;
+  saveRegraCobertura(regra: RegraCobertura): Promise<void>;
+  deleteRegraCobertura(id: string): Promise<void>;
+  getRegrasDescanso(): Promise<RegraDescanso[]>;
+  saveRegraDescanso(regra: RegraDescanso): Promise<void>;
+  deleteRegraDescanso(id: string): Promise<void>;
+  getFeriadosEscala(): Promise<FeriadoEscala[]>;
+  saveFeriadoEscala(feriado: FeriadoEscala): Promise<void>;
+  deleteFeriadoEscala(id: string): Promise<void>;
+  getExcecoesEscala(): Promise<ExcecaoEscala[]>;
+  saveExcecaoEscala(excecao: ExcecaoEscala): Promise<void>;
+  deleteExcecaoEscala(id: string): Promise<void>;
+  getEscalasGeradas(): Promise<EscalaGerada[]>;
+  saveEscalaGerada(escala: EscalaGerada): Promise<void>;
+  deleteEscalaGerada(id: string): Promise<void>;
+  getTurnosEscalados(escalaId: string): Promise<TurnoEscalado[]>;
+  saveTurnosEscaladosBatch(escalaId: string, turnos: TurnoEscalado[]): Promise<void>;
+  deleteTurnosEscaladosPorEscala(escalaId: string): Promise<void>;
+  getBancoHorasMovimentos(): Promise<BancoHorasMovimento[]>;
+  saveBancoHorasMovimento(mov: BancoHorasMovimento): Promise<void>;
+  deleteBancoHorasMovimento(id: string): Promise<void>;
 
   uploadFile(
     file: File,
@@ -459,6 +565,130 @@ export class LocalDataService implements IDataService {
   }
   async saveConfiguracaoFerias(config: ConfiguracaoFerias): Promise<void> {
     StorageAPI.saveConfiguracaoFerias(config);
+  }
+
+  // Escala Inteligente — Módulo 1: Base da Escala (fallback local / modo demo)
+  async getConfiguracaoEscala(): Promise<ConfiguracaoEscala | null> {
+    return escalaLocalGetSingleton<ConfiguracaoEscala>('configuracaoEscala');
+  }
+  async saveConfiguracaoEscala(config: ConfiguracaoEscala): Promise<void> {
+    escalaLocalSetSingleton('configuracaoEscala', config);
+  }
+  async getTurnosPadrao(): Promise<TurnoPadrao[]> {
+    return escalaLocalGetArray<TurnoPadrao>('turnosPadrao');
+  }
+  async saveTurnoPadrao(turno: TurnoPadrao): Promise<void> {
+    escalaLocalSaveItem('turnosPadrao', turno);
+  }
+  async deleteTurnoPadrao(id: string): Promise<void> {
+    escalaLocalDeleteItem('turnosPadrao', id);
+  }
+  async getJornadasTrabalho(): Promise<JornadaTrabalho[]> {
+    return escalaLocalGetArray<JornadaTrabalho>('jornadasTrabalho');
+  }
+  async saveJornadaTrabalho(jornada: JornadaTrabalho): Promise<void> {
+    escalaLocalSaveItem('jornadasTrabalho', jornada);
+  }
+  async deleteJornadaTrabalho(id: string): Promise<void> {
+    escalaLocalDeleteItem('jornadasTrabalho', id);
+  }
+  async getDisponibilidadeColaborador(): Promise<DisponibilidadeColaborador[]> {
+    return escalaLocalGetArray<DisponibilidadeColaborador>('disponibilidadeColaborador');
+  }
+  async saveDisponibilidadeColaborador(disp: DisponibilidadeColaborador): Promise<void> {
+    escalaLocalSaveItem('disponibilidadeColaborador', disp);
+  }
+  async deleteDisponibilidadeColaborador(id: string): Promise<void> {
+    escalaLocalDeleteItem('disponibilidadeColaborador', id);
+  }
+  async getRestricoesIndividuais(): Promise<RestricaoIndividual[]> {
+    return escalaLocalGetArray<RestricaoIndividual>('restricoesIndividuais');
+  }
+  async saveRestricaoIndividual(restricao: RestricaoIndividual): Promise<void> {
+    escalaLocalSaveItem('restricoesIndividuais', restricao);
+  }
+  async deleteRestricaoIndividual(id: string): Promise<void> {
+    escalaLocalDeleteItem('restricoesIndividuais', id);
+  }
+  async getFolgasFixasEscala(): Promise<FolgaFixaEscala[]> {
+    return escalaLocalGetArray<FolgaFixaEscala>('folgasFixasEscala');
+  }
+  async saveFolgaFixaEscala(folga: FolgaFixaEscala): Promise<void> {
+    escalaLocalSaveItem('folgasFixasEscala', folga);
+  }
+  async deleteFolgaFixaEscala(id: string): Promise<void> {
+    escalaLocalDeleteItem('folgasFixasEscala', id);
+  }
+  async getRegrasCobertura(): Promise<RegraCobertura[]> {
+    return escalaLocalGetArray<RegraCobertura>('regrasCobertura');
+  }
+  async saveRegraCobertura(regra: RegraCobertura): Promise<void> {
+    escalaLocalSaveItem('regrasCobertura', regra);
+  }
+  async deleteRegraCobertura(id: string): Promise<void> {
+    escalaLocalDeleteItem('regrasCobertura', id);
+  }
+  async getRegrasDescanso(): Promise<RegraDescanso[]> {
+    return escalaLocalGetArray<RegraDescanso>('regrasDescanso');
+  }
+  async saveRegraDescanso(regra: RegraDescanso): Promise<void> {
+    escalaLocalSaveItem('regrasDescanso', regra);
+  }
+  async deleteRegraDescanso(id: string): Promise<void> {
+    escalaLocalDeleteItem('regrasDescanso', id);
+  }
+  async getFeriadosEscala(): Promise<FeriadoEscala[]> {
+    return escalaLocalGetArray<FeriadoEscala>('feriadosEscala');
+  }
+  async saveFeriadoEscala(feriado: FeriadoEscala): Promise<void> {
+    escalaLocalSaveItem('feriadosEscala', feriado);
+  }
+  async deleteFeriadoEscala(id: string): Promise<void> {
+    escalaLocalDeleteItem('feriadosEscala', id);
+  }
+  async getExcecoesEscala(): Promise<ExcecaoEscala[]> {
+    return escalaLocalGetArray<ExcecaoEscala>('excecoesEscala');
+  }
+  async saveExcecaoEscala(excecao: ExcecaoEscala): Promise<void> {
+    escalaLocalSaveItem('excecoesEscala', excecao);
+  }
+  async deleteExcecaoEscala(id: string): Promise<void> {
+    escalaLocalDeleteItem('excecoesEscala', id);
+  }
+  async getEscalasGeradas(): Promise<EscalaGerada[]> {
+    return escalaLocalGetArray<EscalaGerada>('escalasGeradas');
+  }
+  async saveEscalaGerada(escala: EscalaGerada): Promise<void> {
+    escalaLocalSaveItem('escalasGeradas', escala);
+  }
+  async deleteEscalaGerada(id: string): Promise<void> {
+    escalaLocalDeleteItem('escalasGeradas', id);
+    escalaLocalSetArray(
+      'turnosEscalados',
+      escalaLocalGetArray<TurnoEscalado>('turnosEscalados').filter((t) => t.escalaId !== id)
+    );
+  }
+  async getTurnosEscalados(escalaId: string): Promise<TurnoEscalado[]> {
+    return escalaLocalGetArray<TurnoEscalado>('turnosEscalados').filter((t) => t.escalaId === escalaId);
+  }
+  async saveTurnosEscaladosBatch(escalaId: string, turnos: TurnoEscalado[]): Promise<void> {
+    const outros = escalaLocalGetArray<TurnoEscalado>('turnosEscalados').filter((t) => t.escalaId !== escalaId);
+    escalaLocalSetArray('turnosEscalados', [...outros, ...turnos]);
+  }
+  async deleteTurnosEscaladosPorEscala(escalaId: string): Promise<void> {
+    escalaLocalSetArray(
+      'turnosEscalados',
+      escalaLocalGetArray<TurnoEscalado>('turnosEscalados').filter((t) => t.escalaId !== escalaId)
+    );
+  }
+  async getBancoHorasMovimentos(): Promise<BancoHorasMovimento[]> {
+    return escalaLocalGetArray<BancoHorasMovimento>('bancoHorasMovimentos');
+  }
+  async saveBancoHorasMovimento(mov: BancoHorasMovimento): Promise<void> {
+    escalaLocalSaveItem('bancoHorasMovimentos', mov);
+  }
+  async deleteBancoHorasMovimento(id: string): Promise<void> {
+    escalaLocalDeleteItem('bancoHorasMovimentos', id);
   }
 
   async uploadFile(
@@ -1537,42 +1767,191 @@ export class GoogleScriptDataService implements IDataService {
     }
   }
 
-  // P6: Gestão de Pessoas - Usa fallback local (dados não sincronizados com Google Sheets)
+  // ── Etapa 0 (pré-requisito da Escala Inteligente): Gestão de Pessoas migrada
+  // para o Google Sheets — antes só existia em localStorage. Ver documento de
+  // arquitetura, seção 0. Mesmo padrão salvar-local-primeiro-depois-sincronizar
+  // já usado em getResultados180/saveResultado180 acima.
   async getFerias(): Promise<Ferias[]> {
-    return this.localFallback.getFerias();
+    try {
+      const raw = await this.request<any[]>('getFerias');
+      return (raw || []).map((r) => ({
+        id: r.id,
+        colaboradorId: r.colaborador_id,
+        periodoAquisitivoId: r.periodo_aquisitivo_id,
+        dataInicio: r.data_inicio,
+        dataFim: r.data_fim,
+        dias: Number(r.dias) || 0,
+        status: r.status,
+        observacoes: r.observacoes || undefined,
+        createdAt: r.created_at,
+        tipo: r.tipo || undefined,
+        periodosUsados: Array.isArray(r.periodos_usados) ? r.periodos_usados : undefined,
+      }));
+    } catch (e) {
+      return this.localFallback.getFerias();
+    }
   }
   async saveFerias(ferias: Ferias): Promise<void> {
     await this.localFallback.saveFerias(ferias);
+    try {
+      const body = {
+        id: ferias.id,
+        colaborador_id: ferias.colaboradorId,
+        periodo_aquisitivo_id: ferias.periodoAquisitivoId,
+        data_inicio: ferias.dataInicio,
+        data_fim: ferias.dataFim,
+        dias: ferias.dias,
+        status: ferias.status,
+        observacoes: ferias.observacoes || '',
+        created_at: ferias.createdAt,
+        tipo: ferias.tipo || '',
+        periodos_usados: JSON.stringify(ferias.periodosUsados || []),
+      };
+      await this.request('saveFerias', { data: body });
+    } catch (e) {
+      console.warn('Erro ao salvar férias no GoogleScript:', e);
+    }
   }
   async deleteFerias(id: string): Promise<void> {
     await this.localFallback.deleteFerias(id);
+    try {
+      await this.request('deleteFerias', { id });
+    } catch (e) {
+      console.warn('Erro ao excluir férias no GoogleScript:', e);
+    }
   }
   async getDayOffs(): Promise<DayOff[]> {
-    return this.localFallback.getDayOffs();
+    try {
+      const raw = await this.request<any[]>('getDayOff');
+      return (raw || []).map((r) => ({
+        id: r.id,
+        colaboradorId: r.colaborador_id,
+        ano: Number(r.ano) || 0,
+        dataLimite: r.data_limite,
+        dataUtilizacao: r.data_utilizacao || undefined,
+        status: r.status,
+        observacoes: r.observacoes || undefined,
+      }));
+    } catch (e) {
+      return this.localFallback.getDayOffs();
+    }
   }
   async saveDayOff(dayoff: DayOff): Promise<void> {
     await this.localFallback.saveDayOff(dayoff);
+    try {
+      const body = {
+        id: dayoff.id,
+        colaborador_id: dayoff.colaboradorId,
+        ano: dayoff.ano,
+        data_limite: dayoff.dataLimite,
+        data_utilizacao: dayoff.dataUtilizacao || '',
+        status: dayoff.status,
+        observacoes: dayoff.observacoes || '',
+      };
+      await this.request('saveDayOff', { data: body });
+    } catch (e) {
+      console.warn('Erro ao salvar day off no GoogleScript:', e);
+    }
   }
   async deleteDayOff(id: string): Promise<void> {
     await this.localFallback.deleteDayOff(id);
+    try {
+      await this.request('deleteDayOff', { id });
+    } catch (e) {
+      console.warn('Erro ao excluir day off no GoogleScript:', e);
+    }
   }
   async getFolgas(): Promise<Folga[]> {
-    return this.localFallback.getFolgas();
+    try {
+      const raw = await this.request<any[]>('getFolgas');
+      return (raw || []).map((r) => ({
+        id: r.id,
+        colaboradorId: r.colaborador_id,
+        data: r.data,
+        motivo: r.motivo,
+        status: r.status,
+        observacoes: r.observacoes || undefined,
+        createdAt: r.created_at,
+      }));
+    } catch (e) {
+      return this.localFallback.getFolgas();
+    }
   }
   async saveFolga(folga: Folga): Promise<void> {
     await this.localFallback.saveFolga(folga);
+    try {
+      const body = {
+        id: folga.id,
+        colaborador_id: folga.colaboradorId,
+        data: folga.data,
+        motivo: folga.motivo,
+        status: folga.status,
+        observacoes: folga.observacoes || '',
+        created_at: folga.createdAt,
+      };
+      await this.request('saveFolga', { data: body });
+    } catch (e) {
+      console.warn('Erro ao salvar folga no GoogleScript:', e);
+    }
   }
   async deleteFolga(id: string): Promise<void> {
     await this.localFallback.deleteFolga(id);
+    try {
+      await this.request('deleteFolga', { id });
+    } catch (e) {
+      console.warn('Erro ao excluir folga no GoogleScript:', e);
+    }
   }
   async getPeriodosAquisitivos(): Promise<PeriodoAquisitivo[]> {
-    return this.localFallback.getPeriodosAquisitivos();
+    try {
+      const raw = await this.request<any[]>('getPeriodosAquisitivos');
+      return (raw || []).map((r) => ({
+        id: r.id,
+        colaboradorId: r.colaborador_id,
+        anoBase: Number(r.ano_base) || 0,
+        dataInicio: r.data_inicio,
+        dataFim: r.data_fim,
+        diasDisponiveis: Number(r.dias_disponiveis) || 0,
+        diasUsados: Number(r.dias_usados) || 0,
+        diasRestantes: Number(r.dias_restantes) || 0,
+        status: r.status,
+        dataConclusao: r.data_conclusao || undefined,
+        marcaComoUtilizado: r.marca_como_utilizado === true || r.marca_como_utilizado === 'true',
+        observacoes: r.observacoes || undefined,
+      }));
+    } catch (e) {
+      return this.localFallback.getPeriodosAquisitivos();
+    }
   }
   async savePeriodoAquisitivo(periodo: PeriodoAquisitivo): Promise<void> {
     await this.localFallback.savePeriodoAquisitivo(periodo);
+    try {
+      const body = {
+        id: periodo.id,
+        colaborador_id: periodo.colaboradorId,
+        ano_base: periodo.anoBase,
+        data_inicio: periodo.dataInicio,
+        data_fim: periodo.dataFim,
+        dias_disponiveis: periodo.diasDisponiveis,
+        dias_usados: periodo.diasUsados,
+        dias_restantes: periodo.diasRestantes,
+        status: periodo.status,
+        data_conclusao: periodo.dataConclusao || '',
+        marca_como_utilizado: !!periodo.marcaComoUtilizado,
+        observacoes: periodo.observacoes || '',
+      };
+      await this.request('savePeriodoAquisitivo', { data: body });
+    } catch (e) {
+      console.warn('Erro ao salvar período aquisitivo no GoogleScript:', e);
+    }
   }
   async deletePeriodoAquisitivo(id: string): Promise<void> {
     await this.localFallback.deletePeriodoAquisitivo(id);
+    try {
+      await this.request('deletePeriodoAquisitivo', { id });
+    } catch (e) {
+      console.warn('Erro ao excluir período aquisitivo no GoogleScript:', e);
+    }
   }
   async getConfiguracaoGestaoPessoas(): Promise<ConfiguracaoGestaoPessoas> {
     return this.localFallback.getConfiguracaoGestaoPessoas();
@@ -1636,6 +2015,571 @@ export class GoogleScriptDataService implements IDataService {
   }
   async saveConfiguracaoFerias(config: ConfiguracaoFerias): Promise<void> {
     await this.localFallback.saveConfiguracaoFerias(config);
+  }
+
+  // ── Escala Inteligente — Módulo 1: Base da Escala ──────────────────────────
+  async getConfiguracaoEscala(): Promise<ConfiguracaoEscala | null> {
+    try {
+      const raw = await this.request<any>('getConfiguracaoEscala');
+      if (!raw) return this.localFallback.getConfiguracaoEscala();
+      return {
+        empresaId: raw.empresa_id,
+        cargaHorariaSemanal: Number(raw.carga_horaria_semanal) || 44,
+        permiteBancoHoras: raw.permite_banco_horas === true || raw.permite_banco_horas === 'true',
+        permiteHoraExtraSemana: raw.permite_hora_extra_semana === true || raw.permite_hora_extra_semana === 'true',
+        domingoContaHoraExtra: raw.domingo_conta_hora_extra === true || raw.domingo_conta_hora_extra === 'true',
+        intervaloMinimoInterjornadaHoras: Number(raw.intervalo_minimo_interjornada_horas) || 11,
+        maxDiasConsecutivos: Number(raw.max_dias_consecutivos) || 6,
+        diasAntecedenciaPublicacao: Number(raw.dias_antecedencia_publicacao) || 0,
+      };
+    } catch (e) {
+      return this.localFallback.getConfiguracaoEscala();
+    }
+  }
+  async saveConfiguracaoEscala(config: ConfiguracaoEscala): Promise<void> {
+    await this.localFallback.saveConfiguracaoEscala(config);
+    try {
+      const body = {
+        empresa_id: config.empresaId,
+        carga_horaria_semanal: config.cargaHorariaSemanal,
+        permite_banco_horas: config.permiteBancoHoras,
+        permite_hora_extra_semana: config.permiteHoraExtraSemana,
+        domingo_conta_hora_extra: config.domingoContaHoraExtra,
+        intervalo_minimo_interjornada_horas: config.intervaloMinimoInterjornadaHoras,
+        max_dias_consecutivos: config.maxDiasConsecutivos,
+        dias_antecedencia_publicacao: config.diasAntecedenciaPublicacao,
+      };
+      await this.request('saveConfiguracaoEscala', { data: body });
+    } catch (e) {
+      console.warn('Erro ao salvar configuração da escala no GoogleScript:', e);
+    }
+  }
+
+  async getTurnosPadrao(): Promise<TurnoPadrao[]> {
+    try {
+      const raw = await this.request<any[]>('getTurnosPadrao');
+      return (raw || []).map((r) => ({
+        id: r.id,
+        empresaId: r.empresa_id,
+        nome: r.nome,
+        horaInicio: r.hora_inicio,
+        horaFim: r.hora_fim,
+        diasSemana: Array.isArray(r.dias_semana) ? r.dias_semana : [],
+        setorId: r.setor_id || undefined,
+        ativo: r.ativo === true || r.ativo === 'true',
+      }));
+    } catch (e) {
+      return this.localFallback.getTurnosPadrao();
+    }
+  }
+  async saveTurnoPadrao(turno: TurnoPadrao): Promise<void> {
+    await this.localFallback.saveTurnoPadrao(turno);
+    try {
+      const body = {
+        id: turno.id,
+        empresa_id: turno.empresaId,
+        nome: turno.nome,
+        hora_inicio: turno.horaInicio,
+        hora_fim: turno.horaFim,
+        dias_semana: JSON.stringify(turno.diasSemana || []),
+        setor_id: turno.setorId || '',
+        ativo: turno.ativo,
+      };
+      await this.request('saveTurnoPadrao', { data: body });
+    } catch (e) {
+      console.warn('Erro ao salvar turno padrão no GoogleScript:', e);
+    }
+  }
+  async deleteTurnoPadrao(id: string): Promise<void> {
+    await this.localFallback.deleteTurnoPadrao(id);
+    try {
+      await this.request('deleteTurnoPadrao', { id });
+    } catch (e) {
+      console.warn('Erro ao excluir turno padrão no GoogleScript:', e);
+    }
+  }
+
+  async getJornadasTrabalho(): Promise<JornadaTrabalho[]> {
+    try {
+      const raw = await this.request<any[]>('getJornadasTrabalho');
+      return (raw || []).map((r) => ({
+        id: r.id,
+        colaboradorId: r.colaborador_id,
+        tipoJornada: r.tipo_jornada,
+        cargaSemanalHoras: Number(r.carga_semanal_horas) || 0,
+        turnoPadraoId: r.turno_padrao_id || undefined,
+        dataInicioVigencia: r.data_inicio_vigencia,
+        dataFimVigencia: r.data_fim_vigencia || undefined,
+        ativo: r.ativo === true || r.ativo === 'true',
+      }));
+    } catch (e) {
+      return this.localFallback.getJornadasTrabalho();
+    }
+  }
+  async saveJornadaTrabalho(jornada: JornadaTrabalho): Promise<void> {
+    await this.localFallback.saveJornadaTrabalho(jornada);
+    try {
+      const body = {
+        id: jornada.id,
+        colaborador_id: jornada.colaboradorId,
+        tipo_jornada: jornada.tipoJornada,
+        carga_semanal_horas: jornada.cargaSemanalHoras,
+        turno_padrao_id: jornada.turnoPadraoId || '',
+        data_inicio_vigencia: jornada.dataInicioVigencia,
+        data_fim_vigencia: jornada.dataFimVigencia || '',
+        ativo: jornada.ativo,
+      };
+      await this.request('saveJornadaTrabalho', { data: body });
+    } catch (e) {
+      console.warn('Erro ao salvar jornada de trabalho no GoogleScript:', e);
+    }
+  }
+  async deleteJornadaTrabalho(id: string): Promise<void> {
+    await this.localFallback.deleteJornadaTrabalho(id);
+    try {
+      await this.request('deleteJornadaTrabalho', { id });
+    } catch (e) {
+      console.warn('Erro ao excluir jornada de trabalho no GoogleScript:', e);
+    }
+  }
+
+  async getDisponibilidadeColaborador(): Promise<DisponibilidadeColaborador[]> {
+    try {
+      const raw = await this.request<any[]>('getDisponibilidadeColaborador');
+      return (raw || []).map((r) => ({
+        id: r.id,
+        colaboradorId: r.colaborador_id,
+        diaSemana: Number(r.dia_semana) as DisponibilidadeColaborador['diaSemana'],
+        horaInicio: r.hora_inicio,
+        horaFim: r.hora_fim,
+        tipo: r.tipo,
+        observacoes: r.observacoes || undefined,
+      }));
+    } catch (e) {
+      return this.localFallback.getDisponibilidadeColaborador();
+    }
+  }
+  async saveDisponibilidadeColaborador(disp: DisponibilidadeColaborador): Promise<void> {
+    await this.localFallback.saveDisponibilidadeColaborador(disp);
+    try {
+      const body = {
+        id: disp.id,
+        colaborador_id: disp.colaboradorId,
+        dia_semana: disp.diaSemana,
+        hora_inicio: disp.horaInicio,
+        hora_fim: disp.horaFim,
+        tipo: disp.tipo,
+        observacoes: disp.observacoes || '',
+      };
+      await this.request('saveDisponibilidadeColaborador', { data: body });
+    } catch (e) {
+      console.warn('Erro ao salvar disponibilidade no GoogleScript:', e);
+    }
+  }
+  async deleteDisponibilidadeColaborador(id: string): Promise<void> {
+    await this.localFallback.deleteDisponibilidadeColaborador(id);
+    try {
+      await this.request('deleteDisponibilidadeColaborador', { id });
+    } catch (e) {
+      console.warn('Erro ao excluir disponibilidade no GoogleScript:', e);
+    }
+  }
+
+  async getRestricoesIndividuais(): Promise<RestricaoIndividual[]> {
+    try {
+      const raw = await this.request<any[]>('getRestricoesIndividuais');
+      return (raw || []).map((r) => ({
+        id: r.id,
+        colaboradorId: r.colaborador_id,
+        tipo: r.tipo,
+        detalhes: typeof r.detalhes === 'object' && r.detalhes !== null ? r.detalhes : {},
+        dataInicio: r.data_inicio,
+        dataFim: r.data_fim || undefined,
+        observacoes: r.observacoes || undefined,
+      }));
+    } catch (e) {
+      return this.localFallback.getRestricoesIndividuais();
+    }
+  }
+  async saveRestricaoIndividual(restricao: RestricaoIndividual): Promise<void> {
+    await this.localFallback.saveRestricaoIndividual(restricao);
+    try {
+      const body = {
+        id: restricao.id,
+        colaborador_id: restricao.colaboradorId,
+        tipo: restricao.tipo,
+        detalhes: JSON.stringify(restricao.detalhes || {}),
+        data_inicio: restricao.dataInicio,
+        data_fim: restricao.dataFim || '',
+        observacoes: restricao.observacoes || '',
+      };
+      await this.request('saveRestricaoIndividual', { data: body });
+    } catch (e) {
+      console.warn('Erro ao salvar restrição individual no GoogleScript:', e);
+    }
+  }
+  async deleteRestricaoIndividual(id: string): Promise<void> {
+    await this.localFallback.deleteRestricaoIndividual(id);
+    try {
+      await this.request('deleteRestricaoIndividual', { id });
+    } catch (e) {
+      console.warn('Erro ao excluir restrição individual no GoogleScript:', e);
+    }
+  }
+
+  async getFolgasFixasEscala(): Promise<FolgaFixaEscala[]> {
+    try {
+      const raw = await this.request<any[]>('getFolgasFixasEscala');
+      return (raw || []).map((r) => ({
+        id: r.id,
+        colaboradorId: r.colaborador_id,
+        diaSemana: r.dia_semana !== '' && r.dia_semana != null ? (Number(r.dia_semana) as FolgaFixaEscala['diaSemana']) : undefined,
+        recorrente: r.recorrente === true || r.recorrente === 'true',
+        dataEspecifica: r.data_especifica || undefined,
+        motivo: r.motivo || undefined,
+      }));
+    } catch (e) {
+      return this.localFallback.getFolgasFixasEscala();
+    }
+  }
+  async saveFolgaFixaEscala(folga: FolgaFixaEscala): Promise<void> {
+    await this.localFallback.saveFolgaFixaEscala(folga);
+    try {
+      const body = {
+        id: folga.id,
+        colaborador_id: folga.colaboradorId,
+        dia_semana: folga.diaSemana !== undefined ? folga.diaSemana : '',
+        recorrente: folga.recorrente,
+        data_especifica: folga.dataEspecifica || '',
+        motivo: folga.motivo || '',
+      };
+      await this.request('saveFolgaFixaEscala', { data: body });
+    } catch (e) {
+      console.warn('Erro ao salvar folga fixa no GoogleScript:', e);
+    }
+  }
+  async deleteFolgaFixaEscala(id: string): Promise<void> {
+    await this.localFallback.deleteFolgaFixaEscala(id);
+    try {
+      await this.request('deleteFolgaFixaEscala', { id });
+    } catch (e) {
+      console.warn('Erro ao excluir folga fixa no GoogleScript:', e);
+    }
+  }
+
+  async getRegrasCobertura(): Promise<RegraCobertura[]> {
+    try {
+      const raw = await this.request<any[]>('getRegrasCobertura');
+      return (raw || []).map((r) => ({
+        id: r.id,
+        empresaId: r.empresa_id,
+        setorId: r.setor_id || undefined,
+        cargoId: r.cargo_id || undefined,
+        diaSemana: r.dia_semana === 'todos' || r.dia_semana === 'domingo' ? r.dia_semana : Number(r.dia_semana),
+        horaInicio: r.hora_inicio,
+        horaFim: r.hora_fim,
+        quantidadeMinima: Number(r.quantidade_minima) || 0,
+        prioridade: Number(r.prioridade) || 0,
+      }));
+    } catch (e) {
+      return this.localFallback.getRegrasCobertura();
+    }
+  }
+  async saveRegraCobertura(regra: RegraCobertura): Promise<void> {
+    await this.localFallback.saveRegraCobertura(regra);
+    try {
+      const body = {
+        id: regra.id,
+        empresa_id: regra.empresaId,
+        setor_id: regra.setorId || '',
+        cargo_id: regra.cargoId || '',
+        dia_semana: regra.diaSemana,
+        hora_inicio: regra.horaInicio,
+        hora_fim: regra.horaFim,
+        quantidade_minima: regra.quantidadeMinima,
+        prioridade: regra.prioridade,
+      };
+      await this.request('saveRegraCobertura', { data: body });
+    } catch (e) {
+      console.warn('Erro ao salvar regra de cobertura no GoogleScript:', e);
+    }
+  }
+  async deleteRegraCobertura(id: string): Promise<void> {
+    await this.localFallback.deleteRegraCobertura(id);
+    try {
+      await this.request('deleteRegraCobertura', { id });
+    } catch (e) {
+      console.warn('Erro ao excluir regra de cobertura no GoogleScript:', e);
+    }
+  }
+
+  async getRegrasDescanso(): Promise<RegraDescanso[]> {
+    try {
+      const raw = await this.request<any[]>('getRegrasDescanso');
+      return (raw || []).map((r) => ({
+        id: r.id,
+        empresaId: r.empresa_id,
+        intervaloMinimoInterjornadaHoras: Number(r.intervalo_minimo_interjornada_horas) || 11,
+        maxDiasConsecutivosTrabalho: Number(r.max_dias_consecutivos_trabalho) || 6,
+        descansoSemanalRemuneradoDia:
+          r.descanso_semanal_remunerado_dia !== '' && r.descanso_semanal_remunerado_dia != null
+            ? (Number(r.descanso_semanal_remunerado_dia) as RegraDescanso['descansoSemanalRemuneradoDia'])
+            : undefined,
+      }));
+    } catch (e) {
+      return this.localFallback.getRegrasDescanso();
+    }
+  }
+  async saveRegraDescanso(regra: RegraDescanso): Promise<void> {
+    await this.localFallback.saveRegraDescanso(regra);
+    try {
+      const body = {
+        id: regra.id,
+        empresa_id: regra.empresaId,
+        intervalo_minimo_interjornada_horas: regra.intervaloMinimoInterjornadaHoras,
+        max_dias_consecutivos_trabalho: regra.maxDiasConsecutivosTrabalho,
+        descanso_semanal_remunerado_dia: regra.descansoSemanalRemuneradoDia !== undefined ? regra.descansoSemanalRemuneradoDia : '',
+      };
+      await this.request('saveRegraDescanso', { data: body });
+    } catch (e) {
+      console.warn('Erro ao salvar regra de descanso no GoogleScript:', e);
+    }
+  }
+  async deleteRegraDescanso(id: string): Promise<void> {
+    await this.localFallback.deleteRegraDescanso(id);
+    try {
+      await this.request('deleteRegraDescanso', { id });
+    } catch (e) {
+      console.warn('Erro ao excluir regra de descanso no GoogleScript:', e);
+    }
+  }
+
+  async getFeriadosEscala(): Promise<FeriadoEscala[]> {
+    try {
+      const raw = await this.request<any[]>('getFeriadosEscala');
+      return (raw || []).map((r) => ({
+        id: r.id,
+        empresaId: r.empresa_id,
+        data: r.data,
+        nome: r.nome,
+        tipo: r.tipo,
+        afetaCobertura: r.afeta_cobertura === true || r.afeta_cobertura === 'true',
+      }));
+    } catch (e) {
+      return this.localFallback.getFeriadosEscala();
+    }
+  }
+  async saveFeriadoEscala(feriado: FeriadoEscala): Promise<void> {
+    await this.localFallback.saveFeriadoEscala(feriado);
+    try {
+      const body = {
+        id: feriado.id,
+        empresa_id: feriado.empresaId,
+        data: feriado.data,
+        nome: feriado.nome,
+        tipo: feriado.tipo,
+        afeta_cobertura: feriado.afetaCobertura,
+      };
+      await this.request('saveFeriadoEscala', { data: body });
+    } catch (e) {
+      console.warn('Erro ao salvar feriado no GoogleScript:', e);
+    }
+  }
+  async deleteFeriadoEscala(id: string): Promise<void> {
+    await this.localFallback.deleteFeriadoEscala(id);
+    try {
+      await this.request('deleteFeriadoEscala', { id });
+    } catch (e) {
+      console.warn('Erro ao excluir feriado no GoogleScript:', e);
+    }
+  }
+
+  async getExcecoesEscala(): Promise<ExcecaoEscala[]> {
+    try {
+      const raw = await this.request<any[]>('getExcecoesEscala');
+      return (raw || []).map((r) => ({
+        id: r.id,
+        colaboradorId: r.colaborador_id || undefined,
+        data: r.data,
+        tipo: r.tipo,
+        detalhes: typeof r.detalhes === 'object' && r.detalhes !== null ? r.detalhes : {},
+        motivo: r.motivo,
+        aprovadoPor: r.aprovado_por || undefined,
+      }));
+    } catch (e) {
+      return this.localFallback.getExcecoesEscala();
+    }
+  }
+  async saveExcecaoEscala(excecao: ExcecaoEscala): Promise<void> {
+    await this.localFallback.saveExcecaoEscala(excecao);
+    try {
+      const body = {
+        id: excecao.id,
+        colaborador_id: excecao.colaboradorId || '',
+        data: excecao.data,
+        tipo: excecao.tipo,
+        detalhes: JSON.stringify(excecao.detalhes || {}),
+        motivo: excecao.motivo,
+        aprovado_por: excecao.aprovadoPor || '',
+      };
+      await this.request('saveExcecaoEscala', { data: body });
+    } catch (e) {
+      console.warn('Erro ao salvar exceção no GoogleScript:', e);
+    }
+  }
+  async deleteExcecaoEscala(id: string): Promise<void> {
+    await this.localFallback.deleteExcecaoEscala(id);
+    try {
+      await this.request('deleteExcecaoEscala', { id });
+    } catch (e) {
+      console.warn('Erro ao excluir exceção no GoogleScript:', e);
+    }
+  }
+
+  async getEscalasGeradas(): Promise<EscalaGerada[]> {
+    try {
+      const raw = await this.request<any[]>('getEscalasGeradas');
+      return (raw || []).map((r) => ({
+        id: r.id,
+        empresaId: r.empresa_id,
+        periodoInicio: r.periodo_inicio,
+        periodoFim: r.periodo_fim,
+        status: r.status,
+        geradoEm: r.gerado_em,
+        geradoPor: r.gerado_por,
+        parametrosSnapshot: typeof r.parametros_snapshot === 'object' && r.parametros_snapshot !== null ? r.parametros_snapshot : {},
+        resumoValidacoes: typeof r.resumo_validacoes === 'object' && r.resumo_validacoes !== null ? r.resumo_validacoes : undefined,
+      }));
+    } catch (e) {
+      return this.localFallback.getEscalasGeradas();
+    }
+  }
+  async saveEscalaGerada(escala: EscalaGerada): Promise<void> {
+    await this.localFallback.saveEscalaGerada(escala);
+    try {
+      const body = {
+        id: escala.id,
+        empresa_id: escala.empresaId,
+        periodo_inicio: escala.periodoInicio,
+        periodo_fim: escala.periodoFim,
+        status: escala.status,
+        gerado_em: escala.geradoEm,
+        gerado_por: escala.geradoPor,
+        parametros_snapshot: JSON.stringify(escala.parametrosSnapshot || {}),
+        resumo_validacoes: JSON.stringify(escala.resumoValidacoes || {}),
+      };
+      await this.request('saveEscalaGerada', { data: body });
+    } catch (e) {
+      console.warn('Erro ao salvar escala gerada no GoogleScript:', e);
+    }
+  }
+  async deleteEscalaGerada(id: string): Promise<void> {
+    await this.localFallback.deleteEscalaGerada(id);
+    try {
+      // O backend já remove os turnos escalados associados (ver deleteTurnosPorEscala_ no .gs).
+      await this.request('deleteEscalaGerada', { id });
+    } catch (e) {
+      console.warn('Erro ao excluir escala gerada no GoogleScript:', e);
+    }
+  }
+
+  // TurnosEscalados usa persistência em LOTE, não o padrão upsert-por-linha — ver
+  // documento de arquitetura, seções 6 e 7. Uma geração de escala mensal facilmente
+  // passa de 600-1000 turnos; salvar/excluir um a um arriscaria o timeout do Apps Script.
+  async getTurnosEscalados(escalaId: string): Promise<TurnoEscalado[]> {
+    try {
+      const raw = await this.request<any[]>('getTurnosEscalados', { escalaId });
+      return (raw || []).map((r) => ({
+        id: r.id,
+        escalaId: r.escala_id,
+        colaboradorId: r.colaborador_id,
+        data: r.data,
+        horaInicio: r.hora_inicio,
+        horaFim: r.hora_fim,
+        setorId: r.setor_id,
+        cargoId: r.cargo_id,
+        tipoTurno: r.tipo_turno,
+        origem: r.origem,
+        status: r.status,
+        observacoes: r.observacoes || undefined,
+      }));
+    } catch (e) {
+      return this.localFallback.getTurnosEscalados(escalaId);
+    }
+  }
+  async saveTurnosEscaladosBatch(escalaId: string, turnos: TurnoEscalado[]): Promise<void> {
+    await this.localFallback.saveTurnosEscaladosBatch(escalaId, turnos);
+    try {
+      const turnosBody = turnos.map((t) => ({
+        id: t.id,
+        escala_id: escalaId,
+        colaborador_id: t.colaboradorId,
+        data: t.data,
+        hora_inicio: t.horaInicio,
+        hora_fim: t.horaFim,
+        setor_id: t.setorId,
+        cargo_id: t.cargoId,
+        tipo_turno: t.tipoTurno,
+        origem: t.origem,
+        status: t.status,
+        observacoes: t.observacoes || '',
+      }));
+      await this.request('saveTurnosEscaladosBatch', { data: { escalaId, turnos: turnosBody } });
+    } catch (e) {
+      console.warn('Erro ao gravar turnos escalados em lote no GoogleScript:', e);
+    }
+  }
+  async deleteTurnosEscaladosPorEscala(escalaId: string): Promise<void> {
+    await this.localFallback.deleteTurnosEscaladosPorEscala(escalaId);
+    try {
+      await this.request('deleteTurnosEscaladosPorEscala', { escalaId });
+    } catch (e) {
+      console.warn('Erro ao excluir turnos escalados no GoogleScript:', e);
+    }
+  }
+
+  async getBancoHorasMovimentos(): Promise<BancoHorasMovimento[]> {
+    try {
+      const raw = await this.request<any[]>('getBancoHorasMovimentos');
+      return (raw || []).map((r) => ({
+        id: r.id,
+        colaboradorId: r.colaborador_id,
+        data: r.data,
+        tipo: r.tipo,
+        horas: Number(r.horas) || 0,
+        origemTurnoId: r.origem_turno_id || undefined,
+        saldoApos: Number(r.saldo_apos) || 0,
+        observacoes: r.observacoes || undefined,
+      }));
+    } catch (e) {
+      return this.localFallback.getBancoHorasMovimentos();
+    }
+  }
+  async saveBancoHorasMovimento(mov: BancoHorasMovimento): Promise<void> {
+    await this.localFallback.saveBancoHorasMovimento(mov);
+    try {
+      const body = {
+        id: mov.id,
+        colaborador_id: mov.colaboradorId,
+        data: mov.data,
+        tipo: mov.tipo,
+        horas: mov.horas,
+        origem_turno_id: mov.origemTurnoId || '',
+        saldo_apos: mov.saldoApos,
+        observacoes: mov.observacoes || '',
+      };
+      await this.request('saveBancoHorasMovimento', { data: body });
+    } catch (e) {
+      console.warn('Erro ao salvar movimento de banco de horas no GoogleScript:', e);
+    }
+  }
+  async deleteBancoHorasMovimento(id: string): Promise<void> {
+    await this.localFallback.deleteBancoHorasMovimento(id);
+    try {
+      await this.request('deleteBancoHorasMovimento', { id });
+    } catch (e) {
+      console.warn('Erro ao excluir movimento de banco de horas no GoogleScript:', e);
+    }
   }
 }
 
@@ -1887,6 +2831,122 @@ class DynamicDataService implements IDataService {
   }
   async saveConfiguracaoFerias(config: ConfiguracaoFerias): Promise<void> {
     await this.getService().saveConfiguracaoFerias(config);
+  }
+
+  // ── Escala Inteligente — Módulo 1: Base da Escala ──────────────────────────
+  async getConfiguracaoEscala(): Promise<ConfiguracaoEscala | null> {
+    return this.getService().getConfiguracaoEscala();
+  }
+  async saveConfiguracaoEscala(config: ConfiguracaoEscala): Promise<void> {
+    await this.getService().saveConfiguracaoEscala(config);
+  }
+  async getTurnosPadrao(): Promise<TurnoPadrao[]> {
+    return this.getService().getTurnosPadrao();
+  }
+  async saveTurnoPadrao(turno: TurnoPadrao): Promise<void> {
+    await this.getService().saveTurnoPadrao(turno);
+  }
+  async deleteTurnoPadrao(id: string): Promise<void> {
+    await this.getService().deleteTurnoPadrao(id);
+  }
+  async getJornadasTrabalho(): Promise<JornadaTrabalho[]> {
+    return this.getService().getJornadasTrabalho();
+  }
+  async saveJornadaTrabalho(jornada: JornadaTrabalho): Promise<void> {
+    await this.getService().saveJornadaTrabalho(jornada);
+  }
+  async deleteJornadaTrabalho(id: string): Promise<void> {
+    await this.getService().deleteJornadaTrabalho(id);
+  }
+  async getDisponibilidadeColaborador(): Promise<DisponibilidadeColaborador[]> {
+    return this.getService().getDisponibilidadeColaborador();
+  }
+  async saveDisponibilidadeColaborador(disp: DisponibilidadeColaborador): Promise<void> {
+    await this.getService().saveDisponibilidadeColaborador(disp);
+  }
+  async deleteDisponibilidadeColaborador(id: string): Promise<void> {
+    await this.getService().deleteDisponibilidadeColaborador(id);
+  }
+  async getRestricoesIndividuais(): Promise<RestricaoIndividual[]> {
+    return this.getService().getRestricoesIndividuais();
+  }
+  async saveRestricaoIndividual(restricao: RestricaoIndividual): Promise<void> {
+    await this.getService().saveRestricaoIndividual(restricao);
+  }
+  async deleteRestricaoIndividual(id: string): Promise<void> {
+    await this.getService().deleteRestricaoIndividual(id);
+  }
+  async getFolgasFixasEscala(): Promise<FolgaFixaEscala[]> {
+    return this.getService().getFolgasFixasEscala();
+  }
+  async saveFolgaFixaEscala(folga: FolgaFixaEscala): Promise<void> {
+    await this.getService().saveFolgaFixaEscala(folga);
+  }
+  async deleteFolgaFixaEscala(id: string): Promise<void> {
+    await this.getService().deleteFolgaFixaEscala(id);
+  }
+  async getRegrasCobertura(): Promise<RegraCobertura[]> {
+    return this.getService().getRegrasCobertura();
+  }
+  async saveRegraCobertura(regra: RegraCobertura): Promise<void> {
+    await this.getService().saveRegraCobertura(regra);
+  }
+  async deleteRegraCobertura(id: string): Promise<void> {
+    await this.getService().deleteRegraCobertura(id);
+  }
+  async getRegrasDescanso(): Promise<RegraDescanso[]> {
+    return this.getService().getRegrasDescanso();
+  }
+  async saveRegraDescanso(regra: RegraDescanso): Promise<void> {
+    await this.getService().saveRegraDescanso(regra);
+  }
+  async deleteRegraDescanso(id: string): Promise<void> {
+    await this.getService().deleteRegraDescanso(id);
+  }
+  async getFeriadosEscala(): Promise<FeriadoEscala[]> {
+    return this.getService().getFeriadosEscala();
+  }
+  async saveFeriadoEscala(feriado: FeriadoEscala): Promise<void> {
+    await this.getService().saveFeriadoEscala(feriado);
+  }
+  async deleteFeriadoEscala(id: string): Promise<void> {
+    await this.getService().deleteFeriadoEscala(id);
+  }
+  async getExcecoesEscala(): Promise<ExcecaoEscala[]> {
+    return this.getService().getExcecoesEscala();
+  }
+  async saveExcecaoEscala(excecao: ExcecaoEscala): Promise<void> {
+    await this.getService().saveExcecaoEscala(excecao);
+  }
+  async deleteExcecaoEscala(id: string): Promise<void> {
+    await this.getService().deleteExcecaoEscala(id);
+  }
+  async getEscalasGeradas(): Promise<EscalaGerada[]> {
+    return this.getService().getEscalasGeradas();
+  }
+  async saveEscalaGerada(escala: EscalaGerada): Promise<void> {
+    await this.getService().saveEscalaGerada(escala);
+  }
+  async deleteEscalaGerada(id: string): Promise<void> {
+    await this.getService().deleteEscalaGerada(id);
+  }
+  async getTurnosEscalados(escalaId: string): Promise<TurnoEscalado[]> {
+    return this.getService().getTurnosEscalados(escalaId);
+  }
+  async saveTurnosEscaladosBatch(escalaId: string, turnos: TurnoEscalado[]): Promise<void> {
+    await this.getService().saveTurnosEscaladosBatch(escalaId, turnos);
+  }
+  async deleteTurnosEscaladosPorEscala(escalaId: string): Promise<void> {
+    await this.getService().deleteTurnosEscaladosPorEscala(escalaId);
+  }
+  async getBancoHorasMovimentos(): Promise<BancoHorasMovimento[]> {
+    return this.getService().getBancoHorasMovimentos();
+  }
+  async saveBancoHorasMovimento(mov: BancoHorasMovimento): Promise<void> {
+    await this.getService().saveBancoHorasMovimento(mov);
+  }
+  async deleteBancoHorasMovimento(id: string): Promise<void> {
+    await this.getService().deleteBancoHorasMovimento(id);
   }
 
   async resetData(): Promise<void> {

@@ -525,3 +525,162 @@ export interface CicloVidaColaborador {
   ultimoPDI?: string;
   ultimoReconhecimento?: string;
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// ESCALA INTELIGENTE — MÓDULO 1: BASE DA ESCALA
+// Ver documento de arquitetura ESCALA_INTELIGENTE_ARQUITETURA.md, seções 2-4.
+// Entidades de parâmetro/regra (o que alimenta a geração) ficam separadas do
+// resultado (EscalaGerada / TurnoEscalado), para permitir reprocessar sem
+// perder o histórico do que já foi publicado.
+// ═══════════════════════════════════════════════════════════════════
+
+export type DiaSemana = 0 | 1 | 2 | 3 | 4 | 5 | 6; // 0 = domingo
+
+export interface ConfiguracaoEscala {
+  empresaId: string;
+  cargaHorariaSemanal: number; // ex: 44
+  permiteBancoHoras: boolean;
+  permiteHoraExtraSemana: boolean; // false no cenário padrão do sistema
+  domingoContaHoraExtra: boolean; // true no cenário padrão do sistema
+  intervaloMinimoInterjornadaHoras: number; // ex: 11 (CLT)
+  maxDiasConsecutivos: number; // ex: 6
+  diasAntecedenciaPublicacao: number; // aviso mínimo antes de a escala valer
+}
+
+export interface TurnoPadrao {
+  id: string;
+  empresaId: string;
+  nome: string; // "Manhã", "Tarde-Noite", "Fechamento"...
+  horaInicio: string; // "07:00"
+  horaFim: string; // "15:00"
+  diasSemana: DiaSemana[];
+  setorId?: string;
+  ativo: boolean;
+}
+
+export interface JornadaTrabalho {
+  id: string;
+  colaboradorId: string;
+  tipoJornada: string;
+  cargaSemanalHoras: number;
+  turnoPadraoId?: string;
+  dataInicioVigencia: string;
+  dataFimVigencia?: string;
+  ativo: boolean;
+}
+
+export interface DisponibilidadeColaborador {
+  id: string;
+  colaboradorId: string;
+  diaSemana: DiaSemana;
+  horaInicio: string;
+  horaFim: string;
+  tipo: 'disponivel' | 'indisponivel';
+  observacoes?: string;
+}
+
+export type TipoRestricaoIndividual = 'nao_trabalha_domingo' | 'horario_fixo' | 'carga_reduzida' | 'outro';
+
+export interface RestricaoIndividual {
+  id: string;
+  colaboradorId: string;
+  tipo: TipoRestricaoIndividual;
+  detalhes: Record<string, unknown>;
+  dataInicio: string;
+  dataFim?: string;
+  observacoes?: string;
+}
+
+export interface FolgaFixaEscala {
+  id: string;
+  colaboradorId: string;
+  diaSemana?: DiaSemana;
+  recorrente: boolean;
+  dataEspecifica?: string;
+  motivo?: string;
+}
+
+export interface RegraCobertura {
+  id: string;
+  empresaId: string;
+  setorId?: string;
+  cargoId?: string;
+  diaSemana: 'todos' | DiaSemana | 'domingo';
+  horaInicio: string;
+  horaFim: string;
+  quantidadeMinima: number;
+  prioridade: number; // resolve empate quando duas regras cobrem a mesma janela
+}
+
+export interface RegraDescanso {
+  id: string;
+  empresaId: string;
+  intervaloMinimoInterjornadaHoras: number;
+  maxDiasConsecutivosTrabalho: number;
+  descansoSemanalRemuneradoDia?: DiaSemana;
+}
+
+export interface FeriadoEscala {
+  id: string;
+  empresaId: string;
+  data: string;
+  nome: string;
+  tipo: 'nacional' | 'estadual' | 'municipal' | 'facultativo';
+  afetaCobertura: boolean;
+}
+
+export type TipoExcecaoEscala = 'folga_extra' | 'trabalho_extra' | 'horario_alterado' | 'cobertura_especial';
+
+export interface ExcecaoEscala {
+  id: string;
+  colaboradorId?: string; // vazio = evento geral (ex: campanha, evento na cidade)
+  data: string;
+  tipo: TipoExcecaoEscala;
+  detalhes: Record<string, unknown>;
+  motivo: string;
+  aprovadoPor?: string;
+}
+
+export type StatusEscala = 'rascunho' | 'validado' | 'publicado' | 'arquivado';
+
+export interface EscalaGerada {
+  id: string;
+  empresaId: string;
+  periodoInicio: string;
+  periodoFim: string;
+  status: StatusEscala;
+  geradoEm: string;
+  geradoPor: string; // Usuario.id
+  parametrosSnapshot: Record<string, unknown>;
+  resumoValidacoes?: Record<string, unknown>;
+}
+
+export type TipoTurnoEscalado = 'normal' | 'domingo' | 'feriado' | 'compensacao';
+export type OrigemTurnoEscalado = 'automatico' | 'manual' | 'ajuste';
+export type StatusTurnoEscalado = 'confirmado' | 'pendente' | 'conflito';
+
+export interface TurnoEscalado {
+  id: string;
+  escalaId: string;
+  colaboradorId: string;
+  data: string;
+  horaInicio: string;
+  horaFim: string;
+  setorId: string;
+  cargoId: string;
+  tipoTurno: TipoTurnoEscalado;
+  origem: OrigemTurnoEscalado;
+  status: StatusTurnoEscalado;
+  observacoes?: string;
+}
+
+export interface BancoHorasMovimento {
+  id: string;
+  colaboradorId: string;
+  data: string;
+  tipo: 'credito' | 'debito';
+  horas: number;
+  origemTurnoId?: string;
+  saldoApos: number;
+  observacoes?: string;
+}

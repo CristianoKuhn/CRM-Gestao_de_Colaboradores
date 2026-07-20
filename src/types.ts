@@ -612,6 +612,34 @@ export interface RegraCobertura {
   prioridade: number; // resolve empate quando duas regras cobrem a mesma janela
 }
 
+// ── Escala Inteligente — Módulo 2: Rotinas Operacionais ──────────────
+// Uma Rotina Operacional é a unidade de cobertura que a IA de geração de escala
+// tenta preencher PRIMEIRO, antes de distribuir os colaboradores restantes.
+// Ela é mais rica que TurnoPadrao/RegraCobertura porque carrega, na mesma entidade,
+// cargo permitido, prioridade e se é obrigatória — TurnoPadrao/RegraCobertura
+// continuam existindo e são reaproveitados pelo motor de geração como fallback
+// para setores que ainda não migraram para Rotinas.
+export type PrioridadeRotina = 'alta' | 'media' | 'baixa';
+
+// Tipo de dia ao qual a rotina se aplica. "feriado" é opcional — quando não há
+// rotina de feriado cadastrada para o setor, o motor usa a rotina de "domingo".
+export type TipoDiaRotina = 'semana' | 'sabado' | 'domingo' | 'feriado';
+
+export interface RotinaOperacional {
+  id: string;
+  empresaId: string;
+  setorId: string;
+  nome: string;
+  tipoDia: TipoDiaRotina;
+  horaInicio: string;
+  horaFim: string;
+  quantidadeMinima: number;
+  cargosPermitidos: string[]; // ids de Cargo; vazio = qualquer cargo do setor
+  prioridade: PrioridadeRotina;
+  obrigatoria: boolean;
+  ativo: boolean;
+}
+
 export interface RegraDescanso {
   id: string;
   empresaId: string;

@@ -4,15 +4,26 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Usuario, Setor, Cargo, ConfiguracaoEscala, TurnoPadrao, RegraCobertura, RotinaOperacional } from '../../types';
+import {
+  Usuario,
+  Setor,
+  Cargo,
+  Colaborador,
+  ConfiguracaoEscala,
+  TurnoPadrao,
+  RegraCobertura,
+  RotinaOperacional,
+  PerfilDisponibilidadeColaborador,
+} from '../../types';
 import { DataService } from '../../services/DataService';
 import AssistenteConfiguracaoInicial from './components/AssistenteConfiguracaoInicial';
 import ConfiguracaoEscalaForm from './components/ConfiguracaoEscalaForm';
 import TurnosPadraoManager from './components/TurnosPadraoManager';
 import RegrasCoberturaManager from './components/RegrasCoberturaManager';
 import RotinasOperacionaisManager from './components/RotinasOperacionaisManager';
+import PerfilDisponibilidadeManager from './components/PerfilDisponibilidadeManager';
 import { ResultadoAssistente } from './engine/presetsConfiguracaoInicial';
-import { CalendarRange, Wand2, Settings2, Clock3, ShieldCheck, RefreshCw, Lock, ListChecks } from 'lucide-react';
+import { CalendarRange, Wand2, Settings2, Clock3, ShieldCheck, RefreshCw, Lock, ListChecks, UserCog } from 'lucide-react';
 
 interface EscalaInteligenteProps {
   currentUser: Usuario;
@@ -21,7 +32,7 @@ interface EscalaInteligenteProps {
   cargos: Cargo[];
 }
 
-type AbaInterna = 'configuracao' | 'rotinas' | 'turnos' | 'cobertura';
+type AbaInterna = 'configuracao' | 'rotinas' | 'perfis' | 'turnos' | 'cobertura';
 
 const EscalaInteligente: React.FC<EscalaInteligenteProps> = ({ currentUser, empresaId, setores, cargos }) => {
   const [carregando, setCarregando] = useState(true);
@@ -29,6 +40,8 @@ const EscalaInteligente: React.FC<EscalaInteligenteProps> = ({ currentUser, empr
   const [turnos, setTurnos] = useState<TurnoPadrao[]>([]);
   const [regras, setRegras] = useState<RegraCobertura[]>([]);
   const [rotinas, setRotinas] = useState<RotinaOperacional[]>([]);
+  const [colaboradores, setColaboradores] = useState<Colaborador[]>([]);
+  const [perfisDisponibilidade, setPerfisDisponibilidade] = useState<PerfilDisponibilidadeColaborador[]>([]);
   const [mostrarAssistente, setMostrarAssistente] = useState(false);
   const [abaAtiva, setAbaAtiva] = useState<AbaInterna>('configuracao');
 
@@ -39,16 +52,20 @@ const EscalaInteligente: React.FC<EscalaInteligenteProps> = ({ currentUser, empr
   const carregarDados = useCallback(async () => {
     setCarregando(true);
     try {
-      const [config, turnosPadrao, regrasCobertura, rotinasOperacionais] = await Promise.all([
+      const [config, turnosPadrao, regrasCobertura, rotinasOperacionais, listaColaboradores, perfis] = await Promise.all([
         DataService.getConfiguracaoEscala(),
         DataService.getTurnosPadrao(),
         DataService.getRegrasCobertura(),
         DataService.getRotinasOperacionais(),
+        DataService.getColaboradores(),
+        DataService.getPerfisDisponibilidade(),
       ]);
       setConfiguracao(config);
       setTurnos(turnosPadrao);
       setRegras(regrasCobertura);
       setRotinas(rotinasOperacionais);
+      setColaboradores(listaColaboradores);
+      setPerfisDisponibilidade(perfis);
       setMostrarAssistente(!config);
     } finally {
       setCarregando(false);
@@ -131,6 +148,7 @@ const EscalaInteligente: React.FC<EscalaInteligenteProps> = ({ currentUser, empr
           [
             { id: 'configuracao', label: 'Configuração geral', icon: Settings2 },
             { id: 'rotinas', label: 'Rotinas operacionais', icon: ListChecks },
+            { id: 'perfis', label: 'Perfil de disponibilidade', icon: UserCog },
             { id: 'turnos', label: 'Turnos padrão', icon: Clock3 },
             { id: 'cobertura', label: 'Cobertura mínima', icon: ShieldCheck },
           ] as { id: AbaInterna; label: string; icon: typeof Settings2 }[]
@@ -170,6 +188,20 @@ const EscalaInteligente: React.FC<EscalaInteligenteProps> = ({ currentUser, empr
           }}
           onExcluir={async (id) => {
             await DataService.deleteRotinaOperacional(id);
+            await carregarDados();
+          }}
+          somenteLeitura={!podeConfigurar}
+        />
+      )}
+
+      {abaAtiva === 'perfis' && (
+        <PerfilDisponibilidadeManager
+          colaboradores={colaboradores}
+          perfis={perfisDisponibilidade}
+          setores={setores}
+          cargos={cargos}
+          onSalvar={async (perfil) => {
+            await DataService.savePerfilDisponibilidade(perfil);
             await carregarDados();
           }}
           somenteLeitura={!podeConfigurar}

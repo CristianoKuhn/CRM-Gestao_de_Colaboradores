@@ -42,6 +42,7 @@ import {
   FolgaFixaEscala,
   RegraCobertura,
   RotinaOperacional,
+  PerfilDisponibilidadeColaborador,
   RegraDescanso,
   FeriadoEscala,
   ExcecaoEscala,
@@ -305,6 +306,9 @@ export interface IDataService {
   getRotinasOperacionais(): Promise<RotinaOperacional[]>;
   saveRotinaOperacional(rotina: RotinaOperacional): Promise<void>;
   deleteRotinaOperacional(id: string): Promise<void>;
+  getPerfisDisponibilidade(): Promise<PerfilDisponibilidadeColaborador[]>;
+  savePerfilDisponibilidade(perfil: PerfilDisponibilidadeColaborador): Promise<void>;
+  deletePerfilDisponibilidade(id: string): Promise<void>;
   getRegrasDescanso(): Promise<RegraDescanso[]>;
   saveRegraDescanso(regra: RegraDescanso): Promise<void>;
   deleteRegraDescanso(id: string): Promise<void>;
@@ -640,6 +644,15 @@ export class LocalDataService implements IDataService {
   }
   async deleteRotinaOperacional(id: string): Promise<void> {
     escalaLocalDeleteItem('rotinasOperacionais', id);
+  }
+  async getPerfisDisponibilidade(): Promise<PerfilDisponibilidadeColaborador[]> {
+    return escalaLocalGetArray<PerfilDisponibilidadeColaborador>('perfisDisponibilidade');
+  }
+  async savePerfilDisponibilidade(perfil: PerfilDisponibilidadeColaborador): Promise<void> {
+    escalaLocalSaveItem('perfisDisponibilidade', perfil);
+  }
+  async deletePerfilDisponibilidade(id: string): Promise<void> {
+    escalaLocalDeleteItem('perfisDisponibilidade', id);
   }
   async getRegrasDescanso(): Promise<RegraDescanso[]> {
     return escalaLocalGetArray<RegraDescanso>('regrasDescanso');
@@ -2378,6 +2391,60 @@ export class GoogleScriptDataService implements IDataService {
     }
   }
 
+  async getPerfisDisponibilidade(): Promise<PerfilDisponibilidadeColaborador[]> {
+    try {
+      const raw = await this.request<any[]>('getPerfisDisponibilidade');
+      return (raw || []).map((r) => ({
+        id: r.id,
+        colaboradorId: r.colaborador_id,
+        jornadaContratual: r.jornada_contratual || {
+          diasNormais: [],
+          horaEntradaPadrao: '',
+          horaSaidaPadrao: '',
+          horaInicioAlmoco: '',
+          horaFimAlmoco: '',
+          cargaHorariaDiaria: 0,
+          cargaHorariaSemanal: 0,
+        },
+        disponibilidadesFlexiveis: Array.isArray(r.disponibilidades_flexiveis) ? r.disponibilidades_flexiveis : [],
+        preferencias: Array.isArray(r.preferencias) ? r.preferencias : [],
+        competencias: Array.isArray(r.competencias) ? r.competencias : [],
+        restricoes: Array.isArray(r.restricoes) ? r.restricoes : [],
+        prioridadeUtilizacao: r.prioridade_utilizacao || 'flexivel',
+        atualizadoEm: r.atualizado_em || undefined,
+      }));
+    } catch (e) {
+      return this.localFallback.getPerfisDisponibilidade();
+    }
+  }
+  async savePerfilDisponibilidade(perfil: PerfilDisponibilidadeColaborador): Promise<void> {
+    await this.localFallback.savePerfilDisponibilidade(perfil);
+    try {
+      const body = {
+        id: perfil.id,
+        colaborador_id: perfil.colaboradorId,
+        jornada_contratual: JSON.stringify(perfil.jornadaContratual || {}),
+        disponibilidades_flexiveis: JSON.stringify(perfil.disponibilidadesFlexiveis || []),
+        preferencias: JSON.stringify(perfil.preferencias || []),
+        competencias: JSON.stringify(perfil.competencias || []),
+        restricoes: JSON.stringify(perfil.restricoes || []),
+        prioridade_utilizacao: perfil.prioridadeUtilizacao,
+        atualizado_em: perfil.atualizadoEm || new Date().toISOString(),
+      };
+      await this.request('savePerfilDisponibilidade', { data: body });
+    } catch (e) {
+      console.warn('Erro ao salvar perfil de disponibilidade no GoogleScript:', e);
+    }
+  }
+  async deletePerfilDisponibilidade(id: string): Promise<void> {
+    await this.localFallback.deletePerfilDisponibilidade(id);
+    try {
+      await this.request('deletePerfilDisponibilidade', { id });
+    } catch (e) {
+      console.warn('Erro ao excluir perfil de disponibilidade no GoogleScript:', e);
+    }
+  }
+
   async getRegrasDescanso(): Promise<RegraDescanso[]> {
     try {
       const raw = await this.request<any[]>('getRegrasDescanso');
@@ -2967,6 +3034,15 @@ class DynamicDataService implements IDataService {
   }
   async deleteRotinaOperacional(id: string): Promise<void> {
     await this.getService().deleteRotinaOperacional(id);
+  }
+  async getPerfisDisponibilidade(): Promise<PerfilDisponibilidadeColaborador[]> {
+    return this.getService().getPerfisDisponibilidade();
+  }
+  async savePerfilDisponibilidade(perfil: PerfilDisponibilidadeColaborador): Promise<void> {
+    await this.getService().savePerfilDisponibilidade(perfil);
+  }
+  async deletePerfilDisponibilidade(id: string): Promise<void> {
+    await this.getService().deletePerfilDisponibilidade(id);
   }
   async getRegrasDescanso(): Promise<RegraDescanso[]> {
     return this.getService().getRegrasDescanso();

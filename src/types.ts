@@ -638,6 +638,9 @@ export interface RotinaOperacional {
   prioridade: PrioridadeRotina;
   obrigatoria: boolean;
   ativo: boolean;
+  // Cor de exibição na grade semanal (ex: "#7C3AED"). Opcional — se vazia, a tela
+  // usa uma cor padrão gerada a partir do id da rotina, só pra nunca ficar sem cor.
+  cor?: string;
 }
 
 export interface RegraDescanso {
@@ -694,12 +697,24 @@ export interface TurnoEscalado {
   data: string;
   horaInicio: string;
   horaFim: string;
+  // Intervalo de almoço/descanso dentro do turno — personalizável por turno,
+  // não é um valor fixo da empresa. Ex: alguém que abre às 08:00 pode almoçar
+  // às 12:00-13:00, outro que abre às 07:00 pode almoçar 11:00-12:00.
+  intervaloInicio?: string;
+  intervaloFim?: string;
   setorId: string;
   cargoId: string;
   tipoTurno: TipoTurnoEscalado;
   origem: OrigemTurnoEscalado;
   status: StatusTurnoEscalado;
   observacoes?: string;
+  // Qual RotinaOperacional este turno está cobrindo (ex: "Retenção", "Suporte Geral").
+  // rotinaNome/rotinaCor são gravados DENORMALIZADOS (copiados no momento da geração),
+  // de propósito: se o gestor renomear ou trocar a cor de uma rotina depois, a escala
+  // já publicada/histórica não pode mudar de aparência retroativamente.
+  rotinaId?: string;
+  rotinaNome?: string;
+  rotinaCor?: string;
   // Preenchido pelo motor de geração automática (quando existir) para alimentar a
   // explicabilidade — ver JustificativaTurno.
   justificativas?: JustificativaTurno[];

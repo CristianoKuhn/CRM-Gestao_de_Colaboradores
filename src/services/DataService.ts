@@ -2355,6 +2355,7 @@ export class GoogleScriptDataService implements IDataService {
         prioridade: r.prioridade || 'media',
         obrigatoria: r.obrigatoria === true || r.obrigatoria === 'true',
         ativo: r.ativo === true || r.ativo === 'true',
+        cor: r.cor || undefined,
       }));
     } catch (e) {
       return this.localFallback.getRotinasOperacionais();
@@ -2376,6 +2377,7 @@ export class GoogleScriptDataService implements IDataService {
         prioridade: rotina.prioridade,
         obrigatoria: rotina.obrigatoria,
         ativo: rotina.ativo,
+        cor: rotina.cor || '',
       };
       await this.request('saveRotinaOperacional', { data: body });
     } catch (e) {
@@ -2628,12 +2630,18 @@ export class GoogleScriptDataService implements IDataService {
         data: r.data,
         horaInicio: r.hora_inicio,
         horaFim: r.hora_fim,
+        intervaloInicio: r.intervalo_inicio || undefined,
+        intervaloFim: r.intervalo_fim || undefined,
         setorId: r.setor_id,
         cargoId: r.cargo_id,
         tipoTurno: r.tipo_turno,
         origem: r.origem,
         status: r.status,
         observacoes: r.observacoes || undefined,
+        rotinaId: r.rotina_id || undefined,
+        rotinaNome: r.rotina_nome || undefined,
+        rotinaCor: r.rotina_cor || undefined,
+        justificativas: Array.isArray(r.justificativas) ? r.justificativas : [],
       }));
     } catch (e) {
       return this.localFallback.getTurnosEscalados(escalaId);
@@ -2649,12 +2657,18 @@ export class GoogleScriptDataService implements IDataService {
         data: t.data,
         hora_inicio: t.horaInicio,
         hora_fim: t.horaFim,
+        intervalo_inicio: t.intervaloInicio || '',
+        intervalo_fim: t.intervaloFim || '',
         setor_id: t.setorId,
         cargo_id: t.cargoId,
         tipo_turno: t.tipoTurno,
         origem: t.origem,
         status: t.status,
         observacoes: t.observacoes || '',
+        rotina_id: t.rotinaId || '',
+        rotina_nome: t.rotinaNome || '',
+        rotina_cor: t.rotinaCor || '',
+        justificativas: JSON.stringify(t.justificativas || []),
       }));
       await this.request('saveTurnosEscaladosBatch', { data: { escalaId, turnos: turnosBody } });
     } catch (e) {

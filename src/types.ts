@@ -700,6 +700,9 @@ export interface TurnoEscalado {
   origem: OrigemTurnoEscalado;
   status: StatusTurnoEscalado;
   observacoes?: string;
+  // Preenchido pelo motor de geração automática (quando existir) para alimentar a
+  // explicabilidade — ver JustificativaTurno.
+  justificativas?: JustificativaTurno[];
 }
 
 export interface BancoHorasMovimento {
@@ -711,4 +714,104 @@ export interface BancoHorasMovimento {
   origemTurnoId?: string;
   saldoApos: number;
   observacoes?: string;
+}
+
+// ── Escala Inteligente — Módulo 3: Perfil de Disponibilidade do Colaborador ──
+// Consolida, numa entidade própria por colaborador (1 registro = 1 colaborador),
+// todas as regras permanentes que o motor de geração de escala deve respeitar.
+// Fica em uma planilha própria (PerfisDisponibilidade) em vez de inflar o cadastro
+// básico do Colaborador — assim a tela de Colaboradores existente não é tocada e o
+// perfil pode evoluir de forma independente.
+
+export interface JornadaContratual {
+  diasNormais: DiaSemana[];
+  horaEntradaPadrao: string;
+  horaSaidaPadrao: string;
+  horaInicioAlmoco: string;
+  horaFimAlmoco: string;
+  cargaHorariaDiaria: number;
+  cargaHorariaSemanal: number;
+}
+
+// "Exceções à jornada" — cada uma carrega o próprio limite de frequência, e o motor de
+// geração nunca pode ultrapassá-lo automaticamente (só numa edição manual explícita).
+export type TipoDisponibilidadeFlexivel =
+  | 'dia_extra_semana' // ex: pode trabalhar terça a sábado além do padrão contratual
+  | 'trabalhar_domingo'
+  | 'iniciar_antes'
+  | 'terminar_depois'
+  | 'dobra_turno'
+  | 'cobrir_outro_turno'
+  | 'trabalhar_feriado';
+
+export type LimiteFrequencia = '1x_mes' | '2x_mes' | '4x_mes' | 'ilimitado';
+
+export interface DisponibilidadeFlexivel {
+  tipo: TipoDisponibilidadeFlexivel;
+  limiteFrequencia: LimiteFrequencia;
+  observacoes?: string;
+}
+
+// Preferências são "soft constraints": o gerador tenta respeitar, mas pode ignorar
+// quando a cobertura obrigatória exigir — ao contrário de Restrições, que são "hard".
+export type TipoPreferenciaColaborador =
+  | 'prefere_manha'
+  | 'prefere_tarde'
+  | 'prefere_noite'
+  | 'prefere_folgar_domingo'
+  | 'prefere_trabalhar_sabado';
+
+export interface PreferenciaColaborador {
+  tipo: TipoPreferenciaColaborador;
+  observacoes?: string;
+}
+
+// Habilitações do colaborador por setor/função — diferente de Colaborador.setorId/cargoId
+// (que é a lotação "principal"), aqui é a lista completa de onde ele PODE ser escalado.
+// O motor de geração nunca escala fora desta lista.
+export interface CompetenciaColaborador {
+  setorId: string;
+  cargoId: string;
+  habilitado: boolean;
+}
+
+// Restrições são permanentes e obrigatórias ("hard constraints") — o motor nunca pode
+// violá-las, mesmo em falta de cobertura.
+export type TipoRestricaoPermanente =
+  | 'nao_pode_fechar'
+  | 'nao_pode_abrir'
+  | 'nao_pode_trabalhar_sozinho'
+  | 'nao_pode_turno_noturno'
+  | 'nao_pode_levantar_carga'
+  | 'somente_acompanhado'
+  | 'outro';
+
+export interface RestricaoPermanente {
+  tipo: TipoRestricaoPermanente;
+  observacoes?: string;
+}
+
+export type PrioridadeUtilizacaoColaborador = 'fixo' | 'preferencial' | 'flexivel' | 'cobertura' | 'temporario';
+
+export interface PerfilDisponibilidadeColaborador {
+  id: string;
+  colaboradorId: string;
+  jornadaContratual: JornadaContratual;
+  disponibilidadesFlexiveis: DisponibilidadeFlexivel[];
+  preferencias: PreferenciaColaborador[];
+  competencias: CompetenciaColaborador[];
+  restricoes: RestricaoPermanente[];
+  prioridadeUtilizacao: PrioridadeUtilizacaoColaborador;
+  atualizadoEm?: string;
+}
+
+// ── Explicabilidade da IA (item 7) ──────────────────────────────────────────
+// O motor de geração automática (fase futura, ainda não implementada — ver plano)
+// deverá preencher `TurnoEscalado.justificativas` com a lista de motivos que levaram
+// à escolha do colaborador. O tipo e o componente de visualização já ficam prontos
+// aqui para que, assim que o gerador existir, baste ele popular este campo.
+export interface JustificativaTurno {
+  regra: string; // rótulo curto, ex: "Disponibilidade", "Habilitação de setor"
+  descricao: string; // frase completa, ex: "Está disponível no horário do turno"
+  atendida: boolean; // true = motivo positivo (regra respeitada / a favor da escolha)
 }

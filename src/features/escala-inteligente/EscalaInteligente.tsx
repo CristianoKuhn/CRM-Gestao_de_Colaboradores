@@ -4,14 +4,15 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Usuario, Setor, Cargo, ConfiguracaoEscala, TurnoPadrao, RegraCobertura } from '../../types';
+import { Usuario, Setor, Cargo, ConfiguracaoEscala, TurnoPadrao, RegraCobertura, RotinaOperacional } from '../../types';
 import { DataService } from '../../services/DataService';
 import AssistenteConfiguracaoInicial from './components/AssistenteConfiguracaoInicial';
 import ConfiguracaoEscalaForm from './components/ConfiguracaoEscalaForm';
 import TurnosPadraoManager from './components/TurnosPadraoManager';
 import RegrasCoberturaManager from './components/RegrasCoberturaManager';
+import RotinasOperacionaisManager from './components/RotinasOperacionaisManager';
 import { ResultadoAssistente } from './engine/presetsConfiguracaoInicial';
-import { CalendarRange, Wand2, Settings2, Clock3, ShieldCheck, RefreshCw, Lock } from 'lucide-react';
+import { CalendarRange, Wand2, Settings2, Clock3, ShieldCheck, RefreshCw, Lock, ListChecks } from 'lucide-react';
 
 interface EscalaInteligenteProps {
   currentUser: Usuario;
@@ -20,13 +21,14 @@ interface EscalaInteligenteProps {
   cargos: Cargo[];
 }
 
-type AbaInterna = 'configuracao' | 'turnos' | 'cobertura';
+type AbaInterna = 'configuracao' | 'rotinas' | 'turnos' | 'cobertura';
 
 const EscalaInteligente: React.FC<EscalaInteligenteProps> = ({ currentUser, empresaId, setores, cargos }) => {
   const [carregando, setCarregando] = useState(true);
   const [configuracao, setConfiguracao] = useState<ConfiguracaoEscala | null>(null);
   const [turnos, setTurnos] = useState<TurnoPadrao[]>([]);
   const [regras, setRegras] = useState<RegraCobertura[]>([]);
+  const [rotinas, setRotinas] = useState<RotinaOperacional[]>([]);
   const [mostrarAssistente, setMostrarAssistente] = useState(false);
   const [abaAtiva, setAbaAtiva] = useState<AbaInterna>('configuracao');
 
@@ -37,14 +39,16 @@ const EscalaInteligente: React.FC<EscalaInteligenteProps> = ({ currentUser, empr
   const carregarDados = useCallback(async () => {
     setCarregando(true);
     try {
-      const [config, turnosPadrao, regrasCobertura] = await Promise.all([
+      const [config, turnosPadrao, regrasCobertura, rotinasOperacionais] = await Promise.all([
         DataService.getConfiguracaoEscala(),
         DataService.getTurnosPadrao(),
         DataService.getRegrasCobertura(),
+        DataService.getRotinasOperacionais(),
       ]);
       setConfiguracao(config);
       setTurnos(turnosPadrao);
       setRegras(regrasCobertura);
+      setRotinas(rotinasOperacionais);
       setMostrarAssistente(!config);
     } finally {
       setCarregando(false);
@@ -121,11 +125,12 @@ const EscalaInteligente: React.FC<EscalaInteligenteProps> = ({ currentUser, empr
         </div>
       )}
 
-      {/* Navegação entre as três telas de configuração */}
+      {/* Navegação entre as telas de configuração */}
       <div className="flex items-center gap-1.5 bg-slate-100 rounded-2xl p-1 w-fit">
         {(
           [
             { id: 'configuracao', label: 'Configuração geral', icon: Settings2 },
+            { id: 'rotinas', label: 'Rotinas operacionais', icon: ListChecks },
             { id: 'turnos', label: 'Turnos padrão', icon: Clock3 },
             { id: 'cobertura', label: 'Cobertura mínima', icon: ShieldCheck },
           ] as { id: AbaInterna; label: string; icon: typeof Settings2 }[]
@@ -148,6 +153,24 @@ const EscalaInteligente: React.FC<EscalaInteligenteProps> = ({ currentUser, empr
           onSalvar={async (config) => {
             await DataService.saveConfiguracaoEscala(config);
             setConfiguracao(config);
+          }}
+          somenteLeitura={!podeConfigurar}
+        />
+      )}
+
+      {abaAtiva === 'rotinas' && (
+        <RotinasOperacionaisManager
+          empresaId={empresaId}
+          rotinas={rotinas}
+          setores={setores}
+          cargos={cargos}
+          onSalvar={async (rotina) => {
+            await DataService.saveRotinaOperacional(rotina);
+            await carregarDados();
+          }}
+          onExcluir={async (id) => {
+            await DataService.deleteRotinaOperacional(id);
+            await carregarDados();
           }}
           somenteLeitura={!podeConfigurar}
         />

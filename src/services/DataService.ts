@@ -41,6 +41,7 @@ import {
   RestricaoIndividual,
   FolgaFixaEscala,
   RegraCobertura,
+  RotinaOperacional,
   RegraDescanso,
   FeriadoEscala,
   ExcecaoEscala,
@@ -301,6 +302,9 @@ export interface IDataService {
   getRegrasCobertura(): Promise<RegraCobertura[]>;
   saveRegraCobertura(regra: RegraCobertura): Promise<void>;
   deleteRegraCobertura(id: string): Promise<void>;
+  getRotinasOperacionais(): Promise<RotinaOperacional[]>;
+  saveRotinaOperacional(rotina: RotinaOperacional): Promise<void>;
+  deleteRotinaOperacional(id: string): Promise<void>;
   getRegrasDescanso(): Promise<RegraDescanso[]>;
   saveRegraDescanso(regra: RegraDescanso): Promise<void>;
   deleteRegraDescanso(id: string): Promise<void>;
@@ -627,6 +631,15 @@ export class LocalDataService implements IDataService {
   }
   async deleteRegraCobertura(id: string): Promise<void> {
     escalaLocalDeleteItem('regrasCobertura', id);
+  }
+  async getRotinasOperacionais(): Promise<RotinaOperacional[]> {
+    return escalaLocalGetArray<RotinaOperacional>('rotinasOperacionais');
+  }
+  async saveRotinaOperacional(rotina: RotinaOperacional): Promise<void> {
+    escalaLocalSaveItem('rotinasOperacionais', rotina);
+  }
+  async deleteRotinaOperacional(id: string): Promise<void> {
+    escalaLocalDeleteItem('rotinasOperacionais', id);
   }
   async getRegrasDescanso(): Promise<RegraDescanso[]> {
     return escalaLocalGetArray<RegraDescanso>('regrasDescanso');
@@ -2313,6 +2326,58 @@ export class GoogleScriptDataService implements IDataService {
     }
   }
 
+  async getRotinasOperacionais(): Promise<RotinaOperacional[]> {
+    try {
+      const raw = await this.request<any[]>('getRotinasOperacionais');
+      return (raw || []).map((r) => ({
+        id: r.id,
+        empresaId: r.empresa_id,
+        setorId: r.setor_id,
+        nome: r.nome,
+        tipoDia: r.tipo_dia,
+        horaInicio: r.hora_inicio,
+        horaFim: r.hora_fim,
+        quantidadeMinima: Number(r.quantidade_minima) || 0,
+        cargosPermitidos: Array.isArray(r.cargos_permitidos) ? r.cargos_permitidos : [],
+        prioridade: r.prioridade || 'media',
+        obrigatoria: r.obrigatoria === true || r.obrigatoria === 'true',
+        ativo: r.ativo === true || r.ativo === 'true',
+      }));
+    } catch (e) {
+      return this.localFallback.getRotinasOperacionais();
+    }
+  }
+  async saveRotinaOperacional(rotina: RotinaOperacional): Promise<void> {
+    await this.localFallback.saveRotinaOperacional(rotina);
+    try {
+      const body = {
+        id: rotina.id,
+        empresa_id: rotina.empresaId,
+        setor_id: rotina.setorId,
+        nome: rotina.nome,
+        tipo_dia: rotina.tipoDia,
+        hora_inicio: rotina.horaInicio,
+        hora_fim: rotina.horaFim,
+        quantidade_minima: rotina.quantidadeMinima,
+        cargos_permitidos: JSON.stringify(rotina.cargosPermitidos || []),
+        prioridade: rotina.prioridade,
+        obrigatoria: rotina.obrigatoria,
+        ativo: rotina.ativo,
+      };
+      await this.request('saveRotinaOperacional', { data: body });
+    } catch (e) {
+      console.warn('Erro ao salvar rotina operacional no GoogleScript:', e);
+    }
+  }
+  async deleteRotinaOperacional(id: string): Promise<void> {
+    await this.localFallback.deleteRotinaOperacional(id);
+    try {
+      await this.request('deleteRotinaOperacional', { id });
+    } catch (e) {
+      console.warn('Erro ao excluir rotina operacional no GoogleScript:', e);
+    }
+  }
+
   async getRegrasDescanso(): Promise<RegraDescanso[]> {
     try {
       const raw = await this.request<any[]>('getRegrasDescanso');
@@ -2893,6 +2958,15 @@ class DynamicDataService implements IDataService {
   }
   async deleteRegraCobertura(id: string): Promise<void> {
     await this.getService().deleteRegraCobertura(id);
+  }
+  async getRotinasOperacionais(): Promise<RotinaOperacional[]> {
+    return this.getService().getRotinasOperacionais();
+  }
+  async saveRotinaOperacional(rotina: RotinaOperacional): Promise<void> {
+    await this.getService().saveRotinaOperacional(rotina);
+  }
+  async deleteRotinaOperacional(id: string): Promise<void> {
+    await this.getService().deleteRotinaOperacional(id);
   }
   async getRegrasDescanso(): Promise<RegraDescanso[]> {
     return this.getService().getRegrasDescanso();

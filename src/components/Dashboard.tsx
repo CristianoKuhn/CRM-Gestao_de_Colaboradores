@@ -47,6 +47,7 @@ import {
 import { OnboardingItem, OnboardingChecklist } from '../types';
 import { DataService } from '../services/DataService';
 import ModalAvaliacao180 from './ModalAvaliacao180';
+import ModalFormularioAvaliacao from './ModalFormularioAvaliacao';
 import { getAcoesLembreteAvaliacao } from '../features/formularios/engine/acoesDisponiveis';
 
 interface DashboardProps {
@@ -146,6 +147,14 @@ export default function Dashboard({
     isOpen: boolean;
     colaborador: Colaborador | null;
     milestone: string;
+  }>({ isOpen: false, colaborador: null, milestone: '' });
+
+  // Estado para Modal de Avaliação de Experiência (Motor de Formulários — Sprint 3)
+  const [modalFormularioExperiencia, setModalFormularioExperiencia] = useState<{
+    isOpen: boolean;
+    colaborador: Colaborador | null;
+    milestone: string;
+    dataLimite?: string;
   }>({ isOpen: false, colaborador: null, milestone: '' });
 
   // Carregar alertas e configurações
@@ -456,8 +465,9 @@ export default function Dashboard({
 
   const lembretesAcompanhamento = calculateReminders();
 
-  const handleCompleteMilestone = async (col: Colaborador, milestone: string) => {
-    // Se for avaliação 180°, abrir o modal
+  const handleCompleteMilestone = async (col: Colaborador, milestone: string, prazoData?: string) => {
+    // Se for avaliação 180°, abrir o modal específico (migração para o motor
+    // genérico está planejada para o Sprint 4).
     if (milestone === '180') {
       setModalAvaliacao180({
         isOpen: true,
@@ -467,18 +477,15 @@ export default function Dashboard({
       return;
     }
 
-    // Para avaliações de experiência (15, 30, 60, 90), marcar como concluída diretamente
-    const novasCompletas = [...(col.avaliacoesCompletas || [])];
-    if (!novasCompletas.includes(milestone)) {
-      novasCompletas.push(milestone);
-    }
-
-    const colAtualizado: Colaborador = {
-      ...col,
-      avaliacoesCompletas: novasCompletas,
-    };
-
-    onUpdateColaborador(colAtualizado);
+    // Avaliação de Experiência (15/30/60/90) — Motor de Formulários (Sprint 3):
+    // abre o formulário digital em vez de marcar concluído sem preencher nada.
+    // "Atrasada" nunca impede a abertura (ver acoesDisponiveis.ts / slaEngine.ts).
+    setModalFormularioExperiencia({
+      isOpen: true,
+      colaborador: col,
+      milestone,
+      dataLimite: prazoData,
+    });
   };
 
   // Salvar resultado da Avaliação 180°
@@ -1109,7 +1116,7 @@ export default function Dashboard({
                 {getAcoesLembreteAvaliacao(item.milestone).map((acao) => (
                   <button
                     key={acao.tipo}
-                    onClick={() => handleCompleteMilestone(item.colaborador, item.milestone)}
+                    onClick={() => handleCompleteMilestone(item.colaborador, item.milestone, item.prazoData)}
                     className={`w-full mt-3 px-3 py-2 text-xs font-bold rounded-lg cursor-pointer transition ${
                       item.atrasado
                         ? 'bg-rose-50 hover:bg-rose-100 text-rose-700'
@@ -1329,6 +1336,21 @@ export default function Dashboard({
           onSave={handleSalvarAvaliacao180}
         />
       )}
+
+      {/* Modal de Avaliação de Experiência (Motor de Formulários — Sprint 3) */}
+      <ModalFormularioAvaliacao
+        isOpen={modalFormularioExperiencia.isOpen}
+        colaborador={modalFormularioExperiencia.colaborador}
+        templateFamiliaId="avaliacao-experiencia"
+        milestone={modalFormularioExperiencia.milestone}
+        dataLimite={modalFormularioExperiencia.dataLimite}
+        responsavelId={currentUser.id}
+        onClose={() => setModalFormularioExperiencia({ isOpen: false, colaborador: null, milestone: '' })}
+        onConcluida={(colAtualizado) => {
+          onUpdateColaborador(colAtualizado);
+          setModalFormularioExperiencia({ isOpen: false, colaborador: null, milestone: '' });
+        }}
+      />
     </div>
   );
 }

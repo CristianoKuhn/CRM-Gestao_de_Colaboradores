@@ -830,3 +830,206 @@ export interface JustificativaTurno {
   descricao: string; // frase completa, ex: "Está disponível no horário do turno"
   atendida: boolean; // true = motivo positivo (regra respeitada / a favor da escolha)
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MOTOR DE FORMULÁRIOS INTELIGENTES COM WORKFLOW — Sprint 2: Modelagem
+// Ver documento de arquitetura "Motor de Formulários Inteligentes com Workflow",
+// seções 2 a 8. Plataforma genérica de formulários corporativos com fluxo de
+// trabalho — Avaliação de Experiência e Avaliação 180° são os primeiros
+// consumidores desta plataforma, não o motor em si. Qualquer processo futuro
+// (360°, anual, PDI, feedback, pesquisa de clima/satisfação, onboarding,
+// offboarding, checklist, auditoria, inspeção...) usa exatamente as mesmas
+// entidades abaixo, sem alteração de schema — só um novo FormularioTemplate.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ── Perguntas genéricas ──────────────────────────────────────────────────
+export type TipoPergunta =
+  | 'nota'
+  | 'texto_curto'
+  | 'texto_longo'
+  | 'numero'
+  | 'data'
+  | 'sim_nao'
+  | 'multipla_escolha'
+  | 'lista'
+  | 'escala'
+  | 'upload_arquivo'
+  | 'assinatura'
+  | 'campo_calculado';
+
+export type OperadorCondicao = 'igual' | 'diferente' | 'maior_que' | 'menor_que' | 'contem';
+
+// Regra condicional de EXIBIÇÃO de uma pergunta (ex.: "só mostrar se a resposta
+// da pergunta X for Sim"). Resolvida pelo motor de validação, nunca por lógica
+// específica de tela — ver validacaoEngine.ts.
+export interface CondicaoExibicao {
+  perguntaId: string;
+  operador: OperadorCondicao;
+  valor: unknown;
+}
+
+export interface PerguntaFormulario {
+  id: string;
+  tipo: TipoPergunta;
+  label: string;
+  descricao?: string;
+  obrigatoria: boolean;
+  peso?: number; // usado pela regra de cálculo 'media_ponderada'
+  escala?: { min: number; max: number }; // para os tipos 'nota' e 'escala'
+  opcoes?: string[]; // para 'multipla_escolha' e 'lista'
+  permiteComentario?: boolean;
+  critica?: boolean; // sinaliza elegibilidade para a regra 'nota_minima_obrigatoria'
+  notaMinimaObrigatoria?: number;
+  exibirSe?: CondicaoExibicao;
+}
+
+export interface CategoriaFormulario {
+  id: string;
+  nome: string;
+  perguntas: PerguntaFormulario[];
+}
+
+// ── Motor de cálculo (regras extensíveis, ver arquitetura seção 5) ──────────
+export type TipoRegraCalculo =
+  | 'media_simples'
+  | 'media_ponderada'
+  | 'nota_minima_obrigatoria'
+  | 'condicional'
+  | 'faixa_parecer'
+  | 'formula_customizada';
+
+export interface FaixaParecer {
+  min: number;
+  label: string;
+}
+
+// Shape única e flexível para todos os tipos de regra — o `calculoEngine`
+// interpreta os campos relevantes conforme `tipo` (registry de avaliadores,
+// um por tipo). Novo tipo de regra = nova função no registry, nunca alteração
+// de tela.
+export interface RegraCalculo {
+  tipo: TipoRegraCalculo;
+  campoResultado?: string; // ex.: 'mediaGeral', 'mediaPonderada', 'parecerFinal'
+  perguntaId?: string; // usado por 'nota_minima_obrigatoria'
+  minimo?: number;
+  seFalhar?: { campoResultado: string; valor: string };
+  se?: { perguntaId: string; operador: OperadorCondicao; valor: unknown }; // usado por 'condicional'
+  entao?: { campoResultado: string; valor: string; prioridade?: number };
+  baseadoEm?: string; // usado por 'faixa_parecer', ex.: 'mediaPonderada'
+  faixas?: FaixaParecer[];
+  formula?: string; // reservado para 'formula_customizada' (expressão avaliada sem eval)
+}
+
+// ── Template de formulário — versionado, nunca sobrescrito ──────────────────
+// Regra de negócio: uma vez que exista `FormularioInstancia` apontando para um
+// `id` de template, esse `id` se torna imutável. Qualquer alteração de estrutura
+// cria uma nova linha com `versao + 1` e o mesmo `templateFamiliaId`. Ver
+// documento de arquitetura, seção 2.1.
+export interface FormularioTemplate {
+  id: string; // identificador desta versão específica
+  templateFamiliaId: string; // identificador estável da família (ex.: "avaliacao-experiencia")
+  versao: number;
+  nome: string;
+  descricao?: string;
+  tipoProcesso: string; // string livre e extensível — nunca union fechada
+  workflowId: string;
+  ativo: boolean; // só a versão ativa de cada família é usada para gerar novas instâncias
+  categorias: CategoriaFormulario[];
+  regrasCalculo: RegraCalculo[];
+  aparencia?: Record<string, unknown>;
+  criadoEm: string;
+  criadoPor: string;
+}
+
+// ── Workflow genérico — desacoplado de qualquer processo ────────────────────
+export type TipoEstadoWorkflow = 'inicial' | 'intermediario' | 'final';
+
+export interface EstadoWorkflow {
+  id: string;
+  nome: string;
+  tipo: TipoEstadoWorkflow;
+}
+
+export interface TransicaoWorkflow {
+  de: string;
+  para: string;
+  acao: string;
+  papeisPermitidos?: string[];
+}
+
+export interface WorkflowDefinicao {
+  id: string;
+  nome: string;
+  estados: EstadoWorkflow[];
+  transicoes: TransicaoWorkflow[];
+}
+
+// ── Instância — generaliza "Avaliacao" para qualquer tipo de formulário ─────
+export interface ResultadoFormularioInstancia {
+  mediaGeral?: number;
+  mediaPonderada?: number;
+  parecerFinal?: string;
+  camposCalculados?: Record<string, unknown>;
+}
+
+export interface FormularioInstancia {
+  id: string;
+  templateId: string; // aponta para a versão exata usada
+  templateFamiliaId: string; // denormalizado, para consultar por família independente da versão
+  tipoProcesso: string; // denormalizado do template
+  workflowId: string; // denormalizado do template
+  entidadeTipo: string; // 'colaborador' hoje; genérico para o futuro ('setor', 'loja'...)
+  entidadeId: string;
+  responsavelId: string; // quem preenche/avalia
+  estadoWorkflow: string; // nó atual do grafo do WorkflowDefinicao
+  dataLimite?: string; // ausente = processo sem prazo (ex.: pesquisa de clima aberta)
+  dataInicio?: string;
+  dataConclusao?: string;
+  resultado?: ResultadoFormularioInstancia;
+  origem: 'sistema' | 'manual';
+  justificativaAtraso?: string;
+  dataReagendamento?: string;
+  // Snapshot organizacional no momento da criação — preparação para Analytics
+  // (arquitetura, seção 6). Nunca atualizado retroativamente, mesmo que o
+  // colaborador mude de setor/gestor depois.
+  setorId?: string;
+  cargoId?: string;
+  liderId?: string;
+  empresaId?: string;
+  // Campos reservados para IA (arquitetura, seção 7) — todos nulos/vazios até a
+  // funcionalidade existir; nenhuma migração será necessária quando chegar a hora.
+  iaParecerTecnico?: string;
+  iaFeedbackGestor?: string;
+  iaFeedbackColaborador?: string;
+  iaPontosFortes?: string[];
+  iaPontosMelhoria?: string[];
+  iaSugestoesPdi?: string[];
+  iaRecomendacoesTreinamento?: string[];
+  iaGeradoEm?: string;
+  iaModeloUsado?: string;
+}
+
+// ── Resposta — genérica para qualquer tipo de pergunta ───────────────────────
+// Uma linha por pergunta × instância × papel — é o que viabiliza autoavaliação
+// (papel 'gestor' vs 'colaborador') sem duplicar entidade, e o que permite
+// consultas de Analytics por competência (arquitetura, seção 6).
+export interface RespostaCampo {
+  id: string;
+  instanciaId: string;
+  perguntaId: string;
+  papel: string; // 'gestor' | 'colaborador' | 'auditor' | 'respondente'... livre
+  valor: unknown; // formato depende de PerguntaFormulario.tipo; null = ainda não respondida (rascunho)
+  comentario?: string;
+  atualizadoEm: string;
+}
+
+// ── Histórico de transições de estado — genérico para qualquer workflow ─────
+export interface HistoricoEstadoInstancia {
+  id: string;
+  instanciaId: string;
+  estadoAnterior: string;
+  estadoNovo: string;
+  alteradoPor: string;
+  data: string;
+  observacao?: string;
+}

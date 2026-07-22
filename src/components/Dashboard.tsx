@@ -1346,7 +1346,7 @@ export default function Dashboard({
         dataLimite={modalFormularioExperiencia.dataLimite}
         responsavelId={currentUser.id}
         onClose={() => setModalFormularioExperiencia({ isOpen: false, colaborador: null, milestone: '' })}
-        onConcluida={(colAtualizado) => {
+        onConcluida={(colAtualizado: Colaborador) => {
           onUpdateColaborador(colAtualizado);
           setModalFormularioExperiencia({ isOpen: false, colaborador: null, milestone: '' });
         }}

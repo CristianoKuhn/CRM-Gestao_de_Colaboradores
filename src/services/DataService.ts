@@ -378,6 +378,7 @@ export interface IDataService {
   getRespostasCampos(instanciaId: string): Promise<RespostaCampo[]>;
   saveRespostasCamposBatch(instanciaId: string, respostas: RespostaCampo[]): Promise<void>;
   getHistoricoEstadosInstancia(instanciaId: string): Promise<HistoricoEstadoInstancia[]>;
+  saveHistoricoEstadoInstancia(historico: HistoricoEstadoInstancia): Promise<void>;
 
   uploadFile(
     file: File,
@@ -814,6 +815,9 @@ export class LocalDataService implements IDataService {
     return formulariosLocalGetArray<HistoricoEstadoInstancia>('historicoEstadosInstancias').filter(
       (h) => h.instanciaId === instanciaId
     );
+  }
+  async saveHistoricoEstadoInstancia(historico: HistoricoEstadoInstancia): Promise<void> {
+    formulariosLocalSaveItem('historicoEstadosInstancias', historico);
   }
 
   async uploadFile(
@@ -3039,6 +3043,23 @@ export class GoogleScriptDataService implements IDataService {
       return this.localFallback.getHistoricoEstadosInstancia(instanciaId);
     }
   }
+  async saveHistoricoEstadoInstancia(historico: HistoricoEstadoInstancia): Promise<void> {
+    await this.localFallback.saveHistoricoEstadoInstancia(historico);
+    try {
+      const body = {
+        id: historico.id,
+        instancia_id: historico.instanciaId,
+        estado_anterior: historico.estadoAnterior,
+        estado_novo: historico.estadoNovo,
+        alterado_por: historico.alteradoPor,
+        data: historico.data,
+        observacao: historico.observacao || '',
+      };
+      await this.request('saveHistoricoEstadoInstancia', { data: body });
+    } catch (e) {
+      console.warn('Erro ao salvar histórico de estado de instância no GoogleScript:', e);
+    }
+  }
 }
 
 // -----------------------------------------------------------------
@@ -3456,6 +3477,9 @@ class DynamicDataService implements IDataService {
   }
   async getHistoricoEstadosInstancia(instanciaId: string): Promise<HistoricoEstadoInstancia[]> {
     return this.getService().getHistoricoEstadosInstancia(instanciaId);
+  }
+  async saveHistoricoEstadoInstancia(historico: HistoricoEstadoInstancia): Promise<void> {
+    await this.getService().saveHistoricoEstadoInstancia(historico);
   }
 
   async resetData(): Promise<void> {

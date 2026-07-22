@@ -49,6 +49,11 @@ import {
   EscalaGerada,
   TurnoEscalado,
   BancoHorasMovimento,
+  FormularioTemplate,
+  WorkflowDefinicao,
+  FormularioInstancia,
+  RespostaCampo,
+  HistoricoEstadoInstancia,
 } from '../types';
 import { StorageAPI } from '../utils/storage';
 
@@ -190,6 +195,34 @@ function escalaLocalSetSingleton<T>(key: string, value: T): void {
   localStorage.setItem(ESCALA_LOCAL_PREFIX + key, JSON.stringify(value));
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// MOTOR DE FORMULÁRIOS INTELIGENTES COM WORKFLOW — helper genérico de
+// persistência local (mesmo padrão do bloco "Escala Inteligente" acima,
+// só com prefixo próprio). Ver documento de arquitetura, seções 2 e 8.
+// ═══════════════════════════════════════════════════════════════════
+const FORMULARIOS_LOCAL_PREFIX = 'gc_formularios_';
+
+function formulariosLocalGetArray<T>(key: string): T[] {
+  try {
+    const raw = localStorage.getItem(FORMULARIOS_LOCAL_PREFIX + key);
+    return raw ? (JSON.parse(raw) as T[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function formulariosLocalSetArray<T>(key: string, items: T[]): void {
+  localStorage.setItem(FORMULARIOS_LOCAL_PREFIX + key, JSON.stringify(items));
+}
+
+function formulariosLocalSaveItem<T extends { id: string }>(key: string, item: T): void {
+  const items = formulariosLocalGetArray<T>(key);
+  const idx = items.findIndex((i) => i.id === item.id);
+  if (idx >= 0) items[idx] = item;
+  else items.push(item);
+  formulariosLocalSetArray(key, items);
+}
+
 export interface IDataService {
   getEmpresas(): Promise<Empresa[]>;
   getSetores(): Promise<Setor[]>;
@@ -327,6 +360,24 @@ export interface IDataService {
   getBancoHorasMovimentos(): Promise<BancoHorasMovimento[]>;
   saveBancoHorasMovimento(mov: BancoHorasMovimento): Promise<void>;
   deleteBancoHorasMovimento(id: string): Promise<void>;
+
+  // Motor de Formulários Inteligentes com Workflow (plataforma) — Sprint 2
+  // Ver documento de arquitetura, seções 2 a 8. Avaliação de Experiência e
+  // Avaliação 180° são os primeiros consumidores; qualquer processo futuro
+  // usa exatamente estas mesmas ações.
+  getFormularioTemplates(templateFamiliaId?: string): Promise<FormularioTemplate[]>;
+  saveFormularioTemplate(template: FormularioTemplate): Promise<void>;
+  getWorkflowDefinicoes(): Promise<WorkflowDefinicao[]>;
+  saveWorkflowDefinicao(workflow: WorkflowDefinicao): Promise<void>;
+  getFormularioInstancias(filtro?: {
+    entidadeId?: string;
+    tipoProcesso?: string;
+    estadoWorkflow?: string;
+  }): Promise<FormularioInstancia[]>;
+  saveFormularioInstancia(instancia: FormularioInstancia): Promise<void>;
+  getRespostasCampos(instanciaId: string): Promise<RespostaCampo[]>;
+  saveRespostasCamposBatch(instanciaId: string, respostas: RespostaCampo[]): Promise<void>;
+  getHistoricoEstadosInstancia(instanciaId: string): Promise<HistoricoEstadoInstancia[]>;
 
   uploadFile(
     file: File,
@@ -715,6 +766,54 @@ export class LocalDataService implements IDataService {
   }
   async deleteBancoHorasMovimento(id: string): Promise<void> {
     escalaLocalDeleteItem('bancoHorasMovimentos', id);
+  }
+
+  // ── Motor de Formulários Inteligentes com Workflow — Sprint 2 ──────────
+  async getFormularioTemplates(templateFamiliaId?: string): Promise<FormularioTemplate[]> {
+    const todos = formulariosLocalGetArray<FormularioTemplate>('formularioTemplates');
+    return templateFamiliaId ? todos.filter((t) => t.templateFamiliaId === templateFamiliaId) : todos;
+  }
+  async saveFormularioTemplate(template: FormularioTemplate): Promise<void> {
+    // Regra de negócio: um template já vinculado a alguma instância nunca é
+    // sobrescrito — só a implementação Apps Script (fonte de verdade) recusa
+    // de fato o save; aqui, no fallback local, só preservamos o mesmo formato.
+    formulariosLocalSaveItem('formularioTemplates', template);
+  }
+  async getWorkflowDefinicoes(): Promise<WorkflowDefinicao[]> {
+    return formulariosLocalGetArray<WorkflowDefinicao>('workflowDefinicoes');
+  }
+  async saveWorkflowDefinicao(workflow: WorkflowDefinicao): Promise<void> {
+    formulariosLocalSaveItem('workflowDefinicoes', workflow);
+  }
+  async getFormularioInstancias(filtro?: {
+    entidadeId?: string;
+    tipoProcesso?: string;
+    estadoWorkflow?: string;
+  }): Promise<FormularioInstancia[]> {
+    let instancias = formulariosLocalGetArray<FormularioInstancia>('formularioInstancias');
+    if (filtro?.entidadeId) instancias = instancias.filter((i) => i.entidadeId === filtro.entidadeId);
+    if (filtro?.tipoProcesso) instancias = instancias.filter((i) => i.tipoProcesso === filtro.tipoProcesso);
+    if (filtro?.estadoWorkflow) instancias = instancias.filter((i) => i.estadoWorkflow === filtro.estadoWorkflow);
+    return instancias;
+  }
+  async saveFormularioInstancia(instancia: FormularioInstancia): Promise<void> {
+    formulariosLocalSaveItem('formularioInstancias', instancia);
+  }
+  async getRespostasCampos(instanciaId: string): Promise<RespostaCampo[]> {
+    return formulariosLocalGetArray<RespostaCampo>('respostasCampos').filter(
+      (r) => r.instanciaId === instanciaId
+    );
+  }
+  async saveRespostasCamposBatch(instanciaId: string, respostas: RespostaCampo[]): Promise<void> {
+    const outras = formulariosLocalGetArray<RespostaCampo>('respostasCampos').filter(
+      (r) => r.instanciaId !== instanciaId
+    );
+    formulariosLocalSetArray('respostasCampos', [...outras, ...respostas]);
+  }
+  async getHistoricoEstadosInstancia(instanciaId: string): Promise<HistoricoEstadoInstancia[]> {
+    return formulariosLocalGetArray<HistoricoEstadoInstancia>('historicoEstadosInstancias').filter(
+      (h) => h.instanciaId === instanciaId
+    );
   }
 
   async uploadFile(
@@ -2727,6 +2826,219 @@ export class GoogleScriptDataService implements IDataService {
       console.warn('Erro ao excluir movimento de banco de horas no GoogleScript:', e);
     }
   }
+
+  // ── Motor de Formulários Inteligentes com Workflow — Sprint 2 ──────────
+  // Ver documento de arquitetura, seções 2 a 8. Segue exatamente o mesmo
+  // padrão de mapeamento camelCase (front) <-> snake_case (planilha) e de
+  // fallback local usado pelo restante desta classe.
+  async getFormularioTemplates(templateFamiliaId?: string): Promise<FormularioTemplate[]> {
+    try {
+      const raw = await this.request<any[]>('getFormularioTemplates', { templateFamiliaId });
+      return (raw || []).map((t) => ({
+        id: t.id,
+        templateFamiliaId: t.template_familia_id,
+        versao: Number(t.versao) || 1,
+        nome: t.nome,
+        descricao: t.descricao || undefined,
+        tipoProcesso: t.tipo_processo,
+        workflowId: t.workflow_id,
+        ativo: t.ativo === true || t.ativo === 'true',
+        categorias: Array.isArray(t.categorias) ? t.categorias : [],
+        regrasCalculo: Array.isArray(t.regras_calculo) ? t.regras_calculo : [],
+        aparencia: t.aparencia && typeof t.aparencia === 'object' ? t.aparencia : undefined,
+        criadoEm: t.criado_em,
+        criadoPor: t.criado_por,
+      }));
+    } catch (e) {
+      return this.localFallback.getFormularioTemplates(templateFamiliaId);
+    }
+  }
+  async saveFormularioTemplate(template: FormularioTemplate): Promise<void> {
+    await this.localFallback.saveFormularioTemplate(template);
+    try {
+      const body = {
+        id: template.id,
+        template_familia_id: template.templateFamiliaId,
+        versao: template.versao,
+        nome: template.nome,
+        descricao: template.descricao || '',
+        tipo_processo: template.tipoProcesso,
+        workflow_id: template.workflowId,
+        ativo: template.ativo,
+        categorias: JSON.stringify(template.categorias || []),
+        regras_calculo: JSON.stringify(template.regrasCalculo || []),
+        aparencia: JSON.stringify(template.aparencia || {}),
+        criado_em: template.criadoEm,
+        criado_por: template.criadoPor,
+      };
+      // O backend recusa o save (erro explícito) se este `id` já tiver
+      // FormularioInstancia vinculada — ver regra de versionamento na
+      // arquitetura, seção 2.1. Deixamos o erro subir para quem chamou.
+      await this.request('saveFormularioTemplate', { data: body });
+    } catch (e) {
+      console.warn('Erro ao salvar template de formulário no GoogleScript:', e);
+      throw e;
+    }
+  }
+  async getWorkflowDefinicoes(): Promise<WorkflowDefinicao[]> {
+    try {
+      const raw = await this.request<any[]>('getWorkflowDefinicoes');
+      return (raw || []).map((w) => ({
+        id: w.id,
+        nome: w.nome,
+        estados: Array.isArray(w.estados) ? w.estados : [],
+        transicoes: Array.isArray(w.transicoes) ? w.transicoes : [],
+      }));
+    } catch (e) {
+      return this.localFallback.getWorkflowDefinicoes();
+    }
+  }
+  async saveWorkflowDefinicao(workflow: WorkflowDefinicao): Promise<void> {
+    await this.localFallback.saveWorkflowDefinicao(workflow);
+    try {
+      const body = {
+        id: workflow.id,
+        nome: workflow.nome,
+        estados: JSON.stringify(workflow.estados || []),
+        transicoes: JSON.stringify(workflow.transicoes || []),
+      };
+      await this.request('saveWorkflowDefinicao', { data: body });
+    } catch (e) {
+      console.warn('Erro ao salvar workflow no GoogleScript:', e);
+    }
+  }
+  async getFormularioInstancias(filtro?: {
+    entidadeId?: string;
+    tipoProcesso?: string;
+    estadoWorkflow?: string;
+  }): Promise<FormularioInstancia[]> {
+    try {
+      const raw = await this.request<any[]>('getFormularioInstancias', filtro || {});
+      return (raw || []).map((i) => ({
+        id: i.id,
+        templateId: i.template_id,
+        templateFamiliaId: i.template_familia_id,
+        tipoProcesso: i.tipo_processo,
+        workflowId: i.workflow_id,
+        entidadeTipo: i.entidade_tipo,
+        entidadeId: i.entidade_id,
+        responsavelId: i.responsavel_id,
+        estadoWorkflow: i.estado_workflow,
+        dataLimite: i.data_limite || undefined,
+        dataInicio: i.data_inicio || undefined,
+        dataConclusao: i.data_conclusao || undefined,
+        resultado: i.resultado_json && typeof i.resultado_json === 'object' ? i.resultado_json : undefined,
+        origem: i.origem || 'sistema',
+        justificativaAtraso: i.justificativa_atraso || undefined,
+        dataReagendamento: i.data_reagendamento || undefined,
+        setorId: i.setor_id || undefined,
+        cargoId: i.cargo_id || undefined,
+        liderId: i.lider_id || undefined,
+        empresaId: i.empresa_id || undefined,
+        iaParecerTecnico: i.ia_parecer_tecnico || undefined,
+        iaFeedbackGestor: i.ia_feedback_gestor || undefined,
+        iaFeedbackColaborador: i.ia_feedback_colaborador || undefined,
+        iaPontosFortes: Array.isArray(i.ia_pontos_fortes) ? i.ia_pontos_fortes : undefined,
+        iaPontosMelhoria: Array.isArray(i.ia_pontos_melhoria) ? i.ia_pontos_melhoria : undefined,
+        iaSugestoesPdi: Array.isArray(i.ia_sugestoes_pdi) ? i.ia_sugestoes_pdi : undefined,
+        iaRecomendacoesTreinamento: Array.isArray(i.ia_recomendacoes_treinamento)
+          ? i.ia_recomendacoes_treinamento
+          : undefined,
+        iaGeradoEm: i.ia_gerado_em || undefined,
+        iaModeloUsado: i.ia_modelo_usado || undefined,
+      }));
+    } catch (e) {
+      return this.localFallback.getFormularioInstancias(filtro);
+    }
+  }
+  async saveFormularioInstancia(instancia: FormularioInstancia): Promise<void> {
+    await this.localFallback.saveFormularioInstancia(instancia);
+    try {
+      const body = {
+        id: instancia.id,
+        template_id: instancia.templateId,
+        template_familia_id: instancia.templateFamiliaId,
+        tipo_processo: instancia.tipoProcesso,
+        workflow_id: instancia.workflowId,
+        entidade_tipo: instancia.entidadeTipo,
+        entidade_id: instancia.entidadeId,
+        responsavel_id: instancia.responsavelId,
+        estado_workflow: instancia.estadoWorkflow,
+        data_limite: instancia.dataLimite || '',
+        data_inicio: instancia.dataInicio || '',
+        data_conclusao: instancia.dataConclusao || '',
+        resultado_json: JSON.stringify(instancia.resultado || {}),
+        origem: instancia.origem,
+        justificativa_atraso: instancia.justificativaAtraso || '',
+        data_reagendamento: instancia.dataReagendamento || '',
+        setor_id: instancia.setorId || '',
+        cargo_id: instancia.cargoId || '',
+        lider_id: instancia.liderId || '',
+        empresa_id: instancia.empresaId || '',
+        ia_parecer_tecnico: instancia.iaParecerTecnico || '',
+        ia_feedback_gestor: instancia.iaFeedbackGestor || '',
+        ia_feedback_colaborador: instancia.iaFeedbackColaborador || '',
+        ia_pontos_fortes: JSON.stringify(instancia.iaPontosFortes || []),
+        ia_pontos_melhoria: JSON.stringify(instancia.iaPontosMelhoria || []),
+        ia_sugestoes_pdi: JSON.stringify(instancia.iaSugestoesPdi || []),
+        ia_recomendacoes_treinamento: JSON.stringify(instancia.iaRecomendacoesTreinamento || []),
+        ia_gerado_em: instancia.iaGeradoEm || '',
+        ia_modelo_usado: instancia.iaModeloUsado || '',
+      };
+      await this.request('saveFormularioInstancia', { data: body });
+    } catch (e) {
+      console.warn('Erro ao salvar instância de formulário no GoogleScript:', e);
+    }
+  }
+  async getRespostasCampos(instanciaId: string): Promise<RespostaCampo[]> {
+    try {
+      const raw = await this.request<any[]>('getRespostasCampos', { instanciaId });
+      return (raw || []).map((r) => ({
+        id: r.id,
+        instanciaId: r.instancia_id,
+        perguntaId: r.pergunta_id,
+        papel: r.papel,
+        valor: r.valor_json !== undefined ? r.valor_json : null,
+        comentario: r.comentario || undefined,
+        atualizadoEm: r.atualizado_em,
+      }));
+    } catch (e) {
+      return this.localFallback.getRespostasCampos(instanciaId);
+    }
+  }
+  async saveRespostasCamposBatch(instanciaId: string, respostas: RespostaCampo[]): Promise<void> {
+    await this.localFallback.saveRespostasCamposBatch(instanciaId, respostas);
+    try {
+      const respostasBody = respostas.map((r) => ({
+        id: r.id,
+        instancia_id: instanciaId,
+        pergunta_id: r.perguntaId,
+        papel: r.papel,
+        valor_json: JSON.stringify(r.valor === undefined ? null : r.valor),
+        comentario: r.comentario || '',
+        atualizado_em: r.atualizadoEm,
+      }));
+      await this.request('saveRespostasCamposBatch', { data: { instanciaId, respostas: respostasBody } });
+    } catch (e) {
+      console.warn('Erro ao gravar respostas de formulário em lote no GoogleScript:', e);
+    }
+  }
+  async getHistoricoEstadosInstancia(instanciaId: string): Promise<HistoricoEstadoInstancia[]> {
+    try {
+      const raw = await this.request<any[]>('getHistoricoEstadosInstancia', { instanciaId });
+      return (raw || []).map((h) => ({
+        id: h.id,
+        instanciaId: h.instancia_id,
+        estadoAnterior: h.estado_anterior,
+        estadoNovo: h.estado_novo,
+        alteradoPor: h.alterado_por,
+        data: h.data,
+        observacao: h.observacao || undefined,
+      }));
+    } catch (e) {
+      return this.localFallback.getHistoricoEstadosInstancia(instanciaId);
+    }
+  }
 }
 
 // -----------------------------------------------------------------
@@ -3111,6 +3423,39 @@ class DynamicDataService implements IDataService {
   }
   async deleteBancoHorasMovimento(id: string): Promise<void> {
     await this.getService().deleteBancoHorasMovimento(id);
+  }
+
+  // ── Motor de Formulários Inteligentes com Workflow — Sprint 2 ──────────
+  async getFormularioTemplates(templateFamiliaId?: string): Promise<FormularioTemplate[]> {
+    return this.getService().getFormularioTemplates(templateFamiliaId);
+  }
+  async saveFormularioTemplate(template: FormularioTemplate): Promise<void> {
+    await this.getService().saveFormularioTemplate(template);
+  }
+  async getWorkflowDefinicoes(): Promise<WorkflowDefinicao[]> {
+    return this.getService().getWorkflowDefinicoes();
+  }
+  async saveWorkflowDefinicao(workflow: WorkflowDefinicao): Promise<void> {
+    await this.getService().saveWorkflowDefinicao(workflow);
+  }
+  async getFormularioInstancias(filtro?: {
+    entidadeId?: string;
+    tipoProcesso?: string;
+    estadoWorkflow?: string;
+  }): Promise<FormularioInstancia[]> {
+    return this.getService().getFormularioInstancias(filtro);
+  }
+  async saveFormularioInstancia(instancia: FormularioInstancia): Promise<void> {
+    await this.getService().saveFormularioInstancia(instancia);
+  }
+  async getRespostasCampos(instanciaId: string): Promise<RespostaCampo[]> {
+    return this.getService().getRespostasCampos(instanciaId);
+  }
+  async saveRespostasCamposBatch(instanciaId: string, respostas: RespostaCampo[]): Promise<void> {
+    await this.getService().saveRespostasCamposBatch(instanciaId, respostas);
+  }
+  async getHistoricoEstadosInstancia(instanciaId: string): Promise<HistoricoEstadoInstancia[]> {
+    return this.getService().getHistoricoEstadosInstancia(instanciaId);
   }
 
   async resetData(): Promise<void> {

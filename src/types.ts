@@ -1033,3 +1033,97 @@ export interface HistoricoEstadoInstancia {
   data: string;
   observacao?: string;
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MOTOR DE ITENS OPERACIONAIS — Sprint 1 (evolução do módulo "Tarefas")
+// Ver "Motor de Itens Operacionais — Proposta Arquitetural", seções 3, 4, 13.
+//
+// Sprint 1 entrega só o schema. `Tarefa` (acima) continua existindo e sendo
+// usada por Tarefas.tsx/App.tsx sem nenhuma alteração — por baixo, o backend
+// já grava em ItensOperacionais (ver arquitetura, seção 17). Estes tipos
+// ficam disponíveis para os componentes que os sprints seguintes forem
+// introduzindo (Sprint 2 em diante), sem exigir nova migração de schema.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// String livre e extensível de propósito — nunca union fechada, para caber
+// tipos futuros (plano_de_acao, aprovacao...) sem exigir migração de tipo.
+export type TipoItemOperacional = 'tarefa' | 'checkin' | 'plano_de_acao' | 'aprovacao' | string;
+
+export type TipoAtribuicaoItem = 'individual' | 'pool_setor';
+
+// ── Categoria — cadastrável, define a criticidade padrão de quem nasce nela ──
+export interface CategoriaItem {
+  id: string;
+  nome: string;
+  criticidadePadrao?: string; // herdada pelo item ao criar, mas editável nele (ver arquitetura, seção 4)
+  cor?: string;
+  ativo: boolean;
+}
+
+// ── Item Operacional — generaliza "Tarefa" para qualquer tipo de item ───────
+// (tarefa, check-in, e futuramente plano de ação, aprovação...). Ver
+// arquitetura, seção 2 (reflexão sobre elevar o conceito).
+export interface ItemOperacional {
+  id: string;
+  tipoItem: TipoItemOperacional;
+  tipoAtribuicao: TipoAtribuicaoItem;
+  titulo: string;
+  descricao?: string;
+
+  // Categoria/criticidade/prioridade — três eixos independentes (arquitetura, seção 4).
+  categoriaId?: string;
+  criticidade?: string;
+  prioridade?: string;
+
+  // Pessoas envolvidas — colaboradorId é o "sobre quem" (assunto do item, quando
+  // fizer sentido); responsavelId é quem precisa executar; solicitanteId é quem
+  // criou/vai validar o encerramento (arquitetura, seção 3 e 14).
+  colaboradorId?: string;
+  responsavelId?: string;
+  responsavelTipo?: 'colaborador' | 'usuario';
+  solicitanteId?: string;
+
+  // Atribuição em pool de setor (arquitetura, seção 3 e Sprint 4).
+  setorIdPool?: string;
+  papeisAlvoPool?: string[];
+
+  // Workflow — reaproveita exatamente WorkflowDefinicao (arquitetura, seção 5 e Sprint 2).
+  workflowId: string;
+  estadoWorkflow: string;
+
+  // Dependências — só previstas no modelo de dados nesta etapa, sem bloqueio
+  // automático ainda (arquitetura, seção 8).
+  dependeDeIds?: string[];
+
+  dataCriacao?: string;
+  dataPrazo?: string;
+  dataAssumida?: string;
+  dataConclusao?: string;
+  dataValidacao?: string;
+  dataEncerramento?: string;
+
+  // Origem — de onde este item nasceu, quando não foi criação manual direta
+  // (arquitetura, seções 7, 10 e 12 — Templates, Gatilhos, Check-ins).
+  origemRecorrenciaId?: string;
+  origemTemplateId?: string;
+  origemGatilhoId?: string;
+
+  // Ponte com o antigo módulo Tarefas (ver arquitetura, seção 17).
+  tipoOrigem?: TipoRegistro | string;
+  registroId?: string;
+  empresaId?: string;
+}
+
+// ── Timeline de eventos — qualquer evento relevante do item, não só mudança
+// de estado (arquitetura, seção 9). `tipoEvento` é string livre para caber
+// novos tipos sem migração: "criado", "estado_alterado", "responsavel_alterado",
+// "prioridade_alterada", "comentario_adicionado", "dependencia_resolvida",
+// "gerado_por_template", "gerado_por_gatilho"...
+export interface ItemEvento {
+  id: string;
+  itemId: string;
+  tipoEvento: string;
+  dadosEvento?: Record<string, unknown>;
+  autorId?: string;
+  data: string;
+}

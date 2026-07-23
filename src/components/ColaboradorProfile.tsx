@@ -21,8 +21,10 @@ import {
   Reconhecimento,
   ConfiguracaoReconhecimento,
   Tarefa,
+  FormularioInstancia,
 } from '../types';
 import LinhaDoTempoInteligente from './LinhaDoTempoInteligente';
+import HistoricoInstancias from '../features/formularios/components/HistoricoInstancias';
 import {
   Calendar,
   Briefcase,
@@ -100,6 +102,22 @@ export default function ColaboradorProfile({
   useEffect(() => {
     setLocalFotoUrl(colaborador.fotoUrl);
   }, [colaborador.fotoUrl]);
+
+  // Motor de Formulários Inteligentes com Workflow — histórico de avaliações
+  // (Sprint 4). Carrega todas as instâncias deste colaborador; HistoricoInstancias
+  // filtra e ordena as concluídas.
+  const [formularioInstancias, setFormularioInstancias] = useState<FormularioInstancia[]>([]);
+  useEffect(() => {
+    let cancelado = false;
+    DataService.getFormularioInstancias({ entidadeId: colaborador.id })
+      .then((instancias) => {
+        if (!cancelado) setFormularioInstancias(instancias);
+      })
+      .catch((e) => console.error('Erro ao carregar histórico de avaliações:', e));
+    return () => {
+      cancelado = true;
+    };
+  }, [colaborador.id]);
 
   // Estados locais para filtros da timeline
   const [timelineSearch, setTimelineSearch] = useState('');
@@ -984,6 +1002,15 @@ export default function ColaboradorProfile({
                     </>
                   );
                 })()}
+              </div>
+
+              {/* Histórico de Avaliações — Motor de Formulários (Sprint 4) */}
+              <div className="bg-emerald-50 rounded-xl p-3 col-span-2">
+                <div className="flex items-center gap-2 mb-2">
+                  <TrendingUp size={14} className="text-emerald-600" />
+                  <span className="text-[10px] font-semibold text-emerald-700 uppercase">Histórico de Avaliações</span>
+                </div>
+                <HistoricoInstancias instancias={formularioInstancias} vazio="Nenhuma avaliação concluída pelo motor de formulários ainda." />
               </div>
 
               {/* Último Reconhecimento */}

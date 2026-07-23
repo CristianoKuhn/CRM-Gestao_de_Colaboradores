@@ -154,8 +154,9 @@ export default function Dashboard({
     isOpen: boolean;
     colaborador: Colaborador | null;
     milestone: string;
+    templateFamiliaId: string;
     dataLimite?: string;
-  }>({ isOpen: false, colaborador: null, milestone: '' });
+  }>({ isOpen: false, colaborador: null, milestone: '', templateFamiliaId: 'avaliacao-experiencia' });
 
   // Carregar alertas e configurações
   useEffect(() => {
@@ -466,24 +467,15 @@ export default function Dashboard({
   const lembretesAcompanhamento = calculateReminders();
 
   const handleCompleteMilestone = async (col: Colaborador, milestone: string, prazoData?: string) => {
-    // Se for avaliação 180°, abrir o modal específico (migração para o motor
-    // genérico está planejada para o Sprint 4).
-    if (milestone === '180') {
-      setModalAvaliacao180({
-        isOpen: true,
-        colaborador: col,
-        milestone: milestone,
-      });
-      return;
-    }
-
-    // Avaliação de Experiência (15/30/60/90) — Motor de Formulários (Sprint 3):
-    // abre o formulário digital em vez de marcar concluído sem preencher nada.
-    // "Atrasada" nunca impede a abertura (ver acoesDisponiveis.ts / slaEngine.ts).
+    // Motor de Formulários (Sprint 3 e 4): tanto Avaliação de Experiência
+    // (15/30/60/90) quanto Avaliação 180° abrem o mesmo formulário genérico
+    // — o que muda é só qual família de template é usada. "Atrasada" nunca
+    // impede a abertura (ver acoesDisponiveis.ts / slaEngine.ts).
     setModalFormularioExperiencia({
       isOpen: true,
       colaborador: col,
       milestone,
+      templateFamiliaId: milestone === '180' ? 'avaliacao-180' : 'avaliacao-experiencia',
       dataLimite: prazoData,
     });
   };
@@ -1341,14 +1333,26 @@ export default function Dashboard({
       <ModalFormularioAvaliacao
         isOpen={modalFormularioExperiencia.isOpen}
         colaborador={modalFormularioExperiencia.colaborador}
-        templateFamiliaId="avaliacao-experiencia"
+        templateFamiliaId={modalFormularioExperiencia.templateFamiliaId}
         milestone={modalFormularioExperiencia.milestone}
         dataLimite={modalFormularioExperiencia.dataLimite}
         responsavelId={currentUser.id}
-        onClose={() => setModalFormularioExperiencia({ isOpen: false, colaborador: null, milestone: '' })}
+        onClose={() =>
+          setModalFormularioExperiencia({
+            isOpen: false,
+            colaborador: null,
+            milestone: '',
+            templateFamiliaId: 'avaliacao-experiencia',
+          })
+        }
         onConcluida={(colAtualizado: Colaborador) => {
           onUpdateColaborador(colAtualizado);
-          setModalFormularioExperiencia({ isOpen: false, colaborador: null, milestone: '' });
+          setModalFormularioExperiencia({
+            isOpen: false,
+            colaborador: null,
+            milestone: '',
+            templateFamiliaId: 'avaliacao-experiencia',
+          });
         }}
       />
     </div>

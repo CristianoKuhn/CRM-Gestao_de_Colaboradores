@@ -347,7 +347,6 @@ export const PlanejadorFerias: React.FC<PlanejadorFeriasProps> = ({
   const [conflitos, setConflitos] = useState<ConflitoFerias[]>([]);
   const [sugestoes, setSugestoes] = useState<SugestaoDataFerias[]>([]);
   const [mostrarModalUtilizado, setMostrarModalUtilizado] = useState<string | null>(null);
-  const [modoAvancado, setModoAvancado] = useState(false);
   const [dataInicioManualPeriodo, setDataInicioManualPeriodo] = useState('');
   const [criandoPeriodoManual, setCriandoPeriodoManual] = useState(false);
   
@@ -757,15 +756,6 @@ export const PlanejadorFerias: React.FC<PlanejadorFeriasProps> = ({
               <div className="bg-white border rounded-xl p-6 shadow-sm">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="font-semibold text-lg">📅 Nova Solicitação de Férias</h3>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={modoAvancado}
-                      onChange={(e) => setModoAvancado(e.target.checked)}
-                      className="rounded"
-                    />
-                    Modo Avançado
-                  </label>
                 </div>
                 
                 <div className="grid md:grid-cols-3 gap-4 mb-4">
@@ -798,27 +788,26 @@ export const PlanejadorFerias: React.FC<PlanejadorFeriasProps> = ({
                     </select>
                   </div>
                   
-                  {modoAvancado && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Período Aquisitivo
-                      </label>
-                      <select
-                        value={periodoSelecionado}
-                        onChange={(e) => setPeriodoSelecionado(e.target.value)}
-                        className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      >
-                        <option value="">Automático (mais antigo)</option>
-                        {periodosAquisitivos.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {format(parseISO(p.dataInicio), 'dd/MM/yyyy')} -{' '}
-                            {format(parseISO(p.dataFim), 'dd/MM/yyyy')} ({calcularDiasRestantes(p)} dias
-                            disponíveis)
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Período Aquisitivo
+                    </label>
+                    <select
+                      value={periodoSelecionado}
+                      onChange={(e) => setPeriodoSelecionado(e.target.value)}
+                      className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      <option value="">
+                        Automático{periodoAutomatico ? ` (${format(parseISO(periodoAutomatico.dataInicio), 'yyyy')}/${format(parseISO(periodoAutomatico.dataFim), 'yyyy')})` : ''}
+                      </option>
+                      {periodosAquisitivos.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {format(parseISO(p.dataInicio), 'yyyy')}/{format(parseISO(p.dataFim), 'yyyy')} — {format(parseISO(p.dataInicio), 'dd/MM/yyyy')} a{' '}
+                          {format(parseISO(p.dataFim), 'dd/MM/yyyy')} ({calcularDiasRestantes(p)} dias disponíveis)
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
                 
                 {/* Conflitos */}

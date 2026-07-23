@@ -5,6 +5,8 @@
 import { useState } from 'react';
 import { FormularioTemplate, RespostaCampo } from '../../../types';
 import CampoGenerico from './campos/CampoGenerico';
+import PainelResultado from './PainelResultado';
+import { calcularResultado } from '../engine/calculoEngine';
 import {
   deveExibirPergunta,
   listarPerguntasPendentes,
@@ -56,6 +58,9 @@ export default function FormularioRenderer({
 
   const progresso = calcularProgresso(template, respostasPorPergunta);
   const pendentes = listarPerguntasPendentes(template, respostasPorPergunta);
+  // Recalculado a cada render (ou seja, a cada mudança de resposta) — sem
+  // botão "calcular", conforme requisito da arquitetura (seção 5).
+  const resultado = calcularResultado(template, respostas, papel);
 
   const handleConcluirClick = () => {
     if (pendentes.length > 0) {
@@ -129,6 +134,8 @@ export default function FormularioRenderer({
             );
           })}
       </div>
+
+      <PainelResultado resultado={resultado} />
 
       {!somenteLeitura && (
         <div className="flex items-center justify-between pt-2 border-t border-slate-100">

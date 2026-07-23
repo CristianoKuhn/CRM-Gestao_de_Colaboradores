@@ -747,7 +747,10 @@ export class LocalDataService implements IDataService {
     );
   }
   async getTurnosEscalados(escalaId: string): Promise<TurnoEscalado[]> {
-    return escalaLocalGetArray<TurnoEscalado>('turnosEscalados').filter((t) => t.escalaId === escalaId);
+    // Mesmo comportamento do backend remoto (Apps Script): escalaId vazio/falsy
+    // significa "sem filtro" e retorna todos os turnos já escalados, não nenhum.
+    const todos = escalaLocalGetArray<TurnoEscalado>('turnosEscalados');
+    return escalaId ? todos.filter((t) => t.escalaId === escalaId) : todos;
   }
   async saveTurnosEscaladosBatch(escalaId: string, turnos: TurnoEscalado[]): Promise<void> {
     const outros = escalaLocalGetArray<TurnoEscalado>('turnosEscalados').filter((t) => t.escalaId !== escalaId);

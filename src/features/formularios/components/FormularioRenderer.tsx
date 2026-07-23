@@ -32,6 +32,8 @@ export interface FormularioRendererProps {
   onConcluir: () => void;
   salvando?: boolean;
   somenteLeitura?: boolean;
+  /** false esconde o botão "Concluir avaliação" (ex.: aba de autoavaliação do colaborador, que só salva rascunho). Default true. */
+  permiteConcluir?: boolean;
   /** Rótulo extra mostrado no cabeçalho, ex.: "Atrasada — vencida em 12/06" */
   avisoPrazo?: string;
 }
@@ -45,6 +47,7 @@ export default function FormularioRenderer({
   onConcluir,
   salvando,
   somenteLeitura,
+  permiteConcluir = true,
   avisoPrazo,
 }: FormularioRendererProps) {
   const [etapaAtual, setEtapaAtual] = useState(0);
@@ -168,7 +171,7 @@ export default function FormularioRenderer({
             >
               {salvando ? 'Salvando…' : 'Salvar rascunho'}
             </button>
-            {ultimaEtapa && (
+            {ultimaEtapa && permiteConcluir && (
               <button
                 type="button"
                 disabled={salvando}

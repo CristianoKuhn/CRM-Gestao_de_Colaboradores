@@ -22,8 +22,9 @@ import TurnosPadraoManager from './components/TurnosPadraoManager';
 import RegrasCoberturaManager from './components/RegrasCoberturaManager';
 import RotinasOperacionaisManager from './components/RotinasOperacionaisManager';
 import PerfilDisponibilidadeManager from './components/PerfilDisponibilidadeManager';
+import GeradorEscala from './components/GeradorEscala';
 import { ResultadoAssistente } from './engine/presetsConfiguracaoInicial';
-import { CalendarRange, Wand2, Settings2, Clock3, ShieldCheck, RefreshCw, Lock, ListChecks, UserCog } from 'lucide-react';
+import { CalendarRange, Wand2, Settings2, Clock3, ShieldCheck, RefreshCw, Lock, ListChecks, UserCog, Sparkles } from 'lucide-react';
 
 interface EscalaInteligenteProps {
   currentUser: Usuario;
@@ -32,7 +33,7 @@ interface EscalaInteligenteProps {
   cargos: Cargo[];
 }
 
-type AbaInterna = 'configuracao' | 'rotinas' | 'perfis' | 'turnos' | 'cobertura';
+type AbaInterna = 'configuracao' | 'rotinas' | 'perfis' | 'turnos' | 'cobertura' | 'gerador';
 
 const EscalaInteligente: React.FC<EscalaInteligenteProps> = ({ currentUser, empresaId, setores, cargos }) => {
   const [carregando, setCarregando] = useState(true);
@@ -121,7 +122,7 @@ const EscalaInteligente: React.FC<EscalaInteligenteProps> = ({ currentUser, empr
           </div>
           <div>
             <h1 className="font-bold text-xl text-slate-800">Escala Inteligente</h1>
-            <p className="text-sm text-slate-500">Base configurada. Calendário, validador e gerador chegam nas próximas fases.</p>
+            <p className="text-sm text-slate-500">Configure as regras e gere a escala automaticamente na aba "Gerador".</p>
           </div>
         </div>
         {podeConfigurar && (
@@ -151,6 +152,7 @@ const EscalaInteligente: React.FC<EscalaInteligenteProps> = ({ currentUser, empr
             { id: 'perfis', label: 'Perfil de disponibilidade', icon: UserCog },
             { id: 'turnos', label: 'Turnos padrão', icon: Clock3 },
             { id: 'cobertura', label: 'Cobertura mínima', icon: ShieldCheck },
+            { id: 'gerador', label: 'Gerador', icon: Sparkles },
           ] as { id: AbaInterna; label: string; icon: typeof Settings2 }[]
         ).map(({ id, label, icon: Icon }) => (
           <button
@@ -239,6 +241,17 @@ const EscalaInteligente: React.FC<EscalaInteligenteProps> = ({ currentUser, empr
             await DataService.deleteRegraCobertura(id);
             await carregarDados();
           }}
+          somenteLeitura={!podeConfigurar}
+        />
+      )}
+
+      {abaAtiva === 'gerador' && (
+        <GeradorEscala
+          currentUser={currentUser}
+          empresaId={empresaId}
+          colaboradores={colaboradores}
+          setores={setores}
+          cargos={cargos}
           somenteLeitura={!podeConfigurar}
         />
       )}

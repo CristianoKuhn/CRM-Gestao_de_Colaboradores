@@ -6,9 +6,11 @@ import { useEffect, useState } from 'react';
 import { Colaborador, FormularioInstancia, FormularioTemplate, RespostaAvaliacao180, RespostaCampo, WorkflowDefinicao } from '../types';
 import { DataService } from '../services/DataService';
 import FormularioRenderer from '../features/formularios/components/FormularioRenderer';
+import ComparativoRespostas from '../features/formularios/components/ComparativoRespostas';
 import { aplicarTransicao } from '../features/formularios/engine/workflowEngine';
 import { calcularSla } from '../features/formularios/engine/slaEngine';
 import { calcularResultado } from '../features/formularios/engine/calculoEngine';
+import { compararRespostasPorPapel, papelTemRespostas } from '../features/formularios/engine/comparativoEngine';
 
 // ═══════════════════════════════════════════════════════════════════
 // MOTOR DE FORMULÁRIOS INTELIGENTES COM WORKFLOW — Sprint 3 e 4
@@ -20,11 +22,16 @@ import { calcularResultado } from '../features/formularios/engine/calculoEngine'
 //
 // Sprint 4: a conclusão agora calcula o resultado de verdade (calculoEngine)
 // e persiste em `instancia.resultado`. Este modal também atende a Avaliação
-// 180° (migrada do ModalAvaliacao180 — que permanece no repositório, não
-// utilizado, até a limpeza planejada para o Sprint 6). Quando
+// 180° (migrada do antigo ModalAvaliacao180.tsx, removido do repositório no
+// Sprint 6 por estar comprovadamente sem uso). Quando
 // `tipoProcesso === 'avaliacao_180'`, a conclusão grava também em
 // `Resultados180` em paralelo, por compatibilidade com telas/relatórios
 // que ainda leem essa tabela (arquitetura, seção 2.6).
+//
+// Sprint 5: suporte a autoavaliação (papel 'colaborador') quando
+// `template.permiteAutoavaliacao` é true, com comparativo de percepção
+// (ComparativoRespostas / comparativoEngine). A conclusão do workflow só é
+// permitida a partir da aba "gestor" — a autoavaliação é informativa.
 // ═══════════════════════════════════════════════════════════════════
 
 export interface ModalFormularioAvaliacaoProps {
@@ -57,6 +64,10 @@ export default function ModalFormularioAvaliacao({
   const [workflow, setWorkflow] = useState<WorkflowDefinicao | null>(null);
   const [instancia, setInstancia] = useState<FormularioInstancia | null>(null);
   const [respostas, setRespostas] = useState<RespostaCampo[]>([]);
+  // Autoavaliação (Sprint 5): qual papel está sendo preenchido agora. Só é
+  // trocável quando template.permiteAutoavaliacao é true (ver tabs abaixo).
+  const [papelAtivo, setPapelAtivo] = useState<'gestor' | 'colaborador'>('gestor');
+  const [mostrarComparativo, setMostrarComparativo] = useState(false);
 
   useEffect(() => {
     if (!isOpen || !colaborador) return;
@@ -65,6 +76,8 @@ export default function ModalFormularioAvaliacao({
     const carregar = async () => {
       setCarregando(true);
       setErro(null);
+      setPapelAtivo('gestor');
+      setMostrarComparativo(false);
       try {
         const templates = await DataService.getFormularioTemplates(templateFamiliaId);
         const templateAtivo = templates.find((t: FormularioTemplate) => t.ativo) || templates[templates.length - 1];
@@ -131,7 +144,7 @@ export default function ModalFormularioAvaliacao({
 
   if (!isOpen || !colaborador) return null;
 
-  const papel = 'gestor'; // autoavaliação (papel 'colaborador') entra no Sprint 5
+  const papel = papelAtivo;
 
   const handleChangeResposta = (perguntaId: string, valor: unknown, comentario?: string) => {
     setRespostas((atuais) => {
@@ -283,7 +296,46 @@ export default function ModalFormularioAvaliacao({
           </p>
         )}
 
-        {!carregando && template && (
+        {!carregando && template?.permiteAutoavaliacao && (
+          <div className="flex items-center gap-2 mb-4">
+            {(['gestor', 'colaborador'] as const).map((opcaoPapel) => (
+              <button
+                key={opcaoPapel}
+                type="button"
+                onClick={() => {
+                  setPapelAtivo(opcaoPapel);
+                  setMostrarComparativo(false);
+                }}
+                className={`text-xs font-bold px-3 py-1.5 rounded-full transition ${
+                  papelAtivo === opcaoPapel
+                    ? 'bg-slate-800 text-white'
+                    : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                }`}
+              >
+                {opcaoPapel === 'gestor' ? 'Como gestor' : 'Autoavaliação do colaborador'}
+              </button>
+            ))}
+            {papelTemRespostas(respostas, 'gestor') && papelTemRespostas(respostas, 'colaborador') && (
+              <button
+                type="button"
+                onClick={() => setMostrarComparativo((v) => !v)}
+                className="ml-auto text-xs font-bold px-3 py-1.5 rounded-full bg-amber-50 text-amber-700 hover:bg-amber-100 transition"
+              >
+                {mostrarComparativo ? 'Ocultar comparativo' : 'Ver comparativo'}
+              </button>
+            )}
+          </div>
+        )}
+
+        {!carregando && template && mostrarComparativo && (
+          <div className="mb-4 bg-slate-50 rounded-xl p-3">
+            <ComparativoRespostas
+              diferencas={compararRespostasPorPapel(template, respostas, 'gestor', 'colaborador')}
+            />
+          </div>
+        )}
+
+        {!carregando && template && !mostrarComparativo && (
           <FormularioRenderer
             template={template}
             respostas={respostas}
@@ -293,6 +345,7 @@ export default function ModalFormularioAvaliacao({
             onConcluir={handleConcluir}
             salvando={salvando}
             avisoPrazo={avisoPrazo}
+            permiteConcluir={papelAtivo === 'gestor'}
           />
         )}
       </div>

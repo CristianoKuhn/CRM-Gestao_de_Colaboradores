@@ -54,6 +54,9 @@ import {
   FormularioInstancia,
   RespostaCampo,
   HistoricoEstadoInstancia,
+  ItemOperacional,
+  CategoriaItem,
+  ItemEvento,
 } from '../types';
 import { StorageAPI } from '../utils/storage';
 
@@ -223,6 +226,43 @@ function formulariosLocalSaveItem<T extends { id: string }>(key: string, item: T
   formulariosLocalSetArray(key, items);
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// MOTOR DE ITENS OPERACIONAIS — Sprint 1 — helper genérico de persistência
+// local (mesmo padrão dos blocos "Escala Inteligente" e "Formulários" acima,
+// só com prefixo próprio). Ver "Motor de Itens Operacionais — Proposta
+// Arquitetural", seções 13 e 19.
+// ═══════════════════════════════════════════════════════════════════
+const ITENS_LOCAL_PREFIX = 'gc_itens_op_';
+
+function itensLocalGetArray<T>(key: string): T[] {
+  try {
+    const raw = localStorage.getItem(ITENS_LOCAL_PREFIX + key);
+    return raw ? (JSON.parse(raw) as T[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function itensLocalSetArray<T>(key: string, items: T[]): void {
+  localStorage.setItem(ITENS_LOCAL_PREFIX + key, JSON.stringify(items));
+}
+
+function itensLocalSaveItem<T extends { id: string }>(key: string, item: T): void {
+  const items = itensLocalGetArray<T>(key);
+  const idx = items.findIndex((i) => i.id === item.id);
+  if (idx >= 0) items[idx] = item;
+  else items.push(item);
+  itensLocalSetArray(key, items);
+}
+
+function itensLocalDeleteItem(key: string, id: string): void {
+  const items = itensLocalGetArray<{ id: string }>(key);
+  itensLocalSetArray(
+    key,
+    items.filter((i) => i.id !== id)
+  );
+}
+
 export interface IDataService {
   getEmpresas(): Promise<Empresa[]>;
   getSetores(): Promise<Setor[]>;
@@ -379,6 +419,27 @@ export interface IDataService {
   saveRespostasCamposBatch(instanciaId: string, respostas: RespostaCampo[]): Promise<void>;
   getHistoricoEstadosInstancia(instanciaId: string): Promise<HistoricoEstadoInstancia[]>;
   saveHistoricoEstadoInstancia(historico: HistoricoEstadoInstancia): Promise<void>;
+
+  // Motor de Itens Operacionais — Sprint 1 (evolução do módulo "Tarefas").
+  // Ver "Motor de Itens Operacionais — Proposta Arquitetural", seções 13 e 19.
+  // `getTarefas`/`saveTarefa`/`toggleTarefa` (acima) continuam existindo e já
+  // operam sobre este mesmo motor por baixo (ver arquitetura, seção 17) — estas
+  // ações novas são a base genérica que os sprints seguintes vão consumir.
+  getItensOperacionais(filtro?: {
+    responsavelId?: string;
+    colaboradorId?: string;
+    setorId?: string;
+    tipoItem?: string;
+    categoriaId?: string;
+    estadoWorkflow?: string;
+  }): Promise<ItemOperacional[]>;
+  saveItemOperacional(item: ItemOperacional): Promise<void>;
+  deleteItemOperacional(id: string): Promise<void>;
+  getCategoriasItem(): Promise<CategoriaItem[]>;
+  saveCategoriaItem(categoria: CategoriaItem): Promise<void>;
+  deleteCategoriaItem(id: string): Promise<void>;
+  getItensEventos(itemId: string): Promise<ItemEvento[]>;
+  saveItemEvento(evento: ItemEvento): Promise<void>;
 
   uploadFile(
     file: File,
@@ -821,6 +882,46 @@ export class LocalDataService implements IDataService {
   }
   async saveHistoricoEstadoInstancia(historico: HistoricoEstadoInstancia): Promise<void> {
     formulariosLocalSaveItem('historicoEstadosInstancias', historico);
+  }
+
+  // ── Motor de Itens Operacionais — Sprint 1 ────────────────────────────
+  async getItensOperacionais(filtro?: {
+    responsavelId?: string;
+    colaboradorId?: string;
+    setorId?: string;
+    tipoItem?: string;
+    categoriaId?: string;
+    estadoWorkflow?: string;
+  }): Promise<ItemOperacional[]> {
+    let itens = itensLocalGetArray<ItemOperacional>('itensOperacionais');
+    if (filtro?.responsavelId) itens = itens.filter((i) => i.responsavelId === filtro.responsavelId);
+    if (filtro?.colaboradorId) itens = itens.filter((i) => i.colaboradorId === filtro.colaboradorId);
+    if (filtro?.setorId) itens = itens.filter((i) => i.setorIdPool === filtro.setorId);
+    if (filtro?.tipoItem) itens = itens.filter((i) => i.tipoItem === filtro.tipoItem);
+    if (filtro?.categoriaId) itens = itens.filter((i) => i.categoriaId === filtro.categoriaId);
+    if (filtro?.estadoWorkflow) itens = itens.filter((i) => i.estadoWorkflow === filtro.estadoWorkflow);
+    return itens;
+  }
+  async saveItemOperacional(item: ItemOperacional): Promise<void> {
+    itensLocalSaveItem('itensOperacionais', item);
+  }
+  async deleteItemOperacional(id: string): Promise<void> {
+    itensLocalDeleteItem('itensOperacionais', id);
+  }
+  async getCategoriasItem(): Promise<CategoriaItem[]> {
+    return itensLocalGetArray<CategoriaItem>('categoriasItem');
+  }
+  async saveCategoriaItem(categoria: CategoriaItem): Promise<void> {
+    itensLocalSaveItem('categoriasItem', categoria);
+  }
+  async deleteCategoriaItem(id: string): Promise<void> {
+    itensLocalDeleteItem('categoriasItem', id);
+  }
+  async getItensEventos(itemId: string): Promise<ItemEvento[]> {
+    return itensLocalGetArray<ItemEvento>('itensEventos').filter((ev) => ev.itemId === itemId);
+  }
+  async saveItemEvento(evento: ItemEvento): Promise<void> {
+    itensLocalSaveItem('itensEventos', evento);
   }
 
   async uploadFile(
@@ -3063,6 +3164,172 @@ export class GoogleScriptDataService implements IDataService {
       console.warn('Erro ao salvar histórico de estado de instância no GoogleScript:', e);
     }
   }
+
+  // ── Motor de Itens Operacionais — Sprint 1 ────────────────────────────
+  // Ver "Motor de Itens Operacionais — Proposta Arquitetural", seções 13 e 19.
+  // Mesmo padrão de mapeamento camelCase (front) <-> snake_case (planilha) já
+  // usado acima para Formulários.
+  async getItensOperacionais(filtro?: {
+    responsavelId?: string;
+    colaboradorId?: string;
+    setorId?: string;
+    tipoItem?: string;
+    categoriaId?: string;
+    estadoWorkflow?: string;
+  }): Promise<ItemOperacional[]> {
+    try {
+      const raw = await this.request<any[]>('getItensOperacionais', filtro || {});
+      return (raw || []).map((i) => ({
+        id: i.id,
+        tipoItem: i.tipo_item,
+        tipoAtribuicao: i.tipo_atribuicao || 'individual',
+        titulo: i.titulo,
+        descricao: i.descricao || undefined,
+        categoriaId: i.categoria_id || undefined,
+        criticidade: i.criticidade || undefined,
+        prioridade: i.prioridade || undefined,
+        colaboradorId: i.colaborador_id || undefined,
+        responsavelId: i.responsavel_id || undefined,
+        responsavelTipo: i.responsavel_tipo || undefined,
+        solicitanteId: i.solicitante_id || undefined,
+        setorIdPool: i.setor_id_pool || undefined,
+        papeisAlvoPool: Array.isArray(i.papeis_alvo_pool) ? i.papeis_alvo_pool : undefined,
+        workflowId: i.workflow_id,
+        estadoWorkflow: i.estado_workflow,
+        dependeDeIds: Array.isArray(i.depende_de_ids) ? i.depende_de_ids : undefined,
+        dataCriacao: i.data_criacao || undefined,
+        dataPrazo: i.data_prazo || undefined,
+        dataAssumida: i.data_assumida || undefined,
+        dataConclusao: i.data_conclusao || undefined,
+        dataValidacao: i.data_validacao || undefined,
+        dataEncerramento: i.data_encerramento || undefined,
+        origemRecorrenciaId: i.origem_recorrencia_id || undefined,
+        origemTemplateId: i.origem_template_id || undefined,
+        origemGatilhoId: i.origem_gatilho_id || undefined,
+        tipoOrigem: i.tipo_origem || undefined,
+        registroId: i.registro_id || undefined,
+        empresaId: i.empresa_id || undefined,
+      }));
+    } catch (e) {
+      return this.localFallback.getItensOperacionais(filtro);
+    }
+  }
+  async saveItemOperacional(item: ItemOperacional): Promise<void> {
+    await this.localFallback.saveItemOperacional(item);
+    try {
+      const body = {
+        id: item.id,
+        tipo_item: item.tipoItem,
+        tipo_atribuicao: item.tipoAtribuicao || 'individual',
+        titulo: item.titulo,
+        descricao: item.descricao || '',
+        categoria_id: item.categoriaId || '',
+        criticidade: item.criticidade || '',
+        prioridade: item.prioridade || '',
+        colaborador_id: item.colaboradorId || '',
+        responsavel_id: item.responsavelId || '',
+        responsavel_tipo: item.responsavelTipo || '',
+        setor_id_pool: item.setorIdPool || '',
+        papeis_alvo_pool: JSON.stringify(item.papeisAlvoPool || []),
+        solicitante_id: item.solicitanteId || '',
+        workflow_id: item.workflowId,
+        estado_workflow: item.estadoWorkflow,
+        depende_de_ids: JSON.stringify(item.dependeDeIds || []),
+        data_criacao: item.dataCriacao || '',
+        data_prazo: item.dataPrazo || '',
+        data_assumida: item.dataAssumida || '',
+        data_conclusao: item.dataConclusao || '',
+        data_validacao: item.dataValidacao || '',
+        data_encerramento: item.dataEncerramento || '',
+        origem_recorrencia_id: item.origemRecorrenciaId || '',
+        origem_template_id: item.origemTemplateId || '',
+        origem_gatilho_id: item.origemGatilhoId || '',
+        tipo_origem: item.tipoOrigem || '',
+        registro_id: item.registroId || '',
+        empresa_id: item.empresaId || '',
+      };
+      await this.request('saveItemOperacional', { data: body });
+    } catch (e) {
+      console.warn('Erro ao salvar item operacional no GoogleScript:', e);
+      throw e;
+    }
+  }
+  async deleteItemOperacional(id: string): Promise<void> {
+    await this.localFallback.deleteItemOperacional(id);
+    try {
+      await this.request('deleteItemOperacional', { id });
+    } catch (e) {
+      console.warn('Erro ao excluir item operacional no GoogleScript:', e);
+    }
+  }
+  async getCategoriasItem(): Promise<CategoriaItem[]> {
+    try {
+      const raw = await this.request<any[]>('getCategoriasItem');
+      return (raw || []).map((c) => ({
+        id: c.id,
+        nome: c.nome,
+        criticidadePadrao: c.criticidade_padrao || undefined,
+        cor: c.cor || undefined,
+        ativo: c.ativo === true || c.ativo === 'true',
+      }));
+    } catch (e) {
+      return this.localFallback.getCategoriasItem();
+    }
+  }
+  async saveCategoriaItem(categoria: CategoriaItem): Promise<void> {
+    await this.localFallback.saveCategoriaItem(categoria);
+    try {
+      const body = {
+        id: categoria.id,
+        nome: categoria.nome,
+        criticidade_padrao: categoria.criticidadePadrao || '',
+        cor: categoria.cor || '',
+        ativo: categoria.ativo,
+      };
+      await this.request('saveCategoriaItem', { data: body });
+    } catch (e) {
+      console.warn('Erro ao salvar categoria de item no GoogleScript:', e);
+    }
+  }
+  async deleteCategoriaItem(id: string): Promise<void> {
+    await this.localFallback.deleteCategoriaItem(id);
+    try {
+      await this.request('deleteCategoriaItem', { id });
+    } catch (e) {
+      console.warn('Erro ao excluir categoria de item no GoogleScript:', e);
+    }
+  }
+  async getItensEventos(itemId: string): Promise<ItemEvento[]> {
+    try {
+      const raw = await this.request<any[]>('getItensEventos', { itemId });
+      return (raw || []).map((ev) => ({
+        id: ev.id,
+        itemId: ev.item_id,
+        tipoEvento: ev.tipo_evento,
+        dadosEvento: ev.dados_evento && typeof ev.dados_evento === 'object' ? ev.dados_evento : undefined,
+        autorId: ev.autor_id || undefined,
+        data: ev.data,
+      }));
+    } catch (e) {
+      return this.localFallback.getItensEventos(itemId);
+    }
+  }
+  async saveItemEvento(evento: ItemEvento): Promise<void> {
+    await this.localFallback.saveItemEvento(evento);
+    try {
+      const body = {
+        id: evento.id,
+        item_id: evento.itemId,
+        tipo_evento: evento.tipoEvento,
+        dados_evento: JSON.stringify(evento.dadosEvento || {}),
+        autor_id: evento.autorId || '',
+        data: evento.data,
+      };
+      await this.request('saveItemEvento', { data: body });
+    } catch (e) {
+      console.warn('Erro ao salvar evento de item no GoogleScript:', e);
+    }
+  }
 }
 
 // -----------------------------------------------------------------
@@ -3483,6 +3750,39 @@ class DynamicDataService implements IDataService {
   }
   async saveHistoricoEstadoInstancia(historico: HistoricoEstadoInstancia): Promise<void> {
     await this.getService().saveHistoricoEstadoInstancia(historico);
+  }
+
+  // ── Motor de Itens Operacionais — Sprint 1 ────────────────────────────
+  async getItensOperacionais(filtro?: {
+    responsavelId?: string;
+    colaboradorId?: string;
+    setorId?: string;
+    tipoItem?: string;
+    categoriaId?: string;
+    estadoWorkflow?: string;
+  }): Promise<ItemOperacional[]> {
+    return this.getService().getItensOperacionais(filtro);
+  }
+  async saveItemOperacional(item: ItemOperacional): Promise<void> {
+    await this.getService().saveItemOperacional(item);
+  }
+  async deleteItemOperacional(id: string): Promise<void> {
+    await this.getService().deleteItemOperacional(id);
+  }
+  async getCategoriasItem(): Promise<CategoriaItem[]> {
+    return this.getService().getCategoriasItem();
+  }
+  async saveCategoriaItem(categoria: CategoriaItem): Promise<void> {
+    await this.getService().saveCategoriaItem(categoria);
+  }
+  async deleteCategoriaItem(id: string): Promise<void> {
+    await this.getService().deleteCategoriaItem(id);
+  }
+  async getItensEventos(itemId: string): Promise<ItemEvento[]> {
+    return this.getService().getItensEventos(itemId);
+  }
+  async saveItemEvento(evento: ItemEvento): Promise<void> {
+    await this.getService().saveItemEvento(evento);
   }
 
   async resetData(): Promise<void> {

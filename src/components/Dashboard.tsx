@@ -1,157 +1,398 @@
-# Motor de Formulários Inteligentes com Workflow — Documentação Técnica
-Gestão360 · CRM-Gestao_de_Colaboradores
-*Documento vivo — atualize esta seção sempre que o motor ganhar um novo tipo de processo, campo ou regra.*
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+import { useState } from 'react';
+import {
+  Users,
+  CheckSquare,
+  AlertTriangle,
+  Calendar,
+  ClipboardCheck,
+  ListTodo,
+  ArrowRight,
+  Sparkles,
+} from 'lucide-react';
+import {
+  Colaborador,
+  TimelineRegistro,
+  Tarefa,
+  Usuario,
+  OnboardingItem,
+  OnboardingChecklist,
+  AvaliacaoExperiencia,
+  ConfiguracaoAlertas,
+} from '../types';
+import ModalFormularioAvaliacao from './ModalFormularioAvaliacao';
+import PainelAnalyticsFormularios from '../features/formularios/components/PainelAnalyticsFormularios';
+import { getAcoesLembreteAvaliacao, calcularStatusPrazoLembrete } from '../features/formularios/engine/acoesDisponiveis';
 
----
+// ═══════════════════════════════════════════════════════════════════
+// Dashboard — reconstruído (o arquivo estava sobrescrito com a
+// documentação técnica do Motor de Formulários, sem nenhum import/export
+// válido: o build inteiro estava quebrado e nenhum lembrete de Avaliação
+// de Experiência/180° podia abrir, porque este era o componente que os
+// disparava). A documentação viva do motor deve ficar em
+// docs/motor-formularios.md, não em um .tsx — ver nota ao final do arquivo.
+//
+// Princípio "status é dado, ação é derivada" (ver acoesDisponiveis.ts):
+// nenhuma condição de atraso decide aqui se o botão de avaliação aparece —
+// ele sempre aparece; o atraso só muda o rótulo/cor.
+// ═══════════════════════════════════════════════════════════════════
 
-## 1. O que é isto
+interface DashboardProps {
+  colaboradores: Colaborador[];
+  timeline: TimelineRegistro[];
+  tarefas: Tarefa[];
+  onNavigateToList: (tab: string, filters?: any) => void;
+  onSelectColaborador: (id: string) => void;
+  onOpenNewRegistroModal: (colaboradorId?: string) => void;
+  currentUser: Usuario;
+  onUpdateColaborador: (colaborador: Colaborador) => Promise<Colaborador> | void;
+  onboardingItems: OnboardingItem[];
+  onboardingChecklists: OnboardingChecklist[];
+  onSaveOnboardingChecklist: (checklist: OnboardingChecklist) => void;
+  avaliacoesExperiencia: AvaliacaoExperiencia[];
+  onUpdateAvaliacaoExperiencia: (avaliacao: AvaliacaoExperiencia) => void;
+  configuracaoAlertas: ConfiguracaoAlertas;
+}
 
-Uma plataforma genérica de formulários corporativos com fluxo de trabalho, construída sobre React + TypeScript (frontend) e Google Apps Script + Google Sheets (backend). Ela nasceu para resolver um bug específico — o status "Atrasada" bloqueando a execução de avaliações — mas foi generalizada para suportar qualquer processo baseado em formulário: avaliações de experiência, 180°, 360°, anuais, feedbacks, PDI, pesquisas de clima/satisfação, onboarding, offboarding, checklists, auditorias, inspeções.
+interface LembreteAvaliacao {
+  colaborador: Colaborador;
+  milestone: string; // '15' | '30' | '60' | '90' | '180'
+  templateFamiliaId: string;
+  label: string;
+  dataLimite?: string;
+  diasRestantes: number;
+}
 
-**Princípio central, válido para todo o sistema:** *status é dado, ação é derivada*. Nenhuma tela decide sozinha se uma ação está disponível a partir de uma condição solta (`{atrasado} && <botão>`); essa decisão é sempre calculada por uma função do motor, a partir dos fatos (estado do workflow + indicador de prazo + papel do usuário).
+const HOJE = new Date();
 
----
+function diffEmDias(data: Date): number {
+  return Math.ceil((data.getTime() - HOJE.getTime()) / (1000 * 60 * 60 * 24));
+}
 
-## 2. Mapa de arquivos
+export default function Dashboard({
+  colaboradores,
+  timeline,
+  tarefas,
+  onNavigateToList,
+  onSelectColaborador,
+  onOpenNewRegistroModal,
+  currentUser,
+  onUpdateColaborador,
+  onboardingItems,
+  onboardingChecklists,
+  onSaveOnboardingChecklist,
+  avaliacoesExperiencia,
+  onUpdateAvaliacaoExperiencia,
+  configuracaoAlertas,
+}: DashboardProps) {
+  const [avaliacaoAberta, setAvaliacaoAberta] = useState<LembreteAvaliacao | null>(null);
 
-```
-src/types.ts                                   → entidades do motor (seção 4)
-src/services/DataService.ts                    → CRUD + fallback local + facade
+  const colaboradoresAtivos = colaboradores.filter((c) => c.situacao !== 'Desligado');
+  const colAcompanhamento = colaboradores.filter((c) => c.situacao === 'Em Acompanhamento');
+  const tarefasPendentes = tarefas.filter((t) => !t.concluida);
+  const tarefasAtrasadas = tarefasPendentes.filter((t) => new Date(t.vencimento) < HOJE);
 
-src/features/formularios/
-  engine/
-    workflowEngine.ts       → transições de estado, genérico por WorkflowDefinicao
-    slaEngine.ts             → atraso (eixo ortogonal ao workflow — seção 5)
-    validacaoEngine.ts       → obrigatoriedade + exibirSe
-    calculoEngine.ts         → média simples/ponderada, condicionais, parecer
-    comparativoEngine.ts     → diff de respostas entre papéis (autoavaliação)
-    acoesDisponiveis.ts      → motor simplificado usado pelo Dashboard (lembretes)
-  components/
-    FormularioRenderer.tsx   → orquestra um FormularioTemplate genérico
-    PainelResultado.tsx      → média/parecer em tempo real
-    HistoricoInstancias.tsx  → linha do tempo (usado no perfil do colaborador)
-    ComparativoRespostas.tsx → visão lado a lado gestor × colaborador
-    PainelAnalyticsFormularios.tsx → métricas agregadas (Dashboard)
-    campos/
-      CampoGenerico.tsx      → factory por PerguntaFormulario.tipo
-      CampoNota.tsx, CampoTextoCurto.tsx, CampoTextoLongo.tsx, CampoSimNao.tsx
+  // ── Lembretes de Avaliação de Experiência (15/30/60/90 dias) ────────────
+  // Fonte de verdade: as entidades AvaliacaoExperiencia já pré-geradas na
+  // criação do colaborador (ver App.handleAddColaborador). Mostra pendentes
+  // dentro da janela configurada, e SEMPRE as atrasadas (nunca escondidas).
+  const lembretesExperiencia: LembreteAvaliacao[] = avaliacoesExperiencia
+    .filter((a) => a.status === 'pendente')
+    .map((a): LembreteAvaliacao | null => {
+      const colaborador = colaboradores.find((c) => c.id === a.colaboradorId);
+      if (!colaborador || colaborador.situacao === 'Desligado') return null;
+      const diasRestantes = diffEmDias(new Date(a.dataVencimento));
+      if (diasRestantes > (configuracaoAlertas?.diasAntecedenciaAvaliacao180 ?? 30)) return null;
+      return {
+        colaborador,
+        milestone: String(a.dias),
+        templateFamiliaId: 'avaliacao-experiencia',
+        label: `Avaliação de ${a.dias} dias`,
+        dataLimite: a.dataVencimento,
+        diasRestantes,
+      };
+    })
+    .filter((l): l is LembreteAvaliacao => l !== null)
+    .sort((a, b) => a.diasRestantes - b.diasRestantes);
 
-src/components/
-  ModalFormularioAvaliacao.tsx → carrega template+instância+respostas e monta a tela
-  Dashboard.tsx                 → aciona o modal a partir dos lembretes
-  ColaboradorProfile.tsx        → exibe o HistoricoInstancias do colaborador
+  // ── Lembretes de Avaliação 180° ──────────────────────────────────────────
+  // Não existe entidade pré-gerada equivalente: a data-alvo é calculada a
+  // partir de dataAdmissao + prazoAvaliacao180 (meses, padrão 6), mesmo
+  // cálculo usado por gerarAlertasAutomaticos() no backend (Code.gs).
+  const lembretes180: LembreteAvaliacao[] = colaboradoresAtivos
+    .filter((c) => c.realizarExperiencia !== false)
+    .map((c): LembreteAvaliacao | null => {
+      if (!c.dataAdmissao) return null;
+      if ((c.avaliacoesCompletas || []).includes('180')) return null;
+      const dataAdmissao = new Date(c.dataAdmissao);
+      if (isNaN(dataAdmissao.getTime())) return null;
+      const prazoMeses = c.prazoAvaliacao180 ?? 6;
+      const dataAlvo = new Date(dataAdmissao);
+      dataAlvo.setMonth(dataAlvo.getMonth() + prazoMeses);
+      const diasRestantes = diffEmDias(dataAlvo);
+      if (diasRestantes > (configuracaoAlertas?.diasAntecedenciaAvaliacao180 ?? 30)) return null;
+      return {
+        colaborador: c,
+        milestone: '180',
+        templateFamiliaId: 'avaliacao-180',
+        label: 'Avaliação 180°',
+        dataLimite: dataAlvo.toISOString(),
+        diasRestantes,
+      };
+    })
+    .filter((l): l is LembreteAvaliacao => l !== null)
+    .sort((a, b) => a.diasRestantes - b.diasRestantes);
 
-Code.gs (Apps Script)           → SHEETS, ações get/save, seedFormulariosIniciais_()
-```
+  const todosOsLembretes = [...lembretes180, ...lembretesExperiencia].sort(
+    (a, b) => a.diasRestantes - b.diasRestantes
+  );
 
----
+  // ── Onboarding pendente ───────────────────────────────────────────────
+  const onboardingPendentes = colaboradoresAtivos
+    .map((c) => {
+      const itensDoSetor = onboardingItems.filter((i) => i.setorIds.includes(c.setorId));
+      if (itensDoSetor.length === 0) return null;
+      const checklist = onboardingChecklists.find((ck) => ck.colaboradorId === c.id);
+      const concluidos = checklist?.itemsConcluidos?.length || 0;
+      if (concluidos >= itensDoSetor.length) return null;
+      return { colaborador: c, total: itensDoSetor.length, concluidos };
+    })
+    .filter((o): o is { colaborador: Colaborador; total: number; concluidos: number } => o !== null);
 
-## 3. Camadas e responsabilidades
+  const abrirAvaliacao = (lembrete: LembreteAvaliacao) => setAvaliacaoAberta(lembrete);
 
-| Camada | Onde vive | Responsabilidade |
-|---|---|---|
-| Dado do processo | `FormularioTemplate` (planilha `FormularioTemplates`) | O que perguntar, como calcular, qual workflow seguir — **nunca hard-coded em componente** |
-| Fluxo | `WorkflowDefinicao` (planilha `WorkflowDefinicoes`) | Estados e transições, desacoplados de qualquer processo |
-| Instância | `FormularioInstancia` (planilha `FormularioInstancias`) | Uma execução do processo para uma entidade (hoje sempre um colaborador) |
-| Resposta | `RespostaCampo` (planilha `RespostasCampos`) | Um valor por pergunta × instância × papel |
-| Histórico | `HistoricoEstadoInstancia` (planilha `HistoricoEstadosInstancias`) | Toda transição de estado, com quem e quando |
-| Motores | `src/features/formularios/engine/*.ts` | Funções puras que leem os dados acima e devolvem decisões (estado, ação, cálculo, validação) |
-| UI | `FormularioRenderer` + `campos/*` | Renderiza `FormularioTemplate.categorias` sem nenhuma pergunta hard-coded |
-| Orquestração | `ModalFormularioAvaliacao.tsx` | Carrega tudo, chama os motores, persiste via `DataService` |
+  const handleConcluida = async (colaboradorAtualizado: Colaborador) => {
+    await onUpdateColaborador(colaboradorAtualizado);
+    if (avaliacaoAberta && avaliacaoAberta.milestone !== '180') {
+      const registro = avaliacoesExperiencia.find(
+        (a) => a.colaboradorId === avaliacaoAberta.colaborador.id && String(a.dias) === avaliacaoAberta.milestone
+      );
+      if (registro) {
+        onUpdateAvaliacaoExperiencia({
+          ...registro,
+          status: 'aprovado',
+          dataRealizacao: new Date().toISOString(),
+        });
+      }
+    }
+    setAvaliacaoAberta(null);
+  };
 
----
+  return (
+    <div className="p-6 md:p-8 flex flex-col gap-6">
+      {/* Cabeçalho */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-extrabold text-slate-900">Olá, {currentUser?.nome?.split(' ')[0]} 👋</h1>
+          <p className="text-sm text-slate-500">Aqui está o panorama da sua equipe hoje.</p>
+        </div>
+        <button
+          onClick={() => onOpenNewRegistroModal()}
+          className="flex items-center gap-2 bg-slate-900 text-white text-xs font-bold px-4 py-2.5 rounded-xl hover:bg-slate-800 transition"
+        >
+          <Sparkles size={14} /> Novo Feedback
+        </button>
+      </div>
 
-## 4. Modelo de dados (resumo — ver `types.ts` para os tipos completos)
+      {/* Cards de estatísticas */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <button
+          onClick={() => onNavigateToList('colaboradores')}
+          className="bg-white border border-slate-100 rounded-2xl p-4 text-left hover:shadow-md transition"
+        >
+          <Users size={18} className="text-teal-500 mb-2" />
+          <p className="text-2xl font-extrabold text-slate-900">{colaboradoresAtivos.length}</p>
+          <p className="text-xs text-slate-400 font-semibold">Colaboradores ativos</p>
+        </button>
+        <button
+          onClick={() => onNavigateToList('tarefas')}
+          className="bg-white border border-slate-100 rounded-2xl p-4 text-left hover:shadow-md transition"
+        >
+          <CheckSquare size={18} className="text-indigo-500 mb-2" />
+          <p className="text-2xl font-extrabold text-slate-900">{tarefasPendentes.length}</p>
+          <p className="text-xs text-slate-400 font-semibold">
+            Tarefas pendentes {tarefasAtrasadas.length > 0 && `(${tarefasAtrasadas.length} atrasadas)`}
+          </p>
+        </button>
+        <div className="bg-white border border-slate-100 rounded-2xl p-4">
+          <AlertTriangle size={18} className="text-amber-500 mb-2" />
+          <p className="text-2xl font-extrabold text-slate-900">{colAcompanhamento.length}</p>
+          <p className="text-xs text-slate-400 font-semibold">Em acompanhamento</p>
+        </div>
+        <div className="bg-white border border-slate-100 rounded-2xl p-4">
+          <ClipboardCheck size={18} className="text-rose-500 mb-2" />
+          <p className="text-2xl font-extrabold text-slate-900">{todosOsLembretes.length}</p>
+          <p className="text-xs text-slate-400 font-semibold">Avaliações pendentes</p>
+        </div>
+      </div>
 
-- **`FormularioTemplate`** — versionado (`templateFamiliaId` + `versao`); uma vez que exista instância vinculada a um `id` de template, esse `id` é imutável (o backend recusa o save — ver `Code.gs`, ação `saveFormularioTemplate`). `categorias` e `regrasCalculo` são JSON dentro da célula, seguindo o padrão já usado no projeto para estruturas de forma variável.
-- **`WorkflowDefinicao`** — `estados` + `transicoes`, reutilizável por N templates. Hoje existem dois: `workflow-simples` (pendente → concluída) e `workflow-padrao-avaliacao` (pendente → em_andamento → concluída → arquivada, com ramificações para rascunho/justificar atraso/reagendar).
-- **`FormularioInstancia`** — carrega snapshot organizacional (`setorId`, `cargoId`, `liderId`, `empresaId`) no momento da criação, para Analytics não quebrar se o colaborador mudar de setor depois. Também tem os campos reservados de IA (seção 7).
-- **`RespostaCampo`** — uma linha por pergunta × instância × papel. É o "papel" (`'gestor'`, `'colaborador'`, ...) que sustenta autoavaliação sem duplicar entidade.
-- **`HistoricoEstadoInstancia`** — gravado toda vez que `estadoWorkflow` muda de fato (não em transições "mesmo estado", como salvar rascunho).
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Lembretes de Avaliação (Experiência + 180°) */}
+        <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm">
+          <div className="flex items-center gap-2 mb-4">
+            <Calendar size={18} className="text-slate-500" />
+            <h2 className="text-sm font-bold text-slate-800">Avaliações a realizar</h2>
+          </div>
+          {todosOsLembretes.length === 0 ? (
+            <p className="text-xs text-slate-400">Nenhuma avaliação pendente no momento. 🎉</p>
+          ) : (
+            <div className="flex flex-col gap-2 max-h-96 overflow-y-auto">
+              {todosOsLembretes.map((lembrete) => {
+                const statusPrazo = calcularStatusPrazoLembrete(lembrete.diasRestantes);
+                const acoes = getAcoesLembreteAvaliacao(lembrete.milestone);
+                return (
+                  <div
+                    key={`${lembrete.colaborador.id}-${lembrete.milestone}`}
+                    className="flex items-center justify-between bg-slate-50 rounded-xl px-3 py-2.5"
+                  >
+                    <div className="min-w-0">
+                      <button
+                        onClick={() => onSelectColaborador(lembrete.colaborador.id)}
+                        className="text-xs font-bold text-slate-700 hover:text-teal-600 truncate block"
+                      >
+                        {lembrete.colaborador.nome}
+                      </button>
+                      <p
+                        className={`text-[10px] font-semibold ${
+                          statusPrazo === 'atrasado' ? 'text-rose-500' : 'text-slate-400'
+                        }`}
+                      >
+                        {lembrete.label} ·{' '}
+                        {statusPrazo === 'atrasado'
+                          ? `Atrasada há ${Math.abs(lembrete.diasRestantes)} dia(s)`
+                          : `Vence em ${lembrete.diasRestantes} dia(s)`}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => abrirAvaliacao(lembrete)}
+                      className="shrink-0 text-[11px] font-bold px-3 py-1.5 rounded-full bg-teal-50 text-teal-700 hover:bg-teal-100 transition whitespace-nowrap"
+                    >
+                      {acoes[0]?.label || 'Realizar'}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
 
----
+        {/* Tarefas pendentes */}
+        <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <ListTodo size={18} className="text-slate-500" />
+              <h2 className="text-sm font-bold text-slate-800">Tarefas de Liderança</h2>
+            </div>
+            <button
+              onClick={() => onNavigateToList('tarefas')}
+              className="text-[11px] font-bold text-teal-600 hover:text-teal-700 flex items-center gap-1"
+            >
+              Ver todas <ArrowRight size={12} />
+            </button>
+          </div>
+          {tarefasPendentes.length === 0 ? (
+            <p className="text-xs text-slate-400">Nenhuma tarefa pendente. 🎉</p>
+          ) : (
+            <div className="flex flex-col gap-2 max-h-96 overflow-y-auto">
+              {tarefasPendentes.slice(0, 8).map((task) => {
+                const col = colaboradores.find((c) => c.id === task.colaboradorId);
+                const atrasada = new Date(task.vencimento) < HOJE;
+                return (
+                  <div key={task.id} className="flex items-center justify-between bg-slate-50 rounded-xl px-3 py-2.5">
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-slate-700 truncate">{task.titulo}</p>
+                      <p className="text-[10px] text-slate-400">{col?.nome || 'Geral'}</p>
+                    </div>
+                    <span
+                      className={`shrink-0 text-[10px] font-bold px-2 py-1 rounded-full ${
+                        atrasada ? 'bg-rose-50 text-rose-600' : 'bg-slate-100 text-slate-500'
+                      }`}
+                    >
+                      {new Date(task.vencimento).toLocaleDateString('pt-BR')}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
 
-## 5. A separação SLA × Workflow
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Colaboradores em acompanhamento */}
+        <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm">
+          <div className="flex items-center gap-2 mb-4">
+            <AlertTriangle size={18} className="text-amber-500" />
+            <h2 className="text-sm font-bold text-slate-800">Em acompanhamento</h2>
+          </div>
+          {colAcompanhamento.length === 0 ? (
+            <p className="text-xs text-slate-400">Nenhum colaborador em acompanhamento.</p>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {colAcompanhamento.map((c) => (
+                <button
+                  key={c.id}
+                  onClick={() => onSelectColaborador(c.id)}
+                  className="flex items-center justify-between bg-amber-50/50 rounded-xl px-3 py-2.5 text-left hover:bg-amber-50 transition"
+                >
+                  <span className="text-xs font-bold text-slate-700">{c.nome}</span>
+                  <ArrowRight size={12} className="text-amber-500" />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
 
-Esta é a decisão de arquitetura mais importante do projeto — é o que resolve o bug original de forma que nenhum processo futuro possa reintroduzi-lo.
+        {/* Onboarding pendente */}
+        <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm">
+          <div className="flex items-center gap-2 mb-4">
+            <ClipboardCheck size={18} className="text-slate-500" />
+            <h2 className="text-sm font-bold text-slate-800">Onboarding em andamento</h2>
+          </div>
+          {onboardingPendentes.length === 0 ? (
+            <p className="text-xs text-slate-400">Nenhum onboarding em aberto.</p>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {onboardingPendentes.map(({ colaborador, total, concluidos }) => (
+                <button
+                  key={colaborador.id}
+                  onClick={() => onSelectColaborador(colaborador.id)}
+                  className="flex items-center justify-between bg-slate-50 rounded-xl px-3 py-2.5 text-left hover:bg-slate-100 transition"
+                >
+                  <span className="text-xs font-bold text-slate-700">{colaborador.nome}</span>
+                  <span className="text-[10px] font-bold text-slate-500">
+                    {concluidos}/{total} itens
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
 
-`estadoWorkflow` (pendente/em_andamento/concluída/...) e `slaStatus` (no_prazo/atrasado/sem_prazo, calculado por `slaEngine.calcularSla`) são **eixos independentes**. Nenhum grafo de `WorkflowDefinicao` tem um nó `"atrasado"`. A lista de ações de uma instância (`getAcoesDisponiveis`, ou a versão simplificada `getAcoesLembreteAvaliacao` usada hoje no Dashboard) é sempre calculada a partir do `estadoWorkflow`; o `slaStatus` no máximo **adiciona** ações (justificar atraso, reagendar) ou muda a cor do badge — nunca remove a ação de realizar/continuar.
+      {/* Analytics do Motor de Formulários (evolução/comparativos agregados) */}
+      <PainelAnalyticsFormularios />
 
----
+      {avaliacaoAberta && (
+        <ModalFormularioAvaliacao
+          isOpen={!!avaliacaoAberta}
+          colaborador={avaliacaoAberta.colaborador}
+          templateFamiliaId={avaliacaoAberta.templateFamiliaId}
+          milestone={avaliacaoAberta.milestone}
+          dataLimite={avaliacaoAberta.dataLimite}
+          responsavelId={currentUser.id}
+          onClose={() => setAvaliacaoAberta(null)}
+          onConcluida={handleConcluida}
+        />
+      )}
+    </div>
+  );
+}
 
-## 6. Motor de cálculo — como funciona a prioridade
-
-`calculoEngine.calcularResultado` aplica todas as regras de `template.regrasCalculo` e, para o parecer final, cada regra que "vence" propõe um candidato com uma prioridade:
-
-| Tipo de regra | Prioridade |
-|---|---|
-| `nota_minima_obrigatoria` (`seFalhar`) | 1000 (sempre vence) |
-| `condicional` (`entao.prioridade`) | 100 por padrão, customizável |
-| `faixa_parecer` | -1 (é o "padrão", qualquer regra mais específica sobrescreve) |
-
-O parecer final é sempre o candidato de maior prioridade entre os que dispararam — **independente da ordem das regras no array**. É assim que "se Segurança < 8 → Reprovado, mesmo com média 9" funciona sem nenhum código específico do processo.
-
-`formula_customizada` está no tipo (`RegraCalculo.tipo`) e é ignorada com segurança pelo motor — reservada para quando a avaliação de expressões customizadas for implementada.
-
----
-
-## 7. Preparação para IA (não implementada)
-
-Campos reservados em `FormularioInstancia`, todos nulos até a funcionalidade existir: `iaParecerTecnico`, `iaFeedbackGestor`, `iaFeedbackColaborador`, `iaPontosFortes`, `iaPontosMelhoria`, `iaSugestoesPdi`, `iaRecomendacoesTreinamento`, `iaGeradoEm`, `iaModeloUsado`.
-
-**Ponto de integração:** `ModalFormularioAvaliacao.handleConcluir` (frontend) é onde a instância é marcada como concluída. É ali — ou numa ação nova no `Code.gs` equivalente (`concluirInstanciaComIA`, por exemplo) — que uma chamada a um serviço de IA entraria, populando os campos acima antes ou depois de `saveFormularioInstancia`. `RespostaCampo.comentario` e respostas de texto são guardadas como texto plano (nunca HTML), exatamente para serem consumidas diretamente como contexto por um LLM sem parsing extra.
-
----
-
-## 8. Preparação para Analytics (implementado: leitura inicial)
-
-`PainelAnalyticsFormularios.tsx` já prova a modelagem: busca todas as `FormularioInstancia`, filtra concluídas e calcula em memória — total concluídas, média geral, distribuição de parecer, tempo médio de conclusão (`dataConclusao - dataInicio`). Nenhuma tabela de agregação foi criada; os dados brutos (respostas normalizadas linha a linha, snapshot organizacional, timestamps de transição) já sustentam isso.
-
-Perguntas ainda não respondidas por código, mas que a modelagem já sustenta sem migração: "qual competência tem menor média" (agrupar `RespostasCampos` por `pergunta_id`), "qual gestor tem maior índice de aprovação" (cruzar `resultado.parecerFinal` com `responsavelId`), "qual departamento evoluiu mais" (cruzar `setorId` snapshot com evolução de `mediaPonderada` ao longo do tempo por colaborador).
-
----
-
-## 9. Como adicionar um novo tipo de processo (ex.: Pesquisa de Clima)
-
-Nenhuma linha de código deveria ser necessária além de, no máximo, um novo tipo de pergunta (se nenhum dos existentes servir). Passo a passo:
-
-1. Escolher ou criar um `WorkflowDefinicao` (o `workflow-simples` já serve para processos sem aprovação/rascunho complexo).
-2. Criar um `FormularioTemplate` novo: `templateFamiliaId` único, `tipoProcesso` livre (ex.: `'pesquisa_clima'`), `categorias`/`perguntas` no formato de `PerguntaFormulario`, `regrasCalculo` (pode ser vazio se não precisar de parecer automático).
-3. Se o processo não for por colaborador (ex.: uma auditoria de loja), usar `entidadeTipo` diferente de `'colaborador'` ao criar a `FormularioInstancia` — o modelo já suporta.
-4. Reaproveitar `ModalFormularioAvaliacao.tsx` como referência de orquestração, ou construir um modal próprio que monte `FormularioRenderer` do mesmo jeito — o componente já é genérico.
-
-## 10. Como adicionar um novo tipo de campo
-
-Criar `src/features/formularios/components/campos/CampoNovoTipo.tsx` seguindo a interface `CampoProps` (`CampoNota.tsx`) e registrar no `switch` de `CampoGenerico.tsx`. Nenhuma outra tela precisa mudar.
-
-## 11. Como adicionar uma nova regra de cálculo
-
-Adicionar o `tipo` em `RegraCalculo` (`types.ts`) e um `case` novo em `aplicarRegra` (`calculoEngine.ts`). O contrato de saída é sempre: ou escreve em `estado.mediaGeral`/`mediaPonderada`/`camposCalculados`, ou empilha um candidato em `candidatosParecer` com uma prioridade.
-
----
-
-## 12. Histórico dos sprints
-
-| Sprint | Entregue |
-|---|---|
-| 1 | Correção do bug (atrasada nunca esconde a ação) + primeira separação status/ação |
-| 2 | Modelagem completa (5 novas abas), ações no Apps Script, `DataService`, `workflowEngine`/`slaEngine`, seed dos 2 workflows + template v1 de Experiência |
-| 3 | Formulário digital genérico (`FormularioRenderer`, campos, `validacaoEngine`), rascunho persistido |
-| 4 | `calculoEngine`, parecer automático, `PainelResultado` em tempo real, `HistoricoInstancias` no perfil, migração da Avaliação 180° para o motor genérico (com escrita em paralelo em `Resultados180`) |
-| 5 | `permiteAutoavaliacao`, `comparativoEngine`, `ComparativoRespostas`, `PainelAnalyticsFormularios` |
-| 6 | Preparação de IA (já coberta desde o Sprint 2, documentada aqui), esta documentação, remoção do `ModalAvaliacao180.tsx` (código morto) |
-
----
-
-## 13. Compatibilidade mantida de propósito (não remover sem avaliar)
-
-- **`Resultados180`** continua recebendo escrita em paralelo quando uma Avaliação 180° é concluída pelo motor genérico. Remover exige confirmar que nenhuma tela/relatório antigo ainda lê essa planilha diretamente.
-- **`Colaborador.avaliacoesCompletas`** continua sendo atualizado a cada conclusão (Experiência e 180°), porque `Dashboard.calculateReminders` ainda o usa para não gerar lembrete de algo já concluído. A fonte de verdade real passou a ser `FormularioInstancia.estadoWorkflow === 'concluida'`, mas a migração completa dessa leitura não foi feita.
-
-## 14. Limitações conhecidas / próximos passos sugeridos
-
-- Os tipos de pergunta `numero`, `data`, `multipla_escolha`, `lista`, `escala`, `upload_arquivo`, `assinatura` e `campo_calculado` estão previstos no modelo (`TipoPergunta`) mas **não têm componente de campo implementado** — `CampoGenerico` mostra um aviso neutro se um template os referenciar. Implementar sob demanda, seguindo a seção 10.
-- `formula_customizada` (motor de cálculo) está no contrato mas não tem avaliador de expressão implementado.
-- A geração automática de `FormularioInstancia` a partir de regras de RH (ex.: "criar avaliação de 90 dias automaticamente") não foi implementada — hoje a instância só é criada na primeira vez que alguém abre o formulário pelo Dashboard. Isso é diferente de `gerarAlertasAutomaticos()`, que continua gerando os *lembretes* visuais independentemente.
-- Não há tela de administração para criar/editar `FormularioTemplate` e `WorkflowDefinicao` pela interface — hoje isso é feito só via `seedFormulariosIniciais_()` ou diretamente na planilha.
-- `ModalAvaliacao180.tsx` deve ser **apagado do repositório** (nenhum arquivo mais o importa desde o Sprint 6).
+// NOTA: a documentação técnica completa do Motor de Formulários (antes
+// indevidamente salva por cima deste componente) deve viver em
+// docs/motor-formularios.md, não em um arquivo .tsx — recriar o doc lá se
+// for necessário; um componente React precisa de código, não de prosa.

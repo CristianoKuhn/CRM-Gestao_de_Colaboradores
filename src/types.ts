@@ -934,6 +934,9 @@ export interface FormularioTemplate {
   tipoProcesso: string; // string livre e extensível — nunca union fechada
   workflowId: string;
   ativo: boolean; // só a versão ativa de cada família é usada para gerar novas instâncias
+  // Sprint 5: quando true, o modal oferece a aba "Autoavaliação do colaborador"
+  // além de "Como gestor" (ver ModalFormularioAvaliacao / comparativoEngine).
+  permiteAutoavaliacao?: boolean;
   categorias: CategoriaFormulario[];
   regrasCalculo: RegraCalculo[];
   aparencia?: Record<string, unknown>;

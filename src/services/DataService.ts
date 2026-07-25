@@ -1599,6 +1599,7 @@ export class GoogleScriptDataService implements IDataService {
           u.setor_id ?? u.setorId
         ),
         lideresSupervisionados: parseSetoresPermitidos(u.lideres_supervisionados ?? u.lideresSupervisionados, undefined),
+        dashboardsHabilitados: parseSetoresPermitidos(u.dashboards_habilitados ?? u.dashboardsHabilitados, undefined),
         ativo: u.ativo === true || u.ativo === 'true' || u.ativo === 1 || u.ativo === '1' || u.ativo === undefined,
         ultimo_login: String(u.ultimo_login || u.ultimoLogin || '')
       }));
@@ -1619,6 +1620,7 @@ export class GoogleScriptDataService implements IDataService {
       setor_id: usuario.setoresPermitidos?.[0] || usuario.setor_id || '',
       setores_permitidos: JSON.stringify(usuario.setoresPermitidos || (usuario.setor_id ? [usuario.setor_id] : [])),
       lideres_supervisionados: JSON.stringify(usuario.lideresSupervisionados || []),
+      dashboards_habilitados: JSON.stringify(usuario.dashboardsHabilitados || []),
       ativo: usuario.ativo,
       ultimo_login: usuario.ultimo_login || ''
     };

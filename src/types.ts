@@ -185,6 +185,9 @@ export interface Usuario {
   // colaboradores desses líderes, além dos seus próprios setoresPermitidos — sem precisar
   // atribuir múltiplos líderes por colaborador (ver documentação técnica, seção 12).
   lideresSupervisionados?: string[];
+  // Dashboards que este usuário pode ver na Sidebar — lista vazia/ausente
+  // equivale a "todos habilitados" (ver dashboardVisivelParaUsuario em Sidebar.tsx).
+  dashboardsHabilitados?: string[];
   ativo: boolean;
   ultimo_login?: string;
 }

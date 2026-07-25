@@ -46,6 +46,11 @@ export interface Colaborador {
   realizarExperiencia?: boolean;
   avaliacoesCompletas?: string[];
   dataNascimento?: string;
+  // Regime contratual — usado pelo Motor de Disponibilidade Operacional para
+  // diferenciar regras de direito a férias/ausências por tipo de vínculo.
+  // Opcional e retrocompatível: colaboradores existentes sem este campo
+  // continuam tratados como CLT (padrão) até serem editados.
+  regime?: 'CLT' | 'PJ' | 'Estagiario' | 'Outro';
 }
 
 export type TipoRegistro =
@@ -180,12 +185,6 @@ export interface Usuario {
   // colaboradores desses líderes, além dos seus próprios setoresPermitidos — sem precisar
   // atribuir múltiplos líderes por colaborador (ver documentação técnica, seção 12).
   lideresSupervisionados?: string[];
-  // Controle de dashboards visíveis no menu lateral (Sidebar). Guarda os ids dos itens de
-  // menu (ver src/utils/dashboards.ts) que este usuário pode ver, além do "dashboard"
-  // principal, que é sempre visível. `undefined` ou array vazio = todos os dashboards
-  // habilitados (comportamento padrão/retrocompatível — usuários já cadastrados antes
-  // desta feature continuam vendo tudo, sem precisar de migração de dados).
-  dashboardsHabilitados?: string[];
   ativo: boolean;
   ultimo_login?: string;
 }
@@ -368,6 +367,60 @@ export interface PeriodoAquisitivo {
   dataConclusao?: string; // Quando foi concluído
   marcaComoUtilizado?: boolean; // Se foi marcado como já utilizado
   observacoes?: string;
+}
+
+// ============================================================================
+// MOTOR DE DISPONIBILIDADE OPERACIONAL — entidades genéricas (Fase 2: primeira
+// implementação é o Motor de Férias, mas o desenho já nasce reutilizável para
+// qualquer ausência futura: day off, folga, licença, treinamento, banco de
+// horas, evento). Ver documento de arquitetura "Motor de Gestão de Férias e
+// Disponibilidade Operacional".
+// ============================================================================
+
+// Tipo de ausência coberto por um movimento. 'ferias' é o único com uso real
+// hoje; os demais existem desde já para não exigir migração de schema quando
+// licenças/treinamentos/eventos forem implementados.
+export type TipoAusencia = 'ferias' | 'day_off' | 'folga' | 'licenca' | 'treinamento' | 'banco_horas' | 'evento';
+
+// Natureza do lançamento. 'ajuste_manual' é o mecanismo usado para migrar
+// histórico de colaboradores antigos sem apagar/recriar períodos.
+export type TipoMovimentoAusencia = 'gozo' | 'venda' | 'ajuste_manual' | 'cancelamento' | 'correcao';
+
+// Fonte de verdade do consumo de qualquer ausência. PeriodoAquisitivo.diasUsados
+// / diasRestantes / status são um CACHE derivado destes movimentos — nunca
+// devem ser editados diretamente fora da camada que recalcula esse cache
+// (ver features/disponibilidade/engine/CalculadoraSaldoPeriodo.ts). Um
+// movimento nunca é apagado nem editado depois de criado: para desfazer um
+// lançamento, cria-se um NOVO movimento com tipoMovimento: 'cancelamento',
+// mesmos `dias` e `ausenciaOrigemId` apontando para o movimento original —
+// o saldo final é sempre a soma de todos os lançamentos, nunca uma edição.
+export interface MovimentoAusencia {
+  id: string;
+  colaboradorId: string;
+  tipoAusencia: TipoAusencia;
+  tipoMovimento: TipoMovimentoAusencia;
+  periodoAquisitivoId?: string; // só relevante quando tipoAusencia === 'ferias'
+  ausenciaOrigemId?: string; // id do Ferias/DayOff/Folga/movimento que este lançamento se refere ou desfaz
+  dataInicio: string;
+  dataFim: string;
+  dias: number;
+  observacoes?: string;
+  criadoPor: string;
+  criadoEm: string;
+}
+
+// Auditoria genérica — não é específica de férias. Reutilizável por qualquer
+// entidade do sistema que precise de trilha de "quem fez o quê, quando"
+// sem apagar o estado anterior.
+export interface HistoricoAlteracao {
+  id: string;
+  entidade: string; // ex: 'periodo_aquisitivo' | 'movimento_ausencia'
+  entidadeId: string;
+  acao: 'criacao' | 'edicao' | 'cancelamento';
+  usuarioId: string;
+  dataHora: string;
+  estadoAnterior?: string; // snapshot em JSON, quando acao !== 'criacao'
+  observacao?: string;
 }
 
 // Histórico de Período Aquisitivo (visualização)

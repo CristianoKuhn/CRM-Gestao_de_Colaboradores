@@ -8,6 +8,7 @@ import {
   Usuario,
   Setor,
 } from '../types';
+import { DASHBOARDS_SELECIONAVEIS } from '../utils/dashboards';
 import {
   Search,
   Filter,
@@ -58,6 +59,9 @@ export default function Usuarios({
   const [perfil, setPerfil] = useState<Usuario['perfil']>('Lider');
   const [setoresPermitidos, setSetoresPermitidos] = useState<string[]>([]);
   const [lideresSupervisionados, setLideresSupervisionados] = useState<string[]>([]);
+  const [dashboardsHabilitados, setDashboardsHabilitados] = useState<string[]>(
+    DASHBOARDS_SELECIONAVEIS.map((d) => d.id)
+  );
   const [ativo, setAtivo] = useState(true);
 
   // Abrir modal para novo usuário
@@ -69,6 +73,7 @@ export default function Usuarios({
     setPerfil('Lider');
     setSetoresPermitidos([]);
     setLideresSupervisionados([]);
+    setDashboardsHabilitados(DASHBOARDS_SELECIONAVEIS.map((d) => d.id));
     setAtivo(true);
     setIsModalOpen(true);
   };
@@ -88,6 +93,11 @@ export default function Usuarios({
           : []
     );
     setLideresSupervisionados(usuario.lideresSupervisionados || []);
+    setDashboardsHabilitados(
+      usuario.dashboardsHabilitados?.length
+        ? usuario.dashboardsHabilitados
+        : DASHBOARDS_SELECIONAVEIS.map((d) => d.id)
+    );
     setAtivo(usuario.ativo);
     setIsModalOpen(true);
   };
@@ -110,6 +120,10 @@ export default function Usuarios({
         // Só faz sentido para Coordenador; limpa se o perfil for outro para não deixar
         // configuração "fantasma" de uma troca de perfil anterior.
         lideresSupervisionados: perfil === 'Coordenador' ? lideresSupervisionados : [],
+        // Se todos os itens estiverem marcados, grava vazio (== "todos habilitados", mesmo
+        // efeito, e mantém a planilha limpa em vez de listar tudo explicitamente).
+        dashboardsHabilitados:
+          dashboardsHabilitados.length === DASHBOARDS_SELECIONAVEIS.length ? [] : dashboardsHabilitados,
         ativo,
         ultimo_login: editingUsuario?.ultimo_login || '',
       };
@@ -587,6 +601,36 @@ export default function Usuarios({
                   </div>
                   <p className="text-[10px] text-slate-400 mt-1.5">
                     Líderes verão somente colaboradores dos setores marcados. Perfis administrativos mantêm visão total.
+                  </p>
+                </div>
+
+                {/* Dashboards habilitados */}
+                <div className="sm:col-span-2">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">
+                    Dashboards Habilitados
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-40 overflow-y-auto p-3 bg-slate-50 border border-slate-200 rounded-2xl">
+                    {DASHBOARDS_SELECIONAVEIS.map((d) => (
+                      <label key={d.id} className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          disabled={isSaving}
+                          checked={dashboardsHabilitados.includes(d.id)}
+                          onChange={(e) => {
+                            setDashboardsHabilitados((atuais) =>
+                              e.target.checked
+                                ? [...atuais, d.id]
+                                : atuais.filter((id) => id !== d.id)
+                            );
+                          }}
+                          className="h-4 w-4 rounded border-slate-300 text-teal-500 focus:ring-teal-500 cursor-pointer disabled:opacity-50"
+                        />
+                        {d.label}
+                      </label>
+                    ))}
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-1.5">
+                    O Dashboard principal é sempre visível. Desmarque aqui os módulos que este usuário não deve ver no menu lateral — por exemplo, "Escala Inteligente" enquanto o módulo ainda está em construção.
                   </p>
                 </div>
 

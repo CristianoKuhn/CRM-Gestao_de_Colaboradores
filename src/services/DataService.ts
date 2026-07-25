@@ -31,6 +31,8 @@ import {
   DayOff,
   Folga,
   PeriodoAquisitivo,
+  MovimentoAusencia,
+  HistoricoAlteracao,
   ConfiguracaoGestaoPessoas,
   AlertaFerias,
   ConfiguracaoFerias,
@@ -345,6 +347,11 @@ export interface IDataService {
   getPeriodosAquisitivos(): Promise<PeriodoAquisitivo[]>;
   savePeriodoAquisitivo(periodo: PeriodoAquisitivo): Promise<void>;
   deletePeriodoAquisitivo(id: string): Promise<void>;
+  // ── Motor de Disponibilidade Operacional — Fase 2 (Motor de Férias) ──
+  getMovimentosAusencia(colaboradorId?: string): Promise<MovimentoAusencia[]>;
+  saveMovimentoAusencia(movimento: MovimentoAusencia): Promise<void>;
+  getHistoricoAlteracoes(entidade?: string, entidadeId?: string): Promise<HistoricoAlteracao[]>;
+  saveHistoricoAlteracao(historico: HistoricoAlteracao): Promise<void>;
   getConfiguracaoGestaoPessoas(): Promise<ConfiguracaoGestaoPessoas>;
   saveConfiguracaoGestaoPessoas(config: ConfiguracaoGestaoPessoas): Promise<void>;
 
@@ -663,6 +670,25 @@ export class LocalDataService implements IDataService {
   }
   async deletePeriodoAquisitivo(id: string): Promise<void> {
     StorageAPI.deletePeriodoAquisitivo(id);
+  }
+  // ── Motor de Disponibilidade Operacional — Fase 2 (Motor de Férias) ──
+  // Segue o mesmo helper genérico do módulo de Escala Inteligente (não o
+  // StorageAPI legado usado acima) — é o padrão atual para módulos novos.
+  async getMovimentosAusencia(colaboradorId?: string): Promise<MovimentoAusencia[]> {
+    const todos = escalaLocalGetArray<MovimentoAusencia>('movimentosAusencia');
+    return colaboradorId ? todos.filter((m) => m.colaboradorId === colaboradorId) : todos;
+  }
+  async saveMovimentoAusencia(movimento: MovimentoAusencia): Promise<void> {
+    escalaLocalSaveItem('movimentosAusencia', movimento);
+  }
+  async getHistoricoAlteracoes(entidade?: string, entidadeId?: string): Promise<HistoricoAlteracao[]> {
+    let todos = escalaLocalGetArray<HistoricoAlteracao>('historicoAlteracoes');
+    if (entidade) todos = todos.filter((h) => h.entidade === entidade);
+    if (entidadeId) todos = todos.filter((h) => h.entidadeId === entidadeId);
+    return todos;
+  }
+  async saveHistoricoAlteracao(historico: HistoricoAlteracao): Promise<void> {
+    escalaLocalSaveItem('historicoAlteracoes', historico);
   }
   async getConfiguracaoGestaoPessoas(): Promise<ConfiguracaoGestaoPessoas> {
     return StorageAPI.getConfiguracaoGestaoPessoas();
@@ -1573,7 +1599,6 @@ export class GoogleScriptDataService implements IDataService {
           u.setor_id ?? u.setorId
         ),
         lideresSupervisionados: parseSetoresPermitidos(u.lideres_supervisionados ?? u.lideresSupervisionados, undefined),
-        dashboardsHabilitados: parseSetoresPermitidos(u.dashboards_habilitados ?? u.dashboardsHabilitados, undefined),
         ativo: u.ativo === true || u.ativo === 'true' || u.ativo === 1 || u.ativo === '1' || u.ativo === undefined,
         ultimo_login: String(u.ultimo_login || u.ultimoLogin || '')
       }));
@@ -1594,7 +1619,6 @@ export class GoogleScriptDataService implements IDataService {
       setor_id: usuario.setoresPermitidos?.[0] || usuario.setor_id || '',
       setores_permitidos: JSON.stringify(usuario.setoresPermitidos || (usuario.setor_id ? [usuario.setor_id] : [])),
       lideres_supervisionados: JSON.stringify(usuario.lideresSupervisionados || []),
-      dashboards_habilitados: JSON.stringify(usuario.dashboardsHabilitados || []),
       ativo: usuario.ativo,
       ultimo_login: usuario.ultimo_login || ''
     };
@@ -2186,6 +2210,88 @@ export class GoogleScriptDataService implements IDataService {
       await this.request('deletePeriodoAquisitivo', { id });
     } catch (e) {
       console.warn('Erro ao excluir período aquisitivo no GoogleScript:', e);
+    }
+  }
+  // ── Motor de Disponibilidade Operacional — Fase 2 (Motor de Férias) ──
+  async getMovimentosAusencia(colaboradorId?: string): Promise<MovimentoAusencia[]> {
+    try {
+      const raw = await this.request<any[]>('getMovimentosAusencia', { colaboradorId: colaboradorId || '' });
+      return (raw || []).map((r) => ({
+        id: r.id,
+        colaboradorId: r.colaborador_id,
+        tipoAusencia: r.tipo_ausencia,
+        tipoMovimento: r.tipo_movimento,
+        periodoAquisitivoId: r.periodo_aquisitivo_id || undefined,
+        ausenciaOrigemId: r.ausencia_origem_id || undefined,
+        dataInicio: r.data_inicio,
+        dataFim: r.data_fim,
+        dias: Number(r.dias) || 0,
+        observacoes: r.observacoes || undefined,
+        criadoPor: r.criado_por,
+        criadoEm: r.criado_em,
+      }));
+    } catch (e) {
+      return this.localFallback.getMovimentosAusencia(colaboradorId);
+    }
+  }
+  async saveMovimentoAusencia(movimento: MovimentoAusencia): Promise<void> {
+    await this.localFallback.saveMovimentoAusencia(movimento);
+    try {
+      const body = {
+        id: movimento.id,
+        colaborador_id: movimento.colaboradorId,
+        tipo_ausencia: movimento.tipoAusencia,
+        tipo_movimento: movimento.tipoMovimento,
+        periodo_aquisitivo_id: movimento.periodoAquisitivoId || '',
+        ausencia_origem_id: movimento.ausenciaOrigemId || '',
+        data_inicio: movimento.dataInicio,
+        data_fim: movimento.dataFim,
+        dias: movimento.dias,
+        observacoes: movimento.observacoes || '',
+        criado_por: movimento.criadoPor,
+        criado_em: movimento.criadoEm,
+      };
+      await this.request('saveMovimentoAusencia', { data: body });
+    } catch (e) {
+      console.warn('Erro ao salvar movimento de ausência no GoogleScript:', e);
+    }
+  }
+  async getHistoricoAlteracoes(entidade?: string, entidadeId?: string): Promise<HistoricoAlteracao[]> {
+    try {
+      const raw = await this.request<any[]>('getHistoricoAlteracoes', {
+        entidade: entidade || '',
+        entidadeId: entidadeId || '',
+      });
+      return (raw || []).map((r) => ({
+        id: r.id,
+        entidade: r.entidade,
+        entidadeId: r.entidade_id,
+        acao: r.acao,
+        usuarioId: r.usuario_id,
+        dataHora: r.data_hora,
+        estadoAnterior: r.estado_anterior || undefined,
+        observacao: r.observacao || undefined,
+      }));
+    } catch (e) {
+      return this.localFallback.getHistoricoAlteracoes(entidade, entidadeId);
+    }
+  }
+  async saveHistoricoAlteracao(historico: HistoricoAlteracao): Promise<void> {
+    await this.localFallback.saveHistoricoAlteracao(historico);
+    try {
+      const body = {
+        id: historico.id,
+        entidade: historico.entidade,
+        entidade_id: historico.entidadeId,
+        acao: historico.acao,
+        usuario_id: historico.usuarioId,
+        data_hora: historico.dataHora,
+        estado_anterior: historico.estadoAnterior || '',
+        observacao: historico.observacao || '',
+      };
+      await this.request('saveHistoricoAlteracao', { data: body });
+    } catch (e) {
+      console.warn('Erro ao salvar histórico de alteração no GoogleScript:', e);
     }
   }
   async getConfiguracaoGestaoPessoas(): Promise<ConfiguracaoGestaoPessoas> {
@@ -3559,6 +3665,19 @@ class DynamicDataService implements IDataService {
   }
   async deletePeriodoAquisitivo(id: string): Promise<void> {
     await this.getService().deletePeriodoAquisitivo(id);
+  }
+  // ── Motor de Disponibilidade Operacional — Fase 2 (Motor de Férias) ──
+  async getMovimentosAusencia(colaboradorId?: string): Promise<MovimentoAusencia[]> {
+    return this.getService().getMovimentosAusencia(colaboradorId);
+  }
+  async saveMovimentoAusencia(movimento: MovimentoAusencia): Promise<void> {
+    await this.getService().saveMovimentoAusencia(movimento);
+  }
+  async getHistoricoAlteracoes(entidade?: string, entidadeId?: string): Promise<HistoricoAlteracao[]> {
+    return this.getService().getHistoricoAlteracoes(entidade, entidadeId);
+  }
+  async saveHistoricoAlteracao(historico: HistoricoAlteracao): Promise<void> {
+    await this.getService().saveHistoricoAlteracao(historico);
   }
   async getConfiguracaoGestaoPessoas(): Promise<ConfiguracaoGestaoPessoas> {
     return this.getService().getConfiguracaoGestaoPessoas();

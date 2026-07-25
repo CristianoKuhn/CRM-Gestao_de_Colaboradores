@@ -14,62 +14,24 @@ import {
   Colaborador,
   Setor,
   Cargo,
+  MovimentoAusencia,
 } from '../types';
 import { DataService } from '../services/DataService';
+import { gerarPeriodosFaltantes } from '../features/disponibilidade/engine/GeradorPeriodosAquisitivos';
+import { recalcularSaldoPeriodo, recalcularSaldoDeTodosOsPeriodos } from '../features/disponibilidade/engine/CalculadoraSaldoPeriodo';
 import { format, addDays, addMonths, differenceInDays, parseISO, isWithinInterval, startOfMonth, endOfMonth } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
 // ============================================================================
 // UTILIDADES DE CÁLCULO
 // ============================================================================
-
-function calcularPeriodosAquisitivos(dataAdmissao: string): PeriodoAquisitivo[] {
-  const admissao = parseISO(dataAdmissao);
-  const hoje = new Date();
-  const periodos: PeriodoAquisitivo[] = [];
-  
-  // Primeiro período aquisitivo começa no dia seguinte à admissão
-  let dataInicio = admissao;
-  let anoBase = admissao.getFullYear();
-  
-  // Gerar períodos até o ano atual + 1
-  while (dataInicio <= addMonths(hoje, 12)) {
-    const dataFim = addMonths(dataInicio, 12);
-    
-    // Calcular dias usados baseados em datas de férias existentes
-    const diasUsados = 0; // Será preenchido com dados reais
-    
-    let status: PeriodoAquisitivo['status'] = 'futuro';
-    if (dataInicio <= hoje && hoje <= dataFim) {
-      status = 'ativo';
-    } else if (hoje > dataFim) {
-      status = 'vencido';
-    }
-    
-    // Verificar se foi concluído (usado todos os dias)
-    const diasRestantes = 30 - diasUsados;
-    if (diasRestantes === 0) {
-      status = 'concluido';
-    }
-    
-    periodos.push({
-      id: `pa-${anoBase}`,
-      colaboradorId: '',
-      anoBase,
-      dataInicio: format(dataInicio, 'yyyy-MM-dd'),
-      dataFim: format(dataFim, 'yyyy-MM-dd'),
-      diasDisponiveis: 30,
-      diasUsados,
-      diasRestantes,
-      status,
-    });
-    
-    dataInicio = addMonths(dataInicio, 12);
-    anoBase++;
-  }
-  
-  return periodos;
-}
+// A geração de períodos aquisitivos e o cálculo de saldo NÃO vivem mais aqui —
+// foram extraídos para o Motor de Disponibilidade Operacional
+// (features/disponibilidade/engine/), mesmo padrão já usado pelo motor da
+// Escala Inteligente. Resolve a causa raiz do bug de período aquisitivo:
+// id agora é determinístico por colaborador (sem colisão entre pessoas
+// admitidas no mesmo ano) e diasUsados é sempre derivado do razão de
+// MovimentoAusencia, nunca mais fixo em zero.
 
 function calcularDiasRestantes(periodo: PeriodoAquisitivo): number {
   return periodo.diasDisponiveis - periodo.diasUsados;
@@ -319,6 +281,7 @@ interface PlanejadorFeriasProps {
   setores: Setor[];
   cargos: Cargo[];
   colaboradores: Colaborador[];
+  currentUserId: string;
   onClose: () => void;
   onSalvarFerias: (ferias: Ferias) => void;
   onMarcarPeriodoUtilizado: (periodoId: string, totalmente: boolean) => void;
@@ -329,11 +292,13 @@ export const PlanejadorFerias: React.FC<PlanejadorFeriasProps> = ({
   setores,
   cargos,
   colaboradores,
+  currentUserId,
   onClose,
   onSalvarFerias,
   onMarcarPeriodoUtilizado,
 }) => {
   const [periodosAquisitivos, setPeriodosAquisitivos] = useState<PeriodoAquisitivo[]>([]);
+  const [movimentosAusencia, setMovimentosAusencia] = useState<MovimentoAusencia[]>([]);
   const [ferias, setFerias] = useState<Ferias[]>([]);
   const [alertas, setAlertas] = useState<AlertaFerias[]>([]);
   const [configuracao, setConfiguracao] = useState<ConfiguracaoFerias | null>(null);
@@ -353,11 +318,12 @@ export const PlanejadorFerias: React.FC<PlanejadorFeriasProps> = ({
   // Carregar dados
   useEffect(() => {
     const carregarDados = async () => {
-      const [periodos, feriasData, alertasData, config] = await Promise.all([
+      const [periodos, feriasData, alertasData, config, movimentos] = await Promise.all([
         DataService.getPeriodosAquisitivos(),
         DataService.getFerias(),
         DataService.getAlertasFerias(),
         DataService.getConfiguracaoFerias(),
+        DataService.getMovimentosAusencia(colaborador.id),
       ]);
       
       // Filtrar para este colaborador
@@ -365,35 +331,40 @@ export const PlanejadorFerias: React.FC<PlanejadorFeriasProps> = ({
       const feriasColaborador = feriasData.filter((f) => f.colaboradorId === colaborador.id);
       const alertasColaborador = alertasData.filter((a) => a.colaboradorId === colaborador.id);
       
-      // Se não existirem períodos, gerar automaticamente a partir da data de admissão.
-      // Se a data de admissão estiver vazia/ inválida, não dá pra calcular nada — nesse
-      // caso deixamos a lista vazia mesmo, e a tela mostra a opção de criar manualmente
-      // (ver estado `dataInicioManualPeriodo` mais abaixo) em vez de falhar em silêncio.
-      const admissaoValida = colaborador.dataAdmissao && !isNaN(parseISO(colaborador.dataAdmissao).getTime());
-      if (periodosColaborador.length === 0 && admissaoValida) {
-        const novosPeriodos = calcularPeriodosAquisitivos(colaborador.dataAdmissao);
-        const periodosComColaborador = novosPeriodos.map((p) => ({
-          ...p,
-          colaboradorId: colaborador.id,
-        }));
-        
-        // Salvar no storage
-        for (const periodo of periodosComColaborador) {
-          await DataService.savePeriodoAquisitivo(periodo);
-        }
-        
-        setPeriodosAquisitivos(periodosComColaborador);
-      } else {
-        setPeriodosAquisitivos(periodosColaborador);
+      // Completa os períodos que ainda faltam (idempotente: roda sempre, não só na
+      // primeira vez — assim um colaborador antigo que ganha mais um ano de casa
+      // recebe o período novo automaticamente, sem precisar apagar nada).
+      const { periodosNovos, admissaoInvalida } = gerarPeriodosFaltantes(
+        colaborador.id,
+        colaborador.dataAdmissao,
+        periodosColaborador
+      );
+      for (const periodo of periodosNovos) {
+        await DataService.savePeriodoAquisitivo(periodo);
       }
-      
+
+      // Saldo é sempre derivado do razão de movimentos — nunca lido de um campo
+      // solto. Só regrava no backend os períodos cujo cache mudou de verdade,
+      // pra não fazer uma escrita por período a cada vez que a tela abre.
+      const todosOsPeriodos = [...periodosColaborador, ...periodosNovos];
+      const periodosComSaldo = recalcularSaldoDeTodosOsPeriodos(todosOsPeriodos, movimentos);
+      const periodosDivergentes = periodosComSaldo.filter((p, i) => {
+        const original = todosOsPeriodos[i];
+        return original.diasUsados !== p.diasUsados || original.diasRestantes !== p.diasRestantes || original.status !== p.status;
+      });
+      for (const periodo of periodosDivergentes) {
+        await DataService.savePeriodoAquisitivo(periodo);
+      }
+
+      setPeriodosAquisitivos(periodosComSaldo);
+      setMovimentosAusencia(movimentos);
       setFerias(feriasColaborador);
       setAlertas(alertasColaborador);
       setConfiguracao(config);
       
       // Gerar alertas automáticos se necessário
       if (alertasColaborador.length === 0) {
-        const alertasGerados = gerarAlertasFerias(colaborador, periodosColaborador, config);
+        const alertasGerados = gerarAlertasFerias(colaborador, periodosComSaldo, config);
         for (const alerta of alertasGerados) {
           await DataService.saveAlertaFerias(alerta);
         }
@@ -487,11 +458,12 @@ export const PlanejadorFerias: React.FC<PlanejadorFeriasProps> = ({
     }
     
     const dataFim = format(addDays(parseISO(dataInicio), diasDesejados - 1), 'yyyy-MM-dd');
+    const periodoId = periodoSelecionado || periodoAutomatico?.id || '';
     
     const novaFerias: Ferias = {
       id: `ferias-${Date.now()}`,
       colaboradorId: colaborador.id,
-      periodoAquisitivoId: periodoSelecionado || periodoAutomatico?.id || '',
+      periodoAquisitivoId: periodoId,
       dataInicio,
       dataFim,
       dias: diasDesejados,
@@ -499,21 +471,30 @@ export const PlanejadorFerias: React.FC<PlanejadorFeriasProps> = ({
       createdAt: new Date().toISOString(),
       tipo: diasDesejados === 30 ? 'integral' : 'parcial',
     };
-    
-    // Atualizar período aquisitivo
-    if (periodoSelecionado || periodoAutomatico) {
-      const periodoId = periodoSelecionado || periodoAutomatico!.id;
+
+    // Lançamento no razão — é isto que sustenta o saldo, não mais uma edição
+    // direta em PeriodoAquisitivo. Ver features/disponibilidade/engine/.
+    const novoMovimento: MovimentoAusencia = {
+      id: `mov-${Date.now()}`,
+      colaboradorId: colaborador.id,
+      tipoAusencia: 'ferias',
+      tipoMovimento: 'gozo',
+      periodoAquisitivoId: periodoId || undefined,
+      ausenciaOrigemId: novaFerias.id,
+      dataInicio,
+      dataFim,
+      dias: diasDesejados,
+      criadoPor: currentUserId,
+      criadoEm: new Date().toISOString(),
+    };
+    await DataService.saveMovimentoAusencia(novoMovimento);
+    const movimentosAtualizados = [...movimentosAusencia, novoMovimento];
+
+    // Atualizar cache do período aquisitivo (derivado do razão, não editado à mão)
+    if (periodoId) {
       const periodo = periodosAquisitivos.find((p) => p.id === periodoId);
       if (periodo) {
-        const periodoAtualizado: PeriodoAquisitivo = {
-          ...periodo,
-          diasUsados: periodo.diasUsados + diasDesejados,
-          diasRestantes: calcularDiasRestantes(periodo) - diasDesejados,
-          status:
-            periodo.diasUsados + diasDesejados >= periodo.diasDisponiveis
-              ? 'concluido'
-              : periodo.status,
-        };
+        const periodoAtualizado = recalcularSaldoPeriodo(periodo, movimentosAtualizados);
         await DataService.savePeriodoAquisitivo(periodoAtualizado);
       }
     }
@@ -523,7 +504,13 @@ export const PlanejadorFerias: React.FC<PlanejadorFeriasProps> = ({
     
     // Recarregar dados
     const periodosAtualizados = await DataService.getPeriodosAquisitivos();
-    setPeriodosAquisitivos(periodosAtualizados.filter((p) => p.colaboradorId === colaborador.id));
+    setPeriodosAquisitivos(
+      recalcularSaldoDeTodosOsPeriodos(
+        periodosAtualizados.filter((p) => p.colaboradorId === colaborador.id),
+        movimentosAtualizados
+      )
+    );
+    setMovimentosAusencia(movimentosAtualizados);
     setFerias([...ferias, novaFerias]);
     
     // Limpar formulário
@@ -534,13 +521,37 @@ export const PlanejadorFerias: React.FC<PlanejadorFeriasProps> = ({
   
   const handleMarcarUtilizado = async (periodoId: string, totalmente: boolean) => {
     const periodo = periodosAquisitivos.find((p) => p.id === periodoId);
-    if (!periodo) return;
-    
+    if (!periodo || !totalmente) {
+      setMostrarModalUtilizado(null);
+      return;
+    }
+
+    // "Marcar como utilizado" é um ajuste manual, não um gozo com datas reais —
+    // é exatamente o mecanismo pensado para migrar histórico de colaboradores
+    // antigos (ver objetivo 2 do motor de disponibilidade): lança a diferença
+    // que falta para fechar o período, sem apagar nada.
+    const diasParaFechar = periodo.diasDisponiveis - periodo.diasUsados;
+    let movimentosAtualizados = movimentosAusencia;
+    if (diasParaFechar > 0) {
+      const movimentoAjuste: MovimentoAusencia = {
+        id: `mov-${Date.now()}`,
+        colaboradorId: colaborador.id,
+        tipoAusencia: 'ferias',
+        tipoMovimento: 'ajuste_manual',
+        periodoAquisitivoId: periodo.id,
+        dataInicio: periodo.dataInicio,
+        dataFim: periodo.dataFim,
+        dias: diasParaFechar,
+        observacoes: 'Marcado manualmente como período já utilizado.',
+        criadoPor: currentUserId,
+        criadoEm: new Date().toISOString(),
+      };
+      await DataService.saveMovimentoAusencia(movimentoAjuste);
+      movimentosAtualizados = [...movimentosAusencia, movimentoAjuste];
+    }
+
     const periodoAtualizado: PeriodoAquisitivo = {
-      ...periodo,
-      diasUsados: totalmente ? periodo.diasDisponiveis : periodo.diasUsados,
-      diasRestantes: totalmente ? 0 : calcularDiasRestantes(periodo),
-      status: totalmente ? 'concluido' : periodo.status,
+      ...recalcularSaldoPeriodo(periodo, movimentosAtualizados),
       marcaComoUtilizado: true,
       dataConclusao: format(new Date(), 'yyyy-MM-dd'),
     };
@@ -551,6 +562,7 @@ export const PlanejadorFerias: React.FC<PlanejadorFeriasProps> = ({
     // Recarregar
     const periodosAtualizados = await DataService.getPeriodosAquisitivos();
     setPeriodosAquisitivos(periodosAtualizados.filter((p) => p.colaboradorId === colaborador.id));
+    setMovimentosAusencia(movimentosAtualizados);
     
     setMostrarModalUtilizado(null);
   };

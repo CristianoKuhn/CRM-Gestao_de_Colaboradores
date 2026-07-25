@@ -180,6 +180,12 @@ export interface Usuario {
   // colaboradores desses líderes, além dos seus próprios setoresPermitidos — sem precisar
   // atribuir múltiplos líderes por colaborador (ver documentação técnica, seção 12).
   lideresSupervisionados?: string[];
+  // Controle de dashboards visíveis no menu lateral (Sidebar). Guarda os ids dos itens de
+  // menu (ver src/utils/dashboards.ts) que este usuário pode ver, além do "dashboard"
+  // principal, que é sempre visível. `undefined` ou array vazio = todos os dashboards
+  // habilitados (comportamento padrão/retrocompatível — usuários já cadastrados antes
+  // desta feature continuam vendo tudo, sem precisar de migração de dados).
+  dashboardsHabilitados?: string[];
   ativo: boolean;
   ultimo_login?: string;
 }

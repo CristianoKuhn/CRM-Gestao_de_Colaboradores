@@ -4,6 +4,7 @@
  */
 
 import { Usuario } from '../types';
+import { dashboardVisivelParaUsuario } from '../utils/dashboards';
 import {
   LayoutDashboard,
   Users,
@@ -51,7 +52,7 @@ export default function Sidebar({
     { id: 'metas', label: 'Metas Liderança', icon: Target },
     { id: 'analytics', label: 'Analytics & PDIs', icon: BarChart3 },
     { id: 'config', label: 'Configurações Gerais', icon: Settings },
-  ];
+  ].filter((item) => dashboardVisivelParaUsuario(item.id, currentUser?.dashboardsHabilitados));
 
   return (
     <aside id="sidebar-container" className="w-64 bg-slate-900 text-slate-100 flex flex-col border-r border-slate-800 shrink-0 h-screen sticky top-0">

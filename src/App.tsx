@@ -582,6 +582,15 @@ export default function App() {
     ? colaboradoresVisiveis.find((col) => col.id === selectedColaboradorId)
     : undefined;
 
+  // Bug corrigido: o sino de notificações (SistemaNotificacoes) recebia sempre `alertas` e
+  // `colaboradores` sem filtro — ou seja, todo usuário via os avisos da empresa inteira,
+  // independentemente de quem estava logado. Aplica aqui a mesma regra de visibilidade já
+  // usada para colaboradores/timeline/tarefas (setoresPermitidos + lideresSupervisionados),
+  // espelhando o filtro que o backend já faz em enviarDigestAlertas_ para o e-mail diário.
+  const alertasVisiveis = acessoGlobal
+    ? alertas
+    : alertas.filter((alerta) => idsColaboradoresVisiveis.has(alerta.colaboradorId));
+
   // Contadores dinâmicos para barra lateral
   const tarefasPendentesCount = tarefasVisiveis.filter((t) => !t.concluida).length;
 
@@ -619,9 +628,9 @@ export default function App() {
           <div className="flex items-center gap-4">
             {/* Sistema de Notificações */}
             <SistemaNotificacoes
-              alertas={alertas}
+              alertas={alertasVisiveis}
               configAlertas={configAlertas}
-              colaboradores={colaboradores}
+              colaboradores={colaboradoresVisiveis}
               timeline={timeline}
               onReconhecerAlerta={handleReconhecerAlerta}
               onResolverAlerta={handleResolverAlerta}

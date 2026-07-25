@@ -1855,26 +1855,21 @@ export default function GestaoPessoas({
           setores={setores}
           cargos={cargos}
           colaboradores={colaboradores}
+          currentUserId={currentUserId}
           onClose={() => {
             setShowPlanejadorFerias(false);
             setColaboradorParaPlanejar(null);
           }}
           onSalvarFerias={handleSalvarFerias}
-          onMarcarPeriodoUtilizado={async (periodoId, totalmente) => {
-            const periodo = periodosAquisitivos.find(p => p.id === periodoId);
-            if (periodo) {
-              const atualizado: PeriodoAquisitivo = {
-                ...periodo,
-                diasUsados: totalmente ? periodo.diasDisponiveis : periodo.diasUsados,
-                diasRestantes: totalmente ? 0 : periodo.diasRestantes,
-                status: totalmente ? 'concluido' : periodo.status,
-                marcaComoUtilizado: true,
-                dataConclusao: new Date().toISOString().split('T')[0],
-              };
-              await DataService.savePeriodoAquisitivo(atualizado);
-              const periodosAtualizados = await DataService.getPeriodosAquisitivos();
-              setPeriodosAquisitivos(periodosAtualizados);
-            }
+          onMarcarPeriodoUtilizado={async () => {
+            // O PlanejadorFerias já fez o cálculo e o save autoritativos (via
+            // Motor de Disponibilidade Operacional, derivado do razão de
+            // MovimentoAusencia) antes de chamar este callback — aqui só
+            // resta refletir o resultado no estado deste componente pai.
+            // Não recalcular/regravar aqui de novo, ou o segundo save
+            // reescreve por cima do valor correto que acabou de ser salvo.
+            const periodosAtualizados = await DataService.getPeriodosAquisitivos();
+            setPeriodosAquisitivos(periodosAtualizados);
           }}
         />
       )}

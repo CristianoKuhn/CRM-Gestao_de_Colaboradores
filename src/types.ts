@@ -503,6 +503,13 @@ export interface ConfiguracaoFerias {
   // Regras trabalhistas
   salarioMinimoDias: number; // Mínimo de dias por período (geralmente 10)
   prazoConcessivoMeses: number; // Prazo máximo para gozar (geralmente 12 meses após período aquisitivo)
+  // ── Fase 3 (Motor de Disponibilidade Operacional): parametrização das
+  // regras de férias — nada fica fixo no código, tudo lido a partir daqui
+  // pelo PlanejadorFerias.tsx (ver detectarConflitos/handleSalvar).
+  maximoParcelas: number; // Quantos lançamentos de gozo um mesmo período aquisitivo pode ter
+  permitirVendaFerias: boolean; // "Abono pecuniário"
+  diasVendidosMaximo: number; // Geralmente até 10 dias (1/3 do período de 30)
+  bloquearSobreposicao: boolean; // true = impede salvar; false = só avisa
 }
 
 // Dashboard Macro de Férias (visão anual)

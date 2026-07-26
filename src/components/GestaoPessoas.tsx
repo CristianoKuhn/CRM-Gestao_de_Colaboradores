@@ -14,6 +14,7 @@ import {
   PeriodoAquisitivo,
   ConfiguracaoGestaoPessoas,
   ConfiguracaoFerias,
+  MovimentoAusencia,
   TimelineRegistro,
   Tarefa,
   Reconhecimento,
@@ -23,6 +24,8 @@ import {
 } from '../types';
 import { DataService } from '../services/DataService';
 import { PlanejadorFerias } from './PlanejadorFerias';
+import { gerarPeriodosFaltantes } from '../features/disponibilidade/engine/GeradorPeriodosAquisitivos';
+import { recalcularSaldoPeriodo } from '../features/disponibilidade/engine/CalculadoraSaldoPeriodo';
 import {
   Calendar,
   Palmtree,
@@ -777,6 +780,38 @@ export default function GestaoPessoas({
   // ==========================================
   const handleSalvarFerias = async (feriasData: Ferias) => {
     await DataService.saveFerias(feriasData);
+
+    // Lançamento no razão do Motor de Disponibilidade — fonte única de
+    // verdade do saldo, seja qual for a tela de origem (Planejador
+    // Inteligente ou o cadastro rápido). O guard por ausenciaOrigemId evita
+    // duplicar o movimento caso o chamador já tenha lançado o seu próprio.
+    if (feriasData.periodoAquisitivoId) {
+      const movimentosDoColaborador = await DataService.getMovimentosAusencia(feriasData.colaboradorId);
+      const jaLancado = movimentosDoColaborador.some((m) => m.ausenciaOrigemId === feriasData.id);
+      if (!jaLancado) {
+        const novoMovimento: MovimentoAusencia = {
+          id: `mov-${Date.now()}`,
+          colaboradorId: feriasData.colaboradorId,
+          tipoAusencia: 'ferias',
+          tipoMovimento: 'gozo',
+          periodoAquisitivoId: feriasData.periodoAquisitivoId,
+          ausenciaOrigemId: feriasData.id,
+          dataInicio: feriasData.dataInicio,
+          dataFim: feriasData.dataFim,
+          dias: feriasData.dias,
+          criadoPor: currentUserId || 'sistema',
+          criadoEm: new Date().toISOString(),
+        };
+        await DataService.saveMovimentoAusencia(novoMovimento);
+
+        const periodo = periodosAquisitivos.find((p) => p.id === feriasData.periodoAquisitivoId);
+        if (periodo) {
+          const movimentosAtualizados = [...movimentosDoColaborador, novoMovimento];
+          const periodoAtualizado = recalcularSaldoPeriodo(periodo, movimentosAtualizados);
+          await DataService.savePeriodoAquisitivo(periodoAtualizado);
+        }
+      }
+    }
     
     // Criar registro na timeline automaticamente
     const novoRegistro: TimelineRegistro = {
@@ -794,18 +829,25 @@ export default function GestaoPessoas({
     };
     await DataService.saveTimelineRegistro(novoRegistro);
     
-    // Atualizar período aquisitivo
-    const periodo = periodosAquisitivos.find(p => p.id === feriasData.periodoAquisitivoId);
-    if (periodo) {
-      const updatedPeriodo = {
-        ...periodo,
-        diasUsados: periodo.diasUsados + feriasData.dias,
-      };
-      await DataService.savePeriodoAquisitivo(updatedPeriodo);
-    }
-    
     loadData();
     setShowModal(false);
+  };
+
+  // Fase 4: mesmo mecanismo idempotente do Planejador Inteligente
+  // (gerarPeriodosFaltantes) — chamado aqui para que o cadastro rápido de
+  // férias também funcione para um colaborador que nunca abriu o planejador
+  // completo antes, sem duplicar nada se os períodos já existirem.
+  const garantirPeriodosDoColaborador = async (colaboradorId: string) => {
+    const colaborador = colaboradores.find((c) => c.id === colaboradorId);
+    if (!colaborador) return;
+    const periodosDoColaborador = periodosAquisitivos.filter((p) => p.colaboradorId === colaboradorId);
+    const { periodosNovos } = gerarPeriodosFaltantes(colaboradorId, colaborador.dataAdmissao, periodosDoColaborador);
+    for (const periodo of periodosNovos) {
+      await DataService.savePeriodoAquisitivo(periodo);
+    }
+    if (periodosNovos.length > 0) {
+      setPeriodosAquisitivos(await DataService.getPeriodosAquisitivos());
+    }
   };
 
   const handleSalvarDayOff = async (dayoffData: DayOff) => {
@@ -2016,6 +2058,7 @@ export default function GestaoPessoas({
             else if (modalType === 'dayoff') handleSalvarDayOff(data as DayOff);
             else handleSalvarFolga(data as Folga);
           }}
+          onColaboradorSelecionadoParaFerias={garantirPeriodosDoColaborador}
           onClose={() => setShowModal(false)}
         />
       )}
@@ -2058,10 +2101,16 @@ interface ModalCadastroProps {
   periodosAquisitivos: PeriodoAquisitivo[];
   onSave: (data: Ferias | DayOff | Folga) => void;
   onClose: () => void;
+  // Fase 4: sem isto, um colaborador que nunca abriu o Planejador Inteligente
+  // simplesmente não tem período aquisitivo nenhum gerado ainda — o select
+  // aparecia vazio. Gera (e persiste) os períodos que faltam antes de deixar
+  // a pessoa escolher, mesmo motor usado no Planejador (GeradorPeriodosAquisitivos).
+  onColaboradorSelecionadoParaFerias: (colaboradorId: string) => Promise<void>;
 }
 
-function ModalCadastro({ type, colaboradores, periodosAquisitivos, onSave, onClose }: ModalCadastroProps) {
+function ModalCadastro({ type, colaboradores, periodosAquisitivos, onSave, onClose, onColaboradorSelecionadoParaFerias }: ModalCadastroProps) {
   const [colaboradorId, setColaboradorId] = useState('');
+  const [carregandoPeriodos, setCarregandoPeriodos] = useState(false);
   const [dataInicio, setDataInicio] = useState('');
   const [dataFim, setDataFim] = useState('');
   const [dias, setDias] = useState(0);
@@ -2137,10 +2186,15 @@ function ModalCadastro({ type, colaboradores, periodosAquisitivos, onSave, onClo
             </label>
             <select
               value={colaboradorId}
-              onChange={e => {
-                setColaboradorId(e.target.value);
-                if (type === 'ferias') {
-                  const periodos = periodosAquisitivos.filter(p => p.colaboradorId === e.target.value && p.status === 'ativo');
+              onChange={async e => {
+                const novoColaboradorId = e.target.value;
+                setColaboradorId(novoColaboradorId);
+                setPeriodoAquisitivoId('');
+                if (type === 'ferias' && novoColaboradorId) {
+                  setCarregandoPeriodos(true);
+                  await onColaboradorSelecionadoParaFerias(novoColaboradorId);
+                  setCarregandoPeriodos(false);
+                  const periodos = periodosAquisitivos.filter(p => p.colaboradorId === novoColaboradorId && p.status === 'ativo');
                   if (periodos.length > 0) {
                     setPeriodoAquisitivoId(periodos[0].id);
                   }
@@ -2164,9 +2218,10 @@ function ModalCadastro({ type, colaboradores, periodosAquisitivos, onSave, onClo
                 <select
                   value={periodoAquisitivoId}
                   onChange={e => setPeriodoAquisitivoId(e.target.value)}
-                  className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-xs focus:outline-none focus:border-teal-500"
+                  disabled={carregandoPeriodos}
+                  className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-xs focus:outline-none focus:border-teal-500 disabled:bg-slate-50 disabled:text-slate-400"
                 >
-                  <option value="">Selecione...</option>
+                  <option value="">{carregandoPeriodos ? 'Gerando períodos…' : 'Selecione...'}</option>
                   {periodosAquisitivos
                     .filter(p => p.colaboradorId === colaboradorId && p.status === 'ativo')
                     .map(p => (
@@ -2175,6 +2230,11 @@ function ModalCadastro({ type, colaboradores, periodosAquisitivos, onSave, onClo
                       </option>
                     ))}
                 </select>
+                {!carregandoPeriodos && colaboradorId && periodosAquisitivos.filter(p => p.colaboradorId === colaboradorId && p.status === 'ativo').length === 0 && (
+                  <p className="text-[10px] text-amber-600 mt-1">
+                    Este colaborador não tem período aquisitivo ativo (verifique a data de admissão cadastrada).
+                  </p>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-3">

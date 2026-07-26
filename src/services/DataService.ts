@@ -2354,10 +2354,48 @@ export class GoogleScriptDataService implements IDataService {
     }
   }
   async getConfiguracaoFerias(): Promise<ConfiguracaoFerias> {
-    return this.localFallback.getConfiguracaoFerias();
+    try {
+      const raw = await this.request<any>('getConfiguracaoFerias');
+      if (!raw) return this.localFallback.getConfiguracaoFerias();
+      return {
+        diasAntecedenciaAlerta: Number(raw.dias_antecedencia_alerta) || 90,
+        permitirFeriasProlongadas: raw.permitir_ferias_prolongadas === true || raw.permitir_ferias_prolongadas === 'true',
+        maximoDiasSimultaneoSetor: Number(raw.maximo_dias_simultaneo_setor) || 3,
+        maximoPercentualEquipe: Number(raw.maximo_percentual_equipe) || 35,
+        diasMinimosAntecedenciaPlanejamento: Number(raw.dias_minimos_antecedencia_planejamento) || 7,
+        opcoesAntecedencia: Array.isArray(raw.opcoes_antecedencia) ? raw.opcoes_antecedencia.map(Number) : [30, 60, 90, 120, 180],
+        salarioMinimoDias: Number(raw.salario_minimo_dias) || 10,
+        prazoConcessivoMeses: Number(raw.prazo_concessivo_meses) || 12,
+        maximoParcelas: Number(raw.maximo_parcelas) || 3,
+        permitirVendaFerias: raw.permitir_venda_ferias === true || raw.permitir_venda_ferias === 'true',
+        diasVendidosMaximo: Number(raw.dias_vendidos_maximo) || 10,
+        bloquearSobreposicao: raw.bloquear_sobreposicao === true || raw.bloquear_sobreposicao === 'true',
+      };
+    } catch (e) {
+      return this.localFallback.getConfiguracaoFerias();
+    }
   }
   async saveConfiguracaoFerias(config: ConfiguracaoFerias): Promise<void> {
     await this.localFallback.saveConfiguracaoFerias(config);
+    try {
+      const body = {
+        dias_antecedencia_alerta: config.diasAntecedenciaAlerta,
+        permitir_ferias_prolongadas: config.permitirFeriasProlongadas,
+        maximo_dias_simultaneo_setor: config.maximoDiasSimultaneoSetor,
+        maximo_percentual_equipe: config.maximoPercentualEquipe,
+        dias_minimos_antecedencia_planejamento: config.diasMinimosAntecedenciaPlanejamento,
+        opcoes_antecedencia: JSON.stringify(config.opcoesAntecedencia || []),
+        salario_minimo_dias: config.salarioMinimoDias,
+        prazo_concessivo_meses: config.prazoConcessivoMeses,
+        maximo_parcelas: config.maximoParcelas,
+        permitir_venda_ferias: config.permitirVendaFerias,
+        dias_vendidos_maximo: config.diasVendidosMaximo,
+        bloquear_sobreposicao: config.bloquearSobreposicao,
+      };
+      await this.request('saveConfiguracaoFerias', { data: body });
+    } catch (e) {
+      console.warn('Erro ao salvar configuração de férias no GoogleScript:', e);
+    }
   }
 
   // ── Escala Inteligente — Módulo 1: Base da Escala ──────────────────────────

@@ -13,6 +13,7 @@ import {
   Folga,
   PeriodoAquisitivo,
   ConfiguracaoGestaoPessoas,
+  ConfiguracaoFerias,
   TimelineRegistro,
   Tarefa,
   Reconhecimento,
@@ -401,6 +402,7 @@ export default function GestaoPessoas({
   const [folgas, setFolgas] = useState<Folga[]>([]);
   const [periodosAquisitivos, setPeriodosAquisitivos] = useState<PeriodoAquisitivo[]>([]);
   const [config, setConfig] = useState<ConfiguracaoGestaoPessoas | null>(null);
+  const [configFerias, setConfigFerias] = useState<ConfiguracaoFerias | null>(null);
   
   // Filtros
   const [filtroAno, setFiltroAno] = useState(ANO_ATUAL);
@@ -443,18 +445,20 @@ export default function GestaoPessoas({
   }, []);
 
   const loadData = async () => {
-    const [feriasData, dayoffsData, folgasData, periodosData, configData] = await Promise.all([
+    const [feriasData, dayoffsData, folgasData, periodosData, configData, configFeriasData] = await Promise.all([
       DataService.getFerias(),
       DataService.getDayOffs(),
       DataService.getFolgas(),
       DataService.getPeriodosAquisitivos(),
       DataService.getConfiguracaoGestaoPessoas(),
+      DataService.getConfiguracaoFerias(),
     ]);
     setFerias(feriasData);
     setDayOffs(dayoffsData);
     setFolgas(folgasData);
     setPeriodosAquisitivos(periodosData);
     setConfig(configData);
+    setConfigFerias(configFeriasData);
   };
 
   // ==========================================
@@ -847,6 +851,11 @@ export default function GestaoPessoas({
   const handleSalvarConfig = async (newConfig: ConfiguracaoGestaoPessoas) => {
     await DataService.saveConfiguracaoGestaoPessoas(newConfig);
     setConfig(newConfig);
+  };
+
+  const handleSalvarConfigFerias = async (newConfig: ConfiguracaoFerias) => {
+    await DataService.saveConfiguracaoFerias(newConfig);
+    setConfigFerias(newConfig);
   };
 
   // ==========================================
@@ -1781,6 +1790,169 @@ export default function GestaoPessoas({
             </div>
           </div>
         </div>
+
+        {configFerias && (
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
+            <h3 className="text-sm font-bold text-slate-900 mb-1">Regras de Férias</h3>
+            <p className="text-[11px] text-slate-500 mb-6">
+              Único lugar onde essas regras são definidas — o planejador de férias de cada colaborador só consulta
+              o que está aqui, nunca tem valor fixo embutido.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-2">
+                  Antecedência mínima para solicitar (dias)
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  value={configFerias.diasMinimosAntecedenciaPlanejamento}
+                  onChange={(e) =>
+                    handleSalvarConfigFerias({ ...configFerias, diasMinimosAntecedenciaPlanejamento: parseInt(e.target.value) || 0 })
+                  }
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-teal-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-2">
+                  Antecedência dos alertas (dias)
+                </label>
+                <select
+                  value={configFerias.diasAntecedenciaAlerta}
+                  onChange={(e) => handleSalvarConfigFerias({ ...configFerias, diasAntecedenciaAlerta: Number(e.target.value) })}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-teal-500"
+                >
+                  {configFerias.opcoesAntecedencia.map((op) => (
+                    <option key={op} value={op}>{op} dias</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-2">
+                  Mínimo de dias por lançamento
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  value={configFerias.salarioMinimoDias}
+                  onChange={(e) => handleSalvarConfigFerias({ ...configFerias, salarioMinimoDias: parseInt(e.target.value) || 1 })}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-teal-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-2">
+                  Máximo de parcelas por período aquisitivo
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={10}
+                  value={configFerias.maximoParcelas}
+                  onChange={(e) => handleSalvarConfigFerias({ ...configFerias, maximoParcelas: parseInt(e.target.value) || 1 })}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-teal-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-2">
+                  Prazo concessivo (meses após o período)
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  value={configFerias.prazoConcessivoMeses}
+                  onChange={(e) => handleSalvarConfigFerias({ ...configFerias, prazoConcessivoMeses: parseInt(e.target.value) || 1 })}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-teal-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-2">
+                  Máx. de colaboradores do mesmo setor simultaneamente em férias
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  value={configFerias.maximoDiasSimultaneoSetor}
+                  onChange={(e) => handleSalvarConfigFerias({ ...configFerias, maximoDiasSimultaneoSetor: parseInt(e.target.value) || 1 })}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-teal-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-2">
+                  Percentual máximo da equipe simultaneamente ausente
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={configFerias.maximoPercentualEquipe}
+                  onChange={(e) => handleSalvarConfigFerias({ ...configFerias, maximoPercentualEquipe: parseInt(e.target.value) || 1 })}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-teal-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-2">
+                  Máximo de dias vendidos (abono pecuniário)
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  max={10}
+                  disabled={!configFerias.permitirVendaFerias}
+                  value={configFerias.diasVendidosMaximo}
+                  onChange={(e) => handleSalvarConfigFerias({ ...configFerias, diasVendidosMaximo: parseInt(e.target.value) || 0 })}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-teal-500 disabled:bg-slate-50 disabled:text-slate-400"
+                />
+              </div>
+
+              <div className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  id="permitirFeriasProlongadasFerias"
+                  checked={configFerias.permitirFeriasProlongadas}
+                  onChange={(e) => handleSalvarConfigFerias({ ...configFerias, permitirFeriasProlongadas: e.target.checked })}
+                  className="w-4 h-4 text-teal-500 rounded border-slate-300 focus:ring-teal-500"
+                />
+                <label htmlFor="permitirFeriasProlongadasFerias" className="text-xs text-slate-700">
+                  Permitir férias prolongadas (mais de 30 dias)
+                </label>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  id="permitirVendaFerias"
+                  checked={configFerias.permitirVendaFerias}
+                  onChange={(e) => handleSalvarConfigFerias({ ...configFerias, permitirVendaFerias: e.target.checked })}
+                  className="w-4 h-4 text-teal-500 rounded border-slate-300 focus:ring-teal-500"
+                />
+                <label htmlFor="permitirVendaFerias" className="text-xs text-slate-700">
+                  Permitir venda de férias (abono pecuniário)
+                </label>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  id="bloquearSobreposicao"
+                  checked={configFerias.bloquearSobreposicao}
+                  onChange={(e) => handleSalvarConfigFerias({ ...configFerias, bloquearSobreposicao: e.target.checked })}
+                  className="w-4 h-4 text-teal-500 rounded border-slate-300 focus:ring-teal-500"
+                />
+                <label htmlFor="bloquearSobreposicao" className="text-xs text-slate-700">
+                  Bloquear (não só avisar) sobreposição de férias na mesma equipe
+                </label>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
           <h3 className="text-sm font-bold text-slate-900 mb-4">Notificações Automáticas</h3>

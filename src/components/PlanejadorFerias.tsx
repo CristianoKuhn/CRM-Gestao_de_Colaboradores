@@ -37,6 +37,25 @@ function calcularDiasRestantes(periodo: PeriodoAquisitivo): number {
   return periodo.diasDisponiveis - periodo.diasUsados;
 }
 
+// Único fallback usado em todo o arquivo quando a configuração ainda não
+// carregou — Fase 3 exige que nenhuma regra fique hardcoded espalhada; se a
+// config real não chegou a tempo, cai neste valor central, nunca em cópias
+// soltas pelo componente.
+const CONFIGURACAO_FERIAS_PADRAO: ConfiguracaoFerias = {
+  diasAntecedenciaAlerta: 90,
+  permitirFeriasProlongadas: true,
+  maximoDiasSimultaneoSetor: 3,
+  maximoPercentualEquipe: 35,
+  diasMinimosAntecedenciaPlanejamento: 7,
+  opcoesAntecedencia: [30, 60, 90, 120, 180],
+  salarioMinimoDias: 10,
+  prazoConcessivoMeses: 12,
+  maximoParcelas: 3,
+  permitirVendaFerias: true,
+  diasVendidosMaximo: 10,
+  bloquearSobreposicao: false,
+};
+
 function gerarAlertasFerias(
   colaborador: Colaborador,
   periodos: PeriodoAquisitivo[],
@@ -135,7 +154,8 @@ function detectarConflitos(
   setorId: string,
   colaboradorId: string,
   colaboradores: Colaborador[],
-  feriasExistentes: Ferias[]
+  feriasExistentes: Ferias[],
+  configuracao: ConfiguracaoFerias
 ): ConflitoFerias[] {
   const conflitos: ConflitoFerias[] = [];
   const dataInicioObj = parseISO(dataInicio);
@@ -167,8 +187,8 @@ function detectarConflitos(
   if (colegasEmFerias.length > 0) {
     conflitos.push({
       tipo: 'mesmo_setor',
-      severidade: colegasEmFerias.length >= 2 ? 'alerta' : 'info',
-      descricao: `Já existem ${colegasEmFerias.length} colaborador(es) do setor em férias neste período.`,
+      severidade: colegasEmFerias.length >= configuracao.maximoDiasSimultaneoSetor ? 'alerta' : 'info',
+      descricao: `Já existem ${colegasEmFerias.length} colaborador(es) do setor em férias neste período (limite configurado: ${configuracao.maximoDiasSimultaneoSetor}).`,
       colaboradoresAfetados: colegasEmFerias.map((f) => f.colaboradorId),
       dataInicio,
       dataFim,
@@ -180,11 +200,11 @@ function detectarConflitos(
   const totalSetor = colegasSetor.length + 1;
   const percentual = (feriasNoPeriodo.length / totalSetor) * 100;
   
-  if (percentual >= 35) {
+  if (percentual >= configuracao.maximoPercentualEquipe) {
     conflitos.push({
       tipo: 'alta_concentracao',
-      severidade: percentual >= 50 ? 'critico' : 'alerta',
-      descricao: `Mais de ${Math.round(percentual)}% da equipe ficará ausente nesta semana.`,
+      severidade: percentual >= configuracao.maximoPercentualEquipe * 1.5 ? 'critico' : 'alerta',
+      descricao: `${Math.round(percentual)}% da equipe ficará ausente nesta semana (limite configurado: ${configuracao.maximoPercentualEquipe}%).`,
       colaboradoresAfetados: feriasNoPeriodo.map((f) => f.colaboradorId),
       dataInicio,
       dataFim,
@@ -217,7 +237,8 @@ function gerarSugestoesDias(
       setorId,
       colaboradorId,
       colaboradores,
-      feriasExistentes
+      feriasExistentes,
+      configuracao
     );
     
     const colegasSetor = colaboradores.filter(
@@ -378,13 +399,15 @@ export const PlanejadorFerias: React.FC<PlanejadorFeriasProps> = ({
   // Calcular conflitos e sugestões quando data muda
   useEffect(() => {
     if (dataInicio) {
+      const configEfetiva = configuracao || CONFIGURACAO_FERIAS_PADRAO;
       const conflitosDetectados = detectarConflitos(
         dataInicio,
         format(addDays(parseISO(dataInicio), diasDesejados - 1), 'yyyy-MM-dd'),
         colaborador.setorId,
         colaborador.id,
         colaboradores,
-        ferias
+        ferias,
+        configEfetiva
       );
       setConflitos(conflitosDetectados);
       
@@ -394,16 +417,7 @@ export const PlanejadorFerias: React.FC<PlanejadorFeriasProps> = ({
         colaborador.id,
         colaboradores,
         ferias,
-        configuracao || {
-          diasAntecedenciaAlerta: 90,
-          permitirFeriasProlongadas: true,
-          maximoDiasSimultaneoSetor: 3,
-          maximoPercentualEquipe: 35,
-          diasMinimosAntecedenciaPlanejamento: 7,
-          opcoesAntecedencia: [30, 60, 90, 120, 180],
-          salarioMinimoDias: 10,
-          prazoConcessivoMeses: 12,
-        }
+        configEfetiva
       );
       setSugestoes(sugestoesGeradas);
     }
@@ -456,9 +470,63 @@ export const PlanejadorFerias: React.FC<PlanejadorFeriasProps> = ({
       alert(`Você possui apenas ${diasDisponiveisNoPeriodo} dias disponíveis neste período.`);
       return;
     }
-    
-    const dataFim = format(addDays(parseISO(dataInicio), diasDesejados - 1), 'yyyy-MM-dd');
-    const periodoId = periodoSelecionado || periodoAutomatico?.id || '';
+
+    const configEfetiva = configuracao || CONFIGURACAO_FERIAS_PADRAO;
+    const dataFimCalculada = format(addDays(parseISO(dataInicio), diasDesejados - 1), 'yyyy-MM-dd');
+    const periodoIdEfetivo = periodoSelecionado || periodoAutomatico?.id || '';
+
+    // ── Fase 3 — regras vindas 100% da configuração, nada fixo no código ──
+    if (diasDesejados < configEfetiva.salarioMinimoDias) {
+      alert(`O mínimo por lançamento é de ${configEfetiva.salarioMinimoDias} dia(s), conforme configurado.`);
+      return;
+    }
+
+    const antecedenciaDias = differenceInDays(parseISO(dataInicio), new Date());
+    if (antecedenciaDias < configEfetiva.diasMinimosAntecedenciaPlanejamento) {
+      alert(
+        `É preciso solicitar com pelo menos ${configEfetiva.diasMinimosAntecedenciaPlanejamento} dia(s) de antecedência (configurado). Faltam apenas ${Math.max(0, antecedenciaDias)} dia(s) para a data escolhida.`
+      );
+      return;
+    }
+
+    if (periodoIdEfetivo) {
+      const parcelasAtivas = ferias.filter((f) => f.periodoAquisitivoId === periodoIdEfetivo && f.status !== 'cancelada').length;
+      if (parcelasAtivas >= configEfetiva.maximoParcelas) {
+        alert(`Este período aquisitivo já atingiu o máximo de ${configEfetiva.maximoParcelas} parcela(s) configurado.`);
+        return;
+      }
+    }
+
+    // Sobreposição com férias do próprio colaborador — checagem incondicional
+    // de integridade de dado (não depende de configuração: ninguém pode ficar
+    // de férias duas vezes ao mesmo tempo).
+    const dataInicioObj = parseISO(dataInicio);
+    const dataFimObj = parseISO(dataFimCalculada);
+    const sobrepoeConsigoMesmo = ferias.some((f) => {
+      if (f.status === 'cancelada') return false;
+      const fInicio = parseISO(f.dataInicio);
+      const fFim = parseISO(f.dataFim);
+      return (
+        isWithinInterval(dataInicioObj, { start: fInicio, end: fFim }) ||
+        isWithinInterval(dataFimObj, { start: fInicio, end: fFim }) ||
+        isWithinInterval(fInicio, { start: dataInicioObj, end: dataFimObj })
+      );
+    });
+    if (sobrepoeConsigoMesmo) {
+      alert('Este colaborador já possui férias lançadas que se sobrepõem a este período.');
+      return;
+    }
+
+    // Sobreposição com a equipe — aqui SIM depende de configuração: por
+    // padrão é só aviso (já mostrado na tela via `conflitos`), mas se
+    // bloquearSobreposicao estiver ligado, impede salvar.
+    if (configEfetiva.bloquearSobreposicao && conflitos.length > 0) {
+      alert(`Não é possível salvar: ${conflitos.map((c) => c.descricao).join(' ')}`);
+      return;
+    }
+
+    const dataFim = dataFimCalculada;
+    const periodoId = periodoIdEfetivo;
     
     const novaFerias: Ferias = {
       id: `ferias-${Date.now()}`,
@@ -978,85 +1046,32 @@ export const PlanejadorFerias: React.FC<PlanejadorFeriasProps> = ({
             </div>
           )}
           
-          {/* ====== TAB CONFIGURAÇÕES ====== */}
+          {/* ====== TAB CONFIGURAÇÕES (somente leitura) ====== */}
           {mostrarConfiguracoes && (
             <div className="space-y-6">
-              <h3 className="font-semibold text-lg">⚙️ Configurações de Férias</h3>
-              
-              <div className="bg-white border rounded-xl p-6 shadow-sm space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Antecedência dos Alertas
-                  </label>
-                  <select
-                    value={configuracao?.diasAntecedenciaAlerta || 90}
-                    onChange={async (e) => {
-                      const novo = { ...configuracao!, diasAntecedenciaAlerta: Number(e.target.value) };
-                      await DataService.saveConfiguracaoFerias(novo);
-                      setConfiguracao(novo);
-                    }}
-                    className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value={30}>30 dias</option>
-                    <option value={60}>60 dias</option>
-                    <option value={90}>90 dias</option>
-                    <option value={120}>120 dias</option>
-                    <option value={180}>180 dias</option>
-                  </select>
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Máximo de Pessoas Simultâneas por Setor
-                  </label>
-                  <input
-                    type="number"
-                    value={configuracao?.maximoDiasSimultaneoSetor || 3}
-                    onChange={async (e) => {
-                      const novo = { ...configuracao!, maximoDiasSimultaneoSetor: Number(e.target.value) };
-                      await DataService.saveConfiguracaoFerias(novo);
-                      setConfiguracao(novo);
-                    }}
-                    min={1}
-                    max={10}
-                    className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Percentual Máximo da Equipe em Férias
-                  </label>
-                  <input
-                    type="number"
-                    value={configuracao?.maximoPercentualEquipe || 35}
-                    onChange={async (e) => {
-                      const novo = { ...configuracao!, maximoPercentualEquipe: Number(e.target.value) };
-                      await DataService.saveConfiguracaoFerias(novo);
-                      setConfiguracao(novo);
-                    }}
-                    min={10}
-                    max={100}
-                    className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                
-                <div className="flex items-center gap-3">
-                  <input
-                    type="checkbox"
-                    id="permitirProlongadas"
-                    checked={configuracao?.permitirFeriasProlongadas || false}
-                    onChange={async (e) => {
-                      const novo = { ...configuracao!, permitirFeriasProlongadas: e.target.checked };
-                      await DataService.saveConfiguracaoFerias(novo);
-                      setConfiguracao(novo);
-                    }}
-                    className="rounded"
-                  />
-                  <label htmlFor="permitirProlongadas" className="text-sm text-gray-700">
-                    Permitir férias superiores a 30 dias
-                  </label>
-                </div>
+              <h3 className="font-semibold text-lg">⚙️ Regras de Férias vigentes</h3>
+              <p className="text-xs text-gray-500 -mt-4">
+                Estas regras valem para toda a empresa e são editadas na tela "Configurações → Regras de Férias",
+                não aqui — evita que o ajuste feito para uma pessoa mude a regra de todo mundo sem querer.
+              </p>
+
+              <div className="bg-white border rounded-xl p-6 shadow-sm grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {[
+                  { label: 'Antecedência dos alertas', valor: `${(configuracao || CONFIGURACAO_FERIAS_PADRAO).diasAntecedenciaAlerta} dias` },
+                  { label: 'Antecedência mínima para solicitar', valor: `${(configuracao || CONFIGURACAO_FERIAS_PADRAO).diasMinimosAntecedenciaPlanejamento} dias` },
+                  { label: 'Mínimo por lançamento', valor: `${(configuracao || CONFIGURACAO_FERIAS_PADRAO).salarioMinimoDias} dias` },
+                  { label: 'Máximo de parcelas por período', valor: `${(configuracao || CONFIGURACAO_FERIAS_PADRAO).maximoParcelas}` },
+                  { label: 'Máx. simultâneo por setor', valor: `${(configuracao || CONFIGURACAO_FERIAS_PADRAO).maximoDiasSimultaneoSetor} pessoa(s)` },
+                  { label: 'Percentual máximo da equipe', valor: `${(configuracao || CONFIGURACAO_FERIAS_PADRAO).maximoPercentualEquipe}%` },
+                  { label: 'Permite férias prolongadas (>30 dias)', valor: (configuracao || CONFIGURACAO_FERIAS_PADRAO).permitirFeriasProlongadas ? 'Sim' : 'Não' },
+                  { label: 'Permite venda de férias', valor: (configuracao || CONFIGURACAO_FERIAS_PADRAO).permitirVendaFerias ? `Sim, até ${(configuracao || CONFIGURACAO_FERIAS_PADRAO).diasVendidosMaximo} dias` : 'Não' },
+                  { label: 'Sobreposição de equipe', valor: (configuracao || CONFIGURACAO_FERIAS_PADRAO).bloquearSobreposicao ? 'Bloqueia salvar' : 'Só avisa' },
+                ].map((linha) => (
+                  <div key={linha.label} className="flex items-center justify-between border-b border-gray-100 pb-2">
+                    <span className="text-xs text-gray-500">{linha.label}</span>
+                    <span className="text-sm font-semibold text-gray-800">{linha.valor}</span>
+                  </div>
+                ))}
               </div>
             </div>
           )}

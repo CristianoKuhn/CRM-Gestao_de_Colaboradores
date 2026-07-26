@@ -490,6 +490,10 @@ const DEFAULT_CONFIG_FERIAS: ConfiguracaoFerias = {
   opcoesAntecedencia: [30, 60, 90, 120, 180],
   salarioMinimoDias: 10,
   prazoConcessivoMeses: 12,
+  maximoParcelas: 3,
+  permitirVendaFerias: true,
+  diasVendidosMaximo: 10,
+  bloquearSobreposicao: false,
 };
 
 // Funções de Inicialização e Leitura/Escrita

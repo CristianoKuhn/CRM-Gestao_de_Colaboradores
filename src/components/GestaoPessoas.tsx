@@ -23,9 +23,10 @@ import {
   StatusRegistro,
 } from '../types';
 import { DataService } from '../services/DataService';
-import { PlanejadorFerias } from './PlanejadorFerias';
+import { PlanejadorFerias, CONFIGURACAO_FERIAS_PADRAO } from './PlanejadorFerias';
 import { gerarPeriodosFaltantes } from '../features/disponibilidade/engine/GeradorPeriodosAquisitivos';
 import { recalcularSaldoPeriodo } from '../features/disponibilidade/engine/CalculadoraSaldoPeriodo';
+import { format, addDays, parseISO, differenceInDays, isWithinInterval } from 'date-fns';
 import {
   Calendar,
   Palmtree,
@@ -2053,6 +2054,8 @@ export default function GestaoPessoas({
           type={modalType}
           colaboradores={colaboradores}
           periodosAquisitivos={periodosAquisitivos}
+          ferias={ferias}
+          configuracaoFerias={configFerias}
           onSave={(data) => {
             if (modalType === 'ferias') handleSalvarFerias(data as Ferias);
             else if (modalType === 'dayoff') handleSalvarDayOff(data as DayOff);
@@ -2099,6 +2102,12 @@ interface ModalCadastroProps {
   type: 'ferias' | 'dayoff' | 'folga';
   colaboradores: Colaborador[];
   periodosAquisitivos: PeriodoAquisitivo[];
+  // Fase 5 (correção de qualidade): sem estes dois, o cadastro rápido nunca
+  // conseguia aplicar as mesmas regras do Planejador Inteligente (mínimo de
+  // dias, antecedência, parcelamento, sobreposição) — cada tela tinha um
+  // comportamento diferente para a mesma ação de negócio.
+  ferias: Ferias[];
+  configuracaoFerias: ConfiguracaoFerias | null;
   onSave: (data: Ferias | DayOff | Folga) => void;
   onClose: () => void;
   // Fase 4: sem isto, um colaborador que nunca abriu o Planejador Inteligente
@@ -2108,26 +2117,90 @@ interface ModalCadastroProps {
   onColaboradorSelecionadoParaFerias: (colaboradorId: string) => Promise<void>;
 }
 
-function ModalCadastro({ type, colaboradores, periodosAquisitivos, onSave, onClose, onColaboradorSelecionadoParaFerias }: ModalCadastroProps) {
+function ModalCadastro({
+  type,
+  colaboradores,
+  periodosAquisitivos,
+  ferias,
+  configuracaoFerias,
+  onSave,
+  onClose,
+  onColaboradorSelecionadoParaFerias,
+}: ModalCadastroProps) {
   const [colaboradorId, setColaboradorId] = useState('');
   const [carregandoPeriodos, setCarregandoPeriodos] = useState(false);
   const [dataInicio, setDataInicio] = useState('');
-  const [dataFim, setDataFim] = useState('');
   const [dias, setDias] = useState(0);
   const [motivo, setMotivo] = useState('');
   const [observacoes, setObservacoes] = useState('');
   const [periodoAquisitivoId, setPeriodoAquisitivoId] = useState('');
+  // Fase 5: trava contra duplo-clique/duplo-submit — sem isto, dois cliques
+  // rápidos no "Salvar" (ou um segundo clique enquanto o primeiro ainda
+  // estava salvando) geravam DOIS lançamentos idênticos, como reportado.
+  const [salvando, setSalvando] = useState(false);
 
   const periodoSelecionado = periodosAquisitivos.find(p => p.id === periodoAquisitivoId);
+  const configEfetiva = configuracaoFerias || CONFIGURACAO_FERIAS_PADRAO;
+
+  // Fim é sempre CALCULADO a partir de início + dias — nunca mais um campo
+  // manual independente, que é justamente o que permitia inconsistência
+  // entre "Início", "Fim" e "Dias" (os três podiam divergir entre si).
+  const dataFimCalculada =
+    type === 'ferias' && dataInicio && dias > 0 ? format(addDays(parseISO(dataInicio), dias - 1), 'yyyy-MM-dd') : '';
+
+  function validarFerias(): string | null {
+    if (!periodoSelecionado) return 'Selecione um período aquisitivo.';
+    const saldoDisponivel = periodoSelecionado.diasDisponiveis - periodoSelecionado.diasUsados;
+    if (dias > saldoDisponivel) return `Saldo disponível neste período é de ${saldoDisponivel} dia(s).`;
+    if (dias < configEfetiva.salarioMinimoDias) return `O mínimo por lançamento é de ${configEfetiva.salarioMinimoDias} dia(s), conforme configurado.`;
+
+    const antecedenciaDias = differenceInDays(parseISO(dataInicio), new Date());
+    if (antecedenciaDias < configEfetiva.diasMinimosAntecedenciaPlanejamento) {
+      return `É preciso solicitar com pelo menos ${configEfetiva.diasMinimosAntecedenciaPlanejamento} dia(s) de antecedência (configurado).`;
+    }
+
+    const parcelasAtivas = ferias.filter(
+      (f) => f.periodoAquisitivoId === periodoAquisitivoId && f.status !== 'cancelada'
+    ).length;
+    if (parcelasAtivas >= configEfetiva.maximoParcelas) {
+      return `Este período aquisitivo já atingiu o máximo de ${configEfetiva.maximoParcelas} parcela(s) configurado.`;
+    }
+
+    const dataInicioObj = parseISO(dataInicio);
+    const dataFimObj = parseISO(dataFimCalculada);
+    const sobrepoe = ferias.some((f) => {
+      if (f.colaboradorId !== colaboradorId || f.status === 'cancelada') return false;
+      const fInicio = parseISO(f.dataInicio);
+      const fFim = parseISO(f.dataFim);
+      return (
+        isWithinInterval(dataInicioObj, { start: fInicio, end: fFim }) ||
+        isWithinInterval(dataFimObj, { start: fInicio, end: fFim }) ||
+        isWithinInterval(fInicio, { start: dataInicioObj, end: dataFimObj })
+      );
+    });
+    if (sobrepoe) return 'Este colaborador já possui férias lançadas que se sobrepõem a este período.';
+
+    return null;
+  }
 
   const handleSubmit = () => {
+    if (salvando) return; // trava de duplo-submit
+    if (type === 'ferias') {
+      const erro = validarFerias();
+      if (erro) {
+        alert(erro);
+        return;
+      }
+    }
+
+    setSalvando(true);
     if (type === 'ferias') {
       const feriasData: Ferias = {
         id: `fer-${Date.now()}`,
         colaboradorId,
         periodoAquisitivoId,
         dataInicio,
-        dataFim,
+        dataFim: dataFimCalculada,
         dias,
         status: 'planejada',
         observacoes,
@@ -2165,6 +2238,8 @@ function ModalCadastro({ type, colaboradores, periodosAquisitivos, onSave, onClo
       };
       onSave(folgaData);
     }
+    // Não precisa setSalvando(false) aqui: o pai fecha este modal
+    // (setShowModal(false)) assim que o save termina — o componente desmonta.
   };
 
   return (
@@ -2200,7 +2275,8 @@ function ModalCadastro({ type, colaboradores, periodosAquisitivos, onSave, onClo
                   }
                 }
               }}
-              className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-xs focus:outline-none focus:border-teal-500"
+              disabled={salvando}
+              className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-xs focus:outline-none focus:border-teal-500 disabled:bg-slate-50 disabled:text-slate-400"
             >
               <option value="">Selecione...</option>
               {colaboradores.filter(c => c.situacao !== 'Desligado').map(col => (
@@ -2218,7 +2294,7 @@ function ModalCadastro({ type, colaboradores, periodosAquisitivos, onSave, onClo
                 <select
                   value={periodoAquisitivoId}
                   onChange={e => setPeriodoAquisitivoId(e.target.value)}
-                  disabled={carregandoPeriodos}
+                  disabled={carregandoPeriodos || salvando}
                   className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-xs focus:outline-none focus:border-teal-500 disabled:bg-slate-50 disabled:text-slate-400"
                 >
                   <option value="">{carregandoPeriodos ? 'Gerando períodos…' : 'Selecione...'}</option>
@@ -2246,34 +2322,39 @@ function ModalCadastro({ type, colaboradores, periodosAquisitivos, onSave, onClo
                     type="date"
                     value={dataInicio}
                     onChange={e => setDataInicio(e.target.value)}
-                    className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-xs focus:outline-none focus:border-teal-500"
+                    disabled={salvando}
+                    className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-xs focus:outline-none focus:border-teal-500 disabled:bg-slate-50 disabled:text-slate-400"
                   />
                 </div>
                 <div>
                   <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                    Fim
+                    Dias
                   </label>
                   <input
-                    type="date"
-                    value={dataFim}
-                    onChange={e => setDataFim(e.target.value)}
-                    className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-xs focus:outline-none focus:border-teal-500"
+                    type="number"
+                    value={dias}
+                    onChange={e => setDias(parseInt(e.target.value) || 0)}
+                    disabled={salvando}
+                    max={periodoSelecionado ? periodoSelecionado.diasDisponiveis - periodoSelecionado.diasUsados : undefined}
+                    className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-xs focus:outline-none focus:border-teal-500 disabled:bg-slate-50 disabled:text-slate-400"
                   />
                 </div>
               </div>
 
-              <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                  Dias
-                </label>
-                <input
-                  type="number"
-                  value={dias}
-                  onChange={e => setDias(parseInt(e.target.value) || 0)}
-                  max={periodoSelecionado ? periodoSelecionado.diasDisponiveis - periodoSelecionado.diasUsados : undefined}
-                  className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-xs focus:outline-none focus:border-teal-500"
-                />
+              {/* Fim é sempre calculado a partir de Início + Dias — nunca mais um
+                  campo digitado à parte, para nunca divergir do que foi lançado. */}
+              <div className="rounded-xl bg-slate-50 border border-slate-100 px-3 py-2.5 flex items-center justify-between text-xs">
+                <span className="text-slate-500">Fim das férias</span>
+                <span className="font-semibold text-slate-800">
+                  {dataFimCalculada ? format(parseISO(dataFimCalculada), 'dd/MM/yyyy') : '—'}
+                </span>
               </div>
+              {dataFimCalculada && (
+                <p className="text-[10px] text-slate-400 -mt-2">
+                  Volta ao trabalho em {format(addDays(parseISO(dataFimCalculada), 1), 'dd/MM/yyyy')}.
+                  {periodoSelecionado && ` Saldo neste período: ${periodoSelecionado.diasDisponiveis - periodoSelecionado.diasUsados} dia(s) disponível(is).`}
+                </p>
+              )}
             </>
           )}
 
@@ -2322,16 +2403,22 @@ function ModalCadastro({ type, colaboradores, periodosAquisitivos, onSave, onClo
         <div className="flex justify-end gap-3 pt-4 mt-4 border-t border-slate-100">
           <button
             onClick={onClose}
-            className="px-4 py-2 border border-slate-200 text-slate-600 bg-slate-50 rounded-xl text-xs font-semibold hover:bg-slate-100 transition"
+            disabled={salvando}
+            className="px-4 py-2 border border-slate-200 text-slate-600 bg-slate-50 rounded-xl text-xs font-semibold hover:bg-slate-100 transition disabled:opacity-50"
           >
             Cancelar
           </button>
           <button
             onClick={handleSubmit}
-            disabled={!colaboradorId || (type === 'ferias' && (!periodoAquisitivoId || !dataInicio || !dataFim)) || (type === 'folga' && (!dataInicio || !motivo))}
+            disabled={
+              salvando ||
+              !colaboradorId ||
+              (type === 'ferias' && (!periodoAquisitivoId || !dataInicio || dias <= 0)) ||
+              (type === 'folga' && (!dataInicio || !motivo))
+            }
             className="px-4 py-2 bg-teal-500 hover:bg-teal-400 text-slate-950 font-semibold rounded-xl text-xs transition disabled:opacity-50"
           >
-            Salvar
+            {salvando ? 'Salvando…' : 'Salvar'}
           </button>
         </div>
       </div>

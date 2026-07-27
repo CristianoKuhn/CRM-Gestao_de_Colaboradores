@@ -41,7 +41,7 @@ function calcularDiasRestantes(periodo: PeriodoAquisitivo): number {
 // carregou — Fase 3 exige que nenhuma regra fique hardcoded espalhada; se a
 // config real não chegou a tempo, cai neste valor central, nunca em cópias
 // soltas pelo componente.
-const CONFIGURACAO_FERIAS_PADRAO: ConfiguracaoFerias = {
+export const CONFIGURACAO_FERIAS_PADRAO: ConfiguracaoFerias = {
   diasAntecedenciaAlerta: 90,
   permitirFeriasProlongadas: true,
   maximoDiasSimultaneoSetor: 3,
@@ -319,6 +319,9 @@ export const PlanejadorFerias: React.FC<PlanejadorFeriasProps> = ({
   onMarcarPeriodoUtilizado,
 }) => {
   const [periodosAquisitivos, setPeriodosAquisitivos] = useState<PeriodoAquisitivo[]>([]);
+  // Trava contra duplo-clique/duplo-submit — mesma correção aplicada no
+  // cadastro rápido (ModalCadastro em GestaoPessoas.tsx), pelo mesmo motivo.
+  const [salvando, setSalvando] = useState(false);
   const [movimentosAusencia, setMovimentosAusencia] = useState<MovimentoAusencia[]>([]);
   const [ferias, setFerias] = useState<Ferias[]>([]);
   const [alertas, setAlertas] = useState<AlertaFerias[]>([]);
@@ -461,6 +464,7 @@ export const PlanejadorFerias: React.FC<PlanejadorFeriasProps> = ({
   const diasDisponiveisNoPeriodo = periodoAtual ? calcularDiasRestantes(periodoAtual) : 0;
   
   const handleSalvar = async () => {
+    if (salvando) return; // trava de duplo-submit
     if (!dataInicio) {
       alert('Selecione uma data de início.');
       return;
@@ -527,6 +531,8 @@ export const PlanejadorFerias: React.FC<PlanejadorFeriasProps> = ({
 
     const dataFim = dataFimCalculada;
     const periodoId = periodoIdEfetivo;
+
+    setSalvando(true);
     
     const novaFerias: Ferias = {
       id: `ferias-${Date.now()}`,
@@ -585,6 +591,7 @@ export const PlanejadorFerias: React.FC<PlanejadorFeriasProps> = ({
     setDataInicio('');
     setDiasDesejados(15);
     setPeriodoSelecionado('');
+    setSalvando(false);
   };
   
   const handleMarcarUtilizado = async (periodoId: string, totalmente: boolean) => {
@@ -939,10 +946,10 @@ export const PlanejadorFerias: React.FC<PlanejadorFeriasProps> = ({
                 
                 <button
                   onClick={handleSalvar}
-                  disabled={!dataInicio || diasDesejados === 0}
+                  disabled={!dataInicio || diasDesejados === 0 || salvando}
                   className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
                 >
-                  📅 Confirmar Planejamento
+                  {salvando ? '⏳ Salvando…' : '📅 Confirmar Planejamento'}
                 </button>
               </div>
               

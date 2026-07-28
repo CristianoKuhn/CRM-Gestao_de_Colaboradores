@@ -426,6 +426,29 @@ export interface HistoricoAlteracao {
   observacao?: string;
 }
 
+// ── Motor de Disponibilidade Operacional — Fase 6 (Motor de Sugestão) ──
+// Distribuição automática de férias ao longo do ano por setor. Convenção de
+// pontuação IGUAL à do motor de Escala Inteligente (0 a 1, quanto maior
+// melhor) — não a convenção antiga de SugestaoDataFerias (quanto menor
+// melhor), para os dois motores ficarem consistentes entre si.
+export interface JustificativaSugestaoFerias {
+  criterio: string;
+  descricao: string;
+  favoravel: boolean;
+}
+
+export interface SugestaoDistribuicaoFerias {
+  colaboradorId: string;
+  periodoAquisitivoId: string;
+  mes: number; // 1-12
+  ano: number;
+  dataInicio: string;
+  dataFim: string;
+  dias: number;
+  pontuacao: number; // 0 a 1
+  justificativas: JustificativaSugestaoFerias[];
+}
+
 // Histórico de Período Aquisitivo (visualização)
 export interface HistoricoPeriodoAquisitivo {
   id: string;

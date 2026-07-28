@@ -24,6 +24,7 @@ import {
 } from '../types';
 import { DataService } from '../services/DataService';
 import { PlanejadorFerias, CONFIGURACAO_FERIAS_PADRAO } from './PlanejadorFerias';
+import { SugestaoDistribuicaoModal } from './SugestaoDistribuicaoFerias';
 import { gerarPeriodosFaltantes } from '../features/disponibilidade/engine/GeradorPeriodosAquisitivos';
 import { recalcularSaldoPeriodo } from '../features/disponibilidade/engine/CalculadoraSaldoPeriodo';
 import { format, addDays, parseISO, differenceInDays, isWithinInterval } from 'date-fns';
@@ -47,6 +48,7 @@ import {
   TrendingUp,
   Info,
   LayoutDashboard,
+  Sparkles,
 } from 'lucide-react';
 
 // ==========================================
@@ -407,6 +409,7 @@ export default function GestaoPessoas({
   const [periodosAquisitivos, setPeriodosAquisitivos] = useState<PeriodoAquisitivo[]>([]);
   const [config, setConfig] = useState<ConfiguracaoGestaoPessoas | null>(null);
   const [configFerias, setConfigFerias] = useState<ConfiguracaoFerias | null>(null);
+  const [showSugestaoDistribuicao, setShowSugestaoDistribuicao] = useState(false);
   
   // Filtros
   const [filtroAno, setFiltroAno] = useState(ANO_ATUAL);
@@ -1425,6 +1428,14 @@ export default function GestaoPessoas({
           </div>
           
           <button
+            onClick={() => setShowSugestaoDistribuicao(true)}
+            className="flex items-center gap-2 px-4 py-2 border border-teal-200 text-teal-700 hover:bg-teal-50 font-semibold rounded-xl text-xs transition"
+          >
+            <Sparkles size={14} />
+            Sugerir Distribuição
+          </button>
+
+          <button
             onClick={() => {
               setModalType('ferias');
               setSelectedColaborador(null);
@@ -2063,6 +2074,18 @@ export default function GestaoPessoas({
           }}
           onColaboradorSelecionadoParaFerias={garantirPeriodosDoColaborador}
           onClose={() => setShowModal(false)}
+        />
+      )}
+
+      {showSugestaoDistribuicao && (
+        <SugestaoDistribuicaoModal
+          setores={setores}
+          colaboradores={colaboradores}
+          periodosAquisitivos={periodosAquisitivos}
+          ferias={ferias}
+          configuracaoFerias={configFerias}
+          onAplicar={handleSalvarFerias}
+          onClose={() => setShowSugestaoDistribuicao(false)}
         />
       )}
 

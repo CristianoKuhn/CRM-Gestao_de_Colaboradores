@@ -10,9 +10,6 @@
 
 import type {
   DisponibilidadeColaborador,
-  Ferias,
-  DayOff,
-  Folga,
   FolgaFixaEscala,
   PerfilDisponibilidadeColaborador,
   RegraDescanso,
@@ -21,27 +18,45 @@ import type {
 } from '../../../types';
 import type { SlotDemanda } from './calendarioDemanda';
 import { diaSemanaDaData, horarioContidoEm, horariosSeSobrepoem, horasDeDescansoEntreTurnos } from './motorUtils';
+import { consultarDisponibilidade } from '../../disponibilidade/engine/MotorDisponibilidade';
 import type { Candidato, ContextoMotor, LoggerMotor, MotivoRestricao, ResultadoValidacao } from './tiposMotor';
 import { consoleLoggerMotor } from './tiposMotor';
 
-function checarFerias(colaboradorId: string, data: string, ferias: Ferias[]): MotivoRestricao | null {
-  const emFerias = ferias.some(
-    (f) => f.colaboradorId === colaboradorId && f.status !== 'cancelada' && data >= f.dataInicio && data <= f.dataFim
-  );
-  if (!emFerias) return null;
-  return { regra: 'Férias', descricao: 'Colaborador está de férias nesta data.', bloqueante: true };
-}
+// ── Fase 7/8: única checagem de ausência, delegada ao Motor de
+// Disponibilidade Operacional (features/disponibilidade/engine/). Antes
+// disto, existiam 3 funções soltas aqui dentro (checarFerias, checarDayOff,
+// checarFolgaCompensatoria), cada uma lendo sua própria fonte — exatamente a
+// duplicação que a arquitetura original queria eliminar. Agora este arquivo
+// não sabe mais O QUE é férias/day off/folga; só sabe perguntar "está
+// disponível?" e traduzir a resposta pro formato de MotivoRestricao. Quando
+// licenças/treinamentos/eventos existirem, entram no motor unificado, não
+// aqui — este adaptador não muda.
+function checarDisponibilidadeOperacional(
+  colaboradorId: string,
+  data: string,
+  contexto: ContextoMotor
+): MotivoRestricao | null {
+  const resposta = consultarDisponibilidade(colaboradorId, data, {
+    ferias: contexto.ferias,
+    dayOffs: contexto.dayOffs,
+    folgas: contexto.folgas,
+  });
+  if (resposta.disponivel) return null;
 
-function checarDayOff(colaboradorId: string, data: string, dayOffs: DayOff[]): MotivoRestricao | null {
-  const usandoDayOff = dayOffs.some((d) => d.colaboradorId === colaboradorId && d.dataUtilizacao === data && d.status === 'utilizado');
-  if (!usandoDayOff) return null;
-  return { regra: 'Day off', descricao: 'Colaborador está de day off nesta data.', bloqueante: true };
-}
-
-function checarFolgaCompensatoria(colaboradorId: string, data: string, folgas: Folga[]): MotivoRestricao | null {
-  const emFolga = folgas.some((f) => f.colaboradorId === colaboradorId && f.data === data && f.status === 'aprovada');
-  if (!emFolga) return null;
-  return { regra: 'Folga compensatória', descricao: 'Colaborador tem folga compensatória aprovada nesta data.', bloqueante: true };
+  const rotulos: Record<string, string> = {
+    ferias: 'Férias',
+    day_off: 'Day off',
+    folga: 'Folga compensatória',
+    licenca: 'Licença',
+    treinamento: 'Treinamento',
+    banco_horas: 'Banco de horas',
+    evento: 'Evento',
+  };
+  return {
+    regra: rotulos[resposta.motivo ?? ''] ?? 'Ausência',
+    descricao: resposta.descricao ?? 'Colaborador indisponível nesta data.',
+    bloqueante: true,
+  };
 }
 
 function checarFolgaFixa(
@@ -247,9 +262,7 @@ function validarCandidato(
 
   const motivos: MotivoRestricao[] = [];
   const checagensBloqueantes = [
-    checarFerias(candidato.colaboradorId, slot.data, contexto.ferias),
-    checarDayOff(candidato.colaboradorId, slot.data, contexto.dayOffs),
-    checarFolgaCompensatoria(candidato.colaboradorId, slot.data, contexto.folgas),
+    checarDisponibilidadeOperacional(candidato.colaboradorId, slot.data, contexto),
     checarFolgaFixa(candidato.colaboradorId, slot.data, diaSemana, contexto.folgasFixas),
     checarDescansoContraTurnosFixos(candidato.colaboradorId, slot, contexto.turnosJaEscalados, intervaloMinimoHoras),
     checarDisponibilidade(

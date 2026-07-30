@@ -1222,3 +1222,66 @@ export interface ItemEvento {
   autorId?: string;
   data: string;
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// MOTOR DE DESENVOLVIMENTO DE COLABORADORES — Biblioteca Corporativa
+// Ver "Especificação Arquitetural Definitiva v2" e "Modelagem Física
+// (Conceitual)". Esta rodada implementa só a camada base: Capacidades,
+// Competências, Materiais, Matriz de Competências por Cargo e Áreas de
+// Desenvolvimento. Programa/Oferta/Inscrição/Etapa/Evidência/Perfil/
+// Certificação/Mentoria/Insight ficam para as próximas rodadas, na ordem
+// do Roadmap do Domínio.
+// ═══════════════════════════════════════════════════════════════════
+
+export interface CapacidadeBiblioteca {
+  id: string;
+  nome: string;
+  descricao?: string;
+  ativo: boolean;
+}
+
+// Competência nunca é deletada, só inativada (Princípio 6 da Especificação
+// v2 — "Histórico nunca é editado nem apagado" — e regra de negócio da
+// Biblioteca) — por isso não existe um "deleteCompetenciaBiblioteca" em
+// nenhuma camada, nem aqui nem no backend.
+export interface CompetenciaBiblioteca {
+  id: string;
+  capacidadeId?: string; // opcional — hierarquia aditiva, nunca obrigatória (Princípio 24)
+  nome: string;
+  descricao?: string;
+  categoria?: string;
+  niveis: string[]; // escala ordenada e própria desta competência (ex.: ["Não iniciado", ..., "Especialista"])
+  ativo: boolean;
+}
+
+export type TipoMaterialBiblioteca = 'material' | 'curso' | 'modelo' | 'documento' | 'video' | 'playbook';
+
+export interface MaterialBiblioteca {
+  id: string;
+  tipo: TipoMaterialBiblioteca;
+  nome: string;
+  descricao?: string;
+  url?: string;
+  driveFileId?: string;
+  tags?: string[];
+  ativo: boolean;
+}
+
+export interface MatrizCompetenciaCargo {
+  id: string;
+  cargoId: string;
+  competenciaId: string;
+  nivelAlvo: string;
+  obrigatorio: boolean;
+}
+
+// Recursiva via areaPaiId — puramente organizacional/de navegação, nunca
+// participa do fluxo de eventos nem altera o Perfil (Princípio 22).
+export interface AreaDesenvolvimento {
+  id: string;
+  areaPaiId?: string;
+  nome: string;
+  descricao?: string;
+  ordem?: number;
+  ativo: boolean;
+}

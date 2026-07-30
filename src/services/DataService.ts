@@ -59,6 +59,12 @@ import {
   ItemOperacional,
   CategoriaItem,
   ItemEvento,
+  CapacidadeBiblioteca,
+  CompetenciaBiblioteca,
+  MaterialBiblioteca,
+  TipoMaterialBiblioteca,
+  MatrizCompetenciaCargo,
+  AreaDesenvolvimento,
 } from '../types';
 import { StorageAPI } from '../utils/storage';
 
@@ -447,6 +453,25 @@ export interface IDataService {
   deleteCategoriaItem(id: string): Promise<void>;
   getItensEventos(itemId: string): Promise<ItemEvento[]>;
   saveItemEvento(evento: ItemEvento): Promise<void>;
+
+  // ── Motor de Desenvolvimento de Colaboradores — Biblioteca Corporativa ──
+  // Ver "Especificação Arquitetural Definitiva v2" e "Modelagem Física
+  // (Conceitual)". Camada base desta rodada.
+  getCapacidadesBiblioteca(): Promise<CapacidadeBiblioteca[]>;
+  saveCapacidadeBiblioteca(capacidade: CapacidadeBiblioteca): Promise<void>;
+  getCompetenciasBiblioteca(filtro?: { capacidadeId?: string }): Promise<CompetenciaBiblioteca[]>;
+  // Sem deleteCompetenciaBiblioteca — competência nunca é deletada, só inativada
+  // (salve novamente com `ativo: false`).
+  saveCompetenciaBiblioteca(competencia: CompetenciaBiblioteca): Promise<void>;
+  getMateriaisBiblioteca(filtro?: { tipo?: TipoMaterialBiblioteca }): Promise<MaterialBiblioteca[]>;
+  saveMaterialBiblioteca(material: MaterialBiblioteca): Promise<void>;
+  deleteMaterialBiblioteca(id: string): Promise<void>;
+  getMatrizCompetenciasCargo(filtro?: { cargoId?: string }): Promise<MatrizCompetenciaCargo[]>;
+  saveMatrizCompetenciaCargo(item: MatrizCompetenciaCargo): Promise<void>;
+  deleteMatrizCompetenciaCargo(id: string): Promise<void>;
+  getAreasDesenvolvimento(): Promise<AreaDesenvolvimento[]>;
+  saveAreaDesenvolvimento(area: AreaDesenvolvimento): Promise<void>;
+  deleteAreaDesenvolvimento(id: string): Promise<void>;
 
   uploadFile(
     file: File,
@@ -948,6 +973,53 @@ export class LocalDataService implements IDataService {
   }
   async saveItemEvento(evento: ItemEvento): Promise<void> {
     itensLocalSaveItem('itensEventos', evento);
+  }
+
+  // ── Motor de Desenvolvimento de Colaboradores — Biblioteca Corporativa ──
+  async getCapacidadesBiblioteca(): Promise<CapacidadeBiblioteca[]> {
+    return itensLocalGetArray<CapacidadeBiblioteca>('capacidadesBiblioteca');
+  }
+  async saveCapacidadeBiblioteca(capacidade: CapacidadeBiblioteca): Promise<void> {
+    itensLocalSaveItem('capacidadesBiblioteca', capacidade);
+  }
+  async getCompetenciasBiblioteca(filtro?: { capacidadeId?: string }): Promise<CompetenciaBiblioteca[]> {
+    let competencias = itensLocalGetArray<CompetenciaBiblioteca>('competenciasBiblioteca');
+    if (filtro?.capacidadeId) competencias = competencias.filter((c) => c.capacidadeId === filtro.capacidadeId);
+    return competencias;
+  }
+  async saveCompetenciaBiblioteca(competencia: CompetenciaBiblioteca): Promise<void> {
+    itensLocalSaveItem('competenciasBiblioteca', competencia);
+  }
+  async getMateriaisBiblioteca(filtro?: { tipo?: TipoMaterialBiblioteca }): Promise<MaterialBiblioteca[]> {
+    let materiais = itensLocalGetArray<MaterialBiblioteca>('materiaisBiblioteca');
+    if (filtro?.tipo) materiais = materiais.filter((m) => m.tipo === filtro.tipo);
+    return materiais;
+  }
+  async saveMaterialBiblioteca(material: MaterialBiblioteca): Promise<void> {
+    itensLocalSaveItem('materiaisBiblioteca', material);
+  }
+  async deleteMaterialBiblioteca(id: string): Promise<void> {
+    itensLocalDeleteItem('materiaisBiblioteca', id);
+  }
+  async getMatrizCompetenciasCargo(filtro?: { cargoId?: string }): Promise<MatrizCompetenciaCargo[]> {
+    let matriz = itensLocalGetArray<MatrizCompetenciaCargo>('matrizCompetenciasCargo');
+    if (filtro?.cargoId) matriz = matriz.filter((m) => m.cargoId === filtro.cargoId);
+    return matriz;
+  }
+  async saveMatrizCompetenciaCargo(item: MatrizCompetenciaCargo): Promise<void> {
+    itensLocalSaveItem('matrizCompetenciasCargo', item);
+  }
+  async deleteMatrizCompetenciaCargo(id: string): Promise<void> {
+    itensLocalDeleteItem('matrizCompetenciasCargo', id);
+  }
+  async getAreasDesenvolvimento(): Promise<AreaDesenvolvimento[]> {
+    return itensLocalGetArray<AreaDesenvolvimento>('areasDesenvolvimento');
+  }
+  async saveAreaDesenvolvimento(area: AreaDesenvolvimento): Promise<void> {
+    itensLocalSaveItem('areasDesenvolvimento', area);
+  }
+  async deleteAreaDesenvolvimento(id: string): Promise<void> {
+    itensLocalDeleteItem('areasDesenvolvimento', id);
   }
 
   async uploadFile(
@@ -3478,6 +3550,193 @@ export class GoogleScriptDataService implements IDataService {
       console.warn('Erro ao salvar evento de item no GoogleScript:', e);
     }
   }
+
+  // ── Motor de Desenvolvimento de Colaboradores — Biblioteca Corporativa ──
+  // Ver "Especificação Arquitetural Definitiva v2" e "Modelagem Física
+  // (Conceitual)". Mesma convenção do resto do arquivo: grava primeiro no
+  // localFallback (resiliência/offline), tenta o GoogleScript depois, e
+  // mapeia snake_case (planilha) ↔ camelCase (frontend) nos dois sentidos.
+  async getCapacidadesBiblioteca(): Promise<CapacidadeBiblioteca[]> {
+    try {
+      const raw = await this.request<any[]>('getCapacidadesBiblioteca');
+      return (raw || []).map((c) => ({
+        id: c.id,
+        nome: c.nome,
+        descricao: c.descricao || undefined,
+        ativo: c.ativo === true || c.ativo === 'true',
+      }));
+    } catch (e) {
+      return this.localFallback.getCapacidadesBiblioteca();
+    }
+  }
+  async saveCapacidadeBiblioteca(capacidade: CapacidadeBiblioteca): Promise<void> {
+    await this.localFallback.saveCapacidadeBiblioteca(capacidade);
+    try {
+      const body = {
+        id: capacidade.id,
+        nome: capacidade.nome,
+        descricao: capacidade.descricao || '',
+        ativo: capacidade.ativo,
+      };
+      await this.request('saveCapacidadeBiblioteca', { data: body });
+    } catch (e) {
+      console.warn('Erro ao salvar capacidade da biblioteca no GoogleScript:', e);
+    }
+  }
+  async getCompetenciasBiblioteca(filtro?: { capacidadeId?: string }): Promise<CompetenciaBiblioteca[]> {
+    try {
+      const raw = await this.request<any[]>('getCompetenciasBiblioteca', {
+        capacidadeId: filtro?.capacidadeId || '',
+      });
+      return (raw || []).map((c) => ({
+        id: c.id,
+        capacidadeId: c.capacidade_id || undefined,
+        nome: c.nome,
+        descricao: c.descricao || undefined,
+        categoria: c.categoria || undefined,
+        niveis: Array.isArray(c.niveis) ? c.niveis : [],
+        ativo: c.ativo === true || c.ativo === 'true',
+      }));
+    } catch (e) {
+      return this.localFallback.getCompetenciasBiblioteca(filtro);
+    }
+  }
+  async saveCompetenciaBiblioteca(competencia: CompetenciaBiblioteca): Promise<void> {
+    await this.localFallback.saveCompetenciaBiblioteca(competencia);
+    try {
+      const body = {
+        id: competencia.id,
+        capacidade_id: competencia.capacidadeId || '',
+        nome: competencia.nome,
+        descricao: competencia.descricao || '',
+        categoria: competencia.categoria || '',
+        niveis: JSON.stringify(competencia.niveis || []),
+        ativo: competencia.ativo,
+      };
+      await this.request('saveCompetenciaBiblioteca', { data: body });
+    } catch (e) {
+      console.warn('Erro ao salvar competência da biblioteca no GoogleScript:', e);
+    }
+  }
+  async getMateriaisBiblioteca(filtro?: { tipo?: TipoMaterialBiblioteca }): Promise<MaterialBiblioteca[]> {
+    try {
+      const raw = await this.request<any[]>('getMateriaisBiblioteca', { tipo: filtro?.tipo || '' });
+      return (raw || []).map((m) => ({
+        id: m.id,
+        tipo: m.tipo,
+        nome: m.nome,
+        descricao: m.descricao || undefined,
+        url: m.url || undefined,
+        driveFileId: m.drive_file_id || undefined,
+        tags: Array.isArray(m.tags) ? m.tags : undefined,
+        ativo: m.ativo === true || m.ativo === 'true',
+      }));
+    } catch (e) {
+      return this.localFallback.getMateriaisBiblioteca(filtro);
+    }
+  }
+  async saveMaterialBiblioteca(material: MaterialBiblioteca): Promise<void> {
+    await this.localFallback.saveMaterialBiblioteca(material);
+    try {
+      const body = {
+        id: material.id,
+        tipo: material.tipo,
+        nome: material.nome,
+        descricao: material.descricao || '',
+        url: material.url || '',
+        drive_file_id: material.driveFileId || '',
+        tags: JSON.stringify(material.tags || []),
+        ativo: material.ativo,
+      };
+      await this.request('saveMaterialBiblioteca', { data: body });
+    } catch (e) {
+      console.warn('Erro ao salvar material da biblioteca no GoogleScript:', e);
+    }
+  }
+  async deleteMaterialBiblioteca(id: string): Promise<void> {
+    await this.localFallback.deleteMaterialBiblioteca(id);
+    try {
+      await this.request('deleteMaterialBiblioteca', { id });
+    } catch (e) {
+      console.warn('Erro ao excluir material da biblioteca no GoogleScript:', e);
+    }
+  }
+  async getMatrizCompetenciasCargo(filtro?: { cargoId?: string }): Promise<MatrizCompetenciaCargo[]> {
+    try {
+      const raw = await this.request<any[]>('getMatrizCompetenciasCargo', { cargoId: filtro?.cargoId || '' });
+      return (raw || []).map((m) => ({
+        id: m.id,
+        cargoId: m.cargo_id,
+        competenciaId: m.competencia_id,
+        nivelAlvo: m.nivel_alvo,
+        obrigatorio: m.obrigatorio === true || m.obrigatorio === 'true',
+      }));
+    } catch (e) {
+      return this.localFallback.getMatrizCompetenciasCargo(filtro);
+    }
+  }
+  async saveMatrizCompetenciaCargo(item: MatrizCompetenciaCargo): Promise<void> {
+    await this.localFallback.saveMatrizCompetenciaCargo(item);
+    try {
+      const body = {
+        id: item.id,
+        cargo_id: item.cargoId,
+        competencia_id: item.competenciaId,
+        nivel_alvo: item.nivelAlvo,
+        obrigatorio: item.obrigatorio,
+      };
+      await this.request('saveMatrizCompetenciaCargo', { data: body });
+    } catch (e) {
+      console.warn('Erro ao salvar item da matriz de competências no GoogleScript:', e);
+    }
+  }
+  async deleteMatrizCompetenciaCargo(id: string): Promise<void> {
+    await this.localFallback.deleteMatrizCompetenciaCargo(id);
+    try {
+      await this.request('deleteMatrizCompetenciaCargo', { id });
+    } catch (e) {
+      console.warn('Erro ao excluir item da matriz de competências no GoogleScript:', e);
+    }
+  }
+  async getAreasDesenvolvimento(): Promise<AreaDesenvolvimento[]> {
+    try {
+      const raw = await this.request<any[]>('getAreasDesenvolvimento');
+      return (raw || []).map((a) => ({
+        id: a.id,
+        areaPaiId: a.area_pai_id || undefined,
+        nome: a.nome,
+        descricao: a.descricao || undefined,
+        ordem: a.ordem !== '' && a.ordem != null ? Number(a.ordem) : undefined,
+        ativo: a.ativo === true || a.ativo === 'true',
+      }));
+    } catch (e) {
+      return this.localFallback.getAreasDesenvolvimento();
+    }
+  }
+  async saveAreaDesenvolvimento(area: AreaDesenvolvimento): Promise<void> {
+    await this.localFallback.saveAreaDesenvolvimento(area);
+    try {
+      const body = {
+        id: area.id,
+        area_pai_id: area.areaPaiId || '',
+        nome: area.nome,
+        descricao: area.descricao || '',
+        ordem: area.ordem ?? '',
+        ativo: area.ativo,
+      };
+      await this.request('saveAreaDesenvolvimento', { data: body });
+    } catch (e) {
+      console.warn('Erro ao salvar área de desenvolvimento no GoogleScript:', e);
+    }
+  }
+  async deleteAreaDesenvolvimento(id: string): Promise<void> {
+    await this.localFallback.deleteAreaDesenvolvimento(id);
+    try {
+      await this.request('deleteAreaDesenvolvimento', { id });
+    } catch (e) {
+      console.warn('Erro ao excluir área de desenvolvimento no GoogleScript:', e);
+    }
+  }
 }
 
 // -----------------------------------------------------------------
@@ -3944,6 +4203,47 @@ class DynamicDataService implements IDataService {
   }
   async saveItemEvento(evento: ItemEvento): Promise<void> {
     await this.getService().saveItemEvento(evento);
+  }
+
+  // ── Motor de Desenvolvimento de Colaboradores — Biblioteca Corporativa ──
+  async getCapacidadesBiblioteca(): Promise<CapacidadeBiblioteca[]> {
+    return this.getService().getCapacidadesBiblioteca();
+  }
+  async saveCapacidadeBiblioteca(capacidade: CapacidadeBiblioteca): Promise<void> {
+    await this.getService().saveCapacidadeBiblioteca(capacidade);
+  }
+  async getCompetenciasBiblioteca(filtro?: { capacidadeId?: string }): Promise<CompetenciaBiblioteca[]> {
+    return this.getService().getCompetenciasBiblioteca(filtro);
+  }
+  async saveCompetenciaBiblioteca(competencia: CompetenciaBiblioteca): Promise<void> {
+    await this.getService().saveCompetenciaBiblioteca(competencia);
+  }
+  async getMateriaisBiblioteca(filtro?: { tipo?: TipoMaterialBiblioteca }): Promise<MaterialBiblioteca[]> {
+    return this.getService().getMateriaisBiblioteca(filtro);
+  }
+  async saveMaterialBiblioteca(material: MaterialBiblioteca): Promise<void> {
+    await this.getService().saveMaterialBiblioteca(material);
+  }
+  async deleteMaterialBiblioteca(id: string): Promise<void> {
+    await this.getService().deleteMaterialBiblioteca(id);
+  }
+  async getMatrizCompetenciasCargo(filtro?: { cargoId?: string }): Promise<MatrizCompetenciaCargo[]> {
+    return this.getService().getMatrizCompetenciasCargo(filtro);
+  }
+  async saveMatrizCompetenciaCargo(item: MatrizCompetenciaCargo): Promise<void> {
+    await this.getService().saveMatrizCompetenciaCargo(item);
+  }
+  async deleteMatrizCompetenciaCargo(id: string): Promise<void> {
+    await this.getService().deleteMatrizCompetenciaCargo(id);
+  }
+  async getAreasDesenvolvimento(): Promise<AreaDesenvolvimento[]> {
+    return this.getService().getAreasDesenvolvimento();
+  }
+  async saveAreaDesenvolvimento(area: AreaDesenvolvimento): Promise<void> {
+    await this.getService().saveAreaDesenvolvimento(area);
+  }
+  async deleteAreaDesenvolvimento(id: string): Promise<void> {
+    await this.getService().deleteAreaDesenvolvimento(id);
   }
 
   async resetData(): Promise<void> {

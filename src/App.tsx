@@ -45,6 +45,7 @@ import MetasLideranca from './components/MetasLideranca';
 import SistemaNotificacoes from './components/SistemaNotificacoes';
 import GestaoPessoas from './components/GestaoPessoas';
 import EscalaInteligente from './features/escala-inteligente/EscalaInteligente';
+import BibliotecaDesenvolvimento from './features/desenvolvimento-colaboradores/BibliotecaDesenvolvimento';
 import { Users2, X, PlusCircle } from 'lucide-react';
 
 export default function App() {
@@ -824,6 +825,10 @@ export default function App() {
               setores={setoresVisiveis}
               cargos={cargos}
             />
+          )}
+
+          {activeTab === 'desenvolvimento-biblioteca' && currentUser && (
+            <BibliotecaDesenvolvimento currentUser={currentUser} cargos={cargos} />
           )}
         </div>
       </main>

@@ -1285,3 +1285,84 @@ export interface AreaDesenvolvimento {
   ordem?: number;
   ativo: boolean;
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// MOTOR DE DESENVOLVIMENTO DE COLABORADORES — Programa (definição)
+// Ver "Especificação Arquitetural Definitiva v2" e "Modelagem Física
+// (Conceitual)", seção 1.3. Programa é só o molde/definição — nunca é
+// executado diretamente (Princípio 20); Oferta/Inscrição/Etapa (a execução
+// de verdade, por colaborador) ficam para a próxima rodada.
+// ═══════════════════════════════════════════════════════════════════
+
+export type TipoPrograma =
+  | 'onboarding'
+  | 'pdi'
+  | 'lideranca'
+  | 'capacitacao'
+  | 'certificacao'
+  | 'carreira'
+  | 'universidade';
+
+export type ModoEstruturaPrograma = 'sequencial' | 'catalogo' | 'continuo';
+
+export type TipoCriterioElegibilidade = 'automatico' | 'indicacao' | 'autoinscricao' | 'gap_competencia';
+
+export interface CriterioElegibilidade {
+  tipo: TipoCriterioElegibilidade;
+  // Detalhes específicos do critério (ex.: { setorId: '...' } para "automatico").
+  // Mantido solto de propósito — o Motor de Elegibilidade (próxima rodada) é
+  // quem interpreta o conteúdo de acordo com `tipo`.
+  regras?: Record<string, unknown>;
+}
+
+// Uma vez com Ofertas vinculadas, um Programa nunca é sobrescrito — qualquer
+// mudança de estrutura gera nova versão (mesmo programaFamiliaId, versao+1),
+// mesmo padrão de FormularioTemplate (Princípio 17/20).
+export interface Programa {
+  id: string;
+  programaFamiliaId: string;
+  versao: number;
+  areaDesenvolvimentoId?: string;
+  nome: string;
+  descricao?: string;
+  tipoPrograma: TipoPrograma;
+  modoEstrutura: ModoEstruturaPrograma;
+  criterioElegibilidade: CriterioElegibilidade;
+  ativo: boolean;
+  criadoEm?: string;
+  criadoPor?: string;
+}
+
+export interface CompetenciaAlvoEtapa {
+  competenciaId: string;
+  nivelAlvo: string;
+}
+
+export type TipoItemPadraoEtapa = 'atividade' | 'treinamento' | 'checklist';
+
+export interface ItemPadraoEtapa {
+  titulo: string;
+  tipoItem: TipoItemPadraoEtapa;
+  criticidade?: string;
+}
+
+export type PrazoBaseEtapa = 'admissao' | 'oferta' | 'etapa_anterior';
+
+// A dependência entre Etapas é um grafo explícito (dependeDeIds), nunca um
+// bloqueio binário fixo (Princípio 10) — isso é o que permite Programas
+// sequenciais, com etapas paralelas, ou em catálogo livre sem tabela extra.
+export interface ProgramaEtapaTemplate {
+  id: string;
+  programaId: string;
+  ordem: number;
+  nome: string;
+  objetivos?: string;
+  dependeDeIds: string[];
+  prazoDias?: number;
+  prazoBase: PrazoBaseEtapa;
+  competenciasAlvo: CompetenciaAlvoEtapa[];
+  itensPadrao: ItemPadraoEtapa[];
+  materiaisIds: string[];
+  exigeEvidencia: boolean;
+  exigeValidacaoEvidencia: boolean;
+}

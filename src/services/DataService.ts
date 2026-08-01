@@ -65,6 +65,9 @@ import {
   TipoMaterialBiblioteca,
   MatrizCompetenciaCargo,
   AreaDesenvolvimento,
+  Programa,
+  TipoPrograma,
+  ProgramaEtapaTemplate,
 } from '../types';
 import { StorageAPI } from '../utils/storage';
 
@@ -472,6 +475,15 @@ export interface IDataService {
   getAreasDesenvolvimento(): Promise<AreaDesenvolvimento[]>;
   saveAreaDesenvolvimento(area: AreaDesenvolvimento): Promise<void>;
   deleteAreaDesenvolvimento(id: string): Promise<void>;
+
+  // ── Motor de Desenvolvimento de Colaboradores — Programa (definição) ──
+  // Sem deleteProgramaTemplate: um Programa nunca é apagado, só inativado
+  // (mesma régua de não-sobrescrita/versionamento do Princípio 17/20).
+  getProgramas(filtro?: { areaDesenvolvimentoId?: string; tipoPrograma?: TipoPrograma; programaFamiliaId?: string }): Promise<Programa[]>;
+  saveProgramaTemplate(programa: Programa): Promise<void>;
+  getProgramaEtapasTemplate(filtro?: { programaId?: string }): Promise<ProgramaEtapaTemplate[]>;
+  saveProgramaEtapaTemplate(etapa: ProgramaEtapaTemplate): Promise<void>;
+  deleteProgramaEtapaTemplate(id: string): Promise<void>;
 
   uploadFile(
     file: File,
@@ -1020,6 +1032,33 @@ export class LocalDataService implements IDataService {
   }
   async deleteAreaDesenvolvimento(id: string): Promise<void> {
     itensLocalDeleteItem('areasDesenvolvimento', id);
+  }
+
+  // ── Motor de Desenvolvimento de Colaboradores — Programa (definição) ──
+  async getProgramas(filtro?: {
+    areaDesenvolvimentoId?: string;
+    tipoPrograma?: TipoPrograma;
+    programaFamiliaId?: string;
+  }): Promise<Programa[]> {
+    let programas = itensLocalGetArray<Programa>('programas');
+    if (filtro?.areaDesenvolvimentoId) programas = programas.filter((p) => p.areaDesenvolvimentoId === filtro.areaDesenvolvimentoId);
+    if (filtro?.tipoPrograma) programas = programas.filter((p) => p.tipoPrograma === filtro.tipoPrograma);
+    if (filtro?.programaFamiliaId) programas = programas.filter((p) => p.programaFamiliaId === filtro.programaFamiliaId);
+    return programas;
+  }
+  async saveProgramaTemplate(programa: Programa): Promise<void> {
+    itensLocalSaveItem('programas', programa);
+  }
+  async getProgramaEtapasTemplate(filtro?: { programaId?: string }): Promise<ProgramaEtapaTemplate[]> {
+    let etapas = itensLocalGetArray<ProgramaEtapaTemplate>('programaEtapasTemplate');
+    if (filtro?.programaId) etapas = etapas.filter((e) => e.programaId === filtro.programaId);
+    return etapas;
+  }
+  async saveProgramaEtapaTemplate(etapa: ProgramaEtapaTemplate): Promise<void> {
+    itensLocalSaveItem('programaEtapasTemplate', etapa);
+  }
+  async deleteProgramaEtapaTemplate(id: string): Promise<void> {
+    itensLocalDeleteItem('programaEtapasTemplate', id);
   }
 
   async uploadFile(
@@ -3737,6 +3776,122 @@ export class GoogleScriptDataService implements IDataService {
       console.warn('Erro ao excluir área de desenvolvimento no GoogleScript:', e);
     }
   }
+
+  // ── Motor de Desenvolvimento de Colaboradores — Programa (definição) ──
+  async getProgramas(filtro?: {
+    areaDesenvolvimentoId?: string;
+    tipoPrograma?: TipoPrograma;
+    programaFamiliaId?: string;
+  }): Promise<Programa[]> {
+    try {
+      const raw = await this.request<any[]>('getProgramas', {
+        areaDesenvolvimentoId: filtro?.areaDesenvolvimentoId || '',
+        tipoPrograma: filtro?.tipoPrograma || '',
+        programaFamiliaId: filtro?.programaFamiliaId || '',
+      });
+      return (raw || []).map((p) => ({
+        id: p.id,
+        programaFamiliaId: p.programa_familia_id,
+        versao: Number(p.versao) || 1,
+        areaDesenvolvimentoId: p.area_desenvolvimento_id || undefined,
+        nome: p.nome,
+        descricao: p.descricao || undefined,
+        tipoPrograma: p.tipo_programa,
+        modoEstrutura: p.modo_estrutura,
+        criterioElegibilidade: p.criterio_elegibilidade && typeof p.criterio_elegibilidade === 'object'
+          ? p.criterio_elegibilidade
+          : { tipo: 'automatico' },
+        ativo: p.ativo === true || p.ativo === 'true',
+        criadoEm: p.criado_em || undefined,
+        criadoPor: p.criado_por || undefined,
+      }));
+    } catch (e) {
+      return this.localFallback.getProgramas(filtro);
+    }
+  }
+  async saveProgramaTemplate(programa: Programa): Promise<void> {
+    await this.localFallback.saveProgramaTemplate(programa);
+    try {
+      const body = {
+        id: programa.id,
+        programa_familia_id: programa.programaFamiliaId,
+        versao: programa.versao,
+        area_desenvolvimento_id: programa.areaDesenvolvimentoId || '',
+        nome: programa.nome,
+        descricao: programa.descricao || '',
+        tipo_programa: programa.tipoPrograma,
+        modo_estrutura: programa.modoEstrutura,
+        criterio_elegibilidade: JSON.stringify(programa.criterioElegibilidade || { tipo: 'automatico' }),
+        ativo: programa.ativo,
+        criado_em: programa.criadoEm || '',
+        criado_por: programa.criadoPor || '',
+      };
+      // O backend recusa o save (erro explícito) se este `id` já tiver Oferta
+      // vinculada — ver Princípio 17/20 da Especificação v2. Deixamos o erro
+      // subir para quem chamou, mesmo padrão de saveFormularioTemplate.
+      await this.request('saveProgramaTemplate', { data: body });
+    } catch (e) {
+      console.warn('Erro ao salvar Programa no GoogleScript:', e);
+      throw e;
+    }
+  }
+  async getProgramaEtapasTemplate(filtro?: { programaId?: string }): Promise<ProgramaEtapaTemplate[]> {
+    try {
+      const raw = await this.request<any[]>('getProgramaEtapasTemplate', { programaId: filtro?.programaId || '' });
+      return (raw || []).map((e) => ({
+        id: e.id,
+        programaId: e.programa_id,
+        ordem: Number(e.ordem) || 0,
+        nome: e.nome,
+        objetivos: e.objetivos || undefined,
+        dependeDeIds: Array.isArray(e.depende_de_ids) ? e.depende_de_ids : [],
+        prazoDias: e.prazo_dias !== '' && e.prazo_dias != null ? Number(e.prazo_dias) : undefined,
+        prazoBase: e.prazo_base || 'admissao',
+        competenciasAlvo: Array.isArray(e.competencias_alvo) ? e.competencias_alvo : [],
+        itensPadrao: Array.isArray(e.itens_padrao) ? e.itens_padrao : [],
+        materiaisIds: Array.isArray(e.materiais_ids) ? e.materiais_ids : [],
+        exigeEvidencia: e.exige_evidencia === true || e.exige_evidencia === 'true',
+        exigeValidacaoEvidencia: e.exige_validacao_evidencia === true || e.exige_validacao_evidencia === 'true',
+      }));
+    } catch (e) {
+      return this.localFallback.getProgramaEtapasTemplate(filtro);
+    }
+  }
+  async saveProgramaEtapaTemplate(etapa: ProgramaEtapaTemplate): Promise<void> {
+    await this.localFallback.saveProgramaEtapaTemplate(etapa);
+    try {
+      const body = {
+        id: etapa.id,
+        programa_id: etapa.programaId,
+        ordem: etapa.ordem,
+        nome: etapa.nome,
+        objetivos: etapa.objetivos || '',
+        depende_de_ids: JSON.stringify(etapa.dependeDeIds || []),
+        prazo_dias: etapa.prazoDias ?? '',
+        prazo_base: etapa.prazoBase,
+        competencias_alvo: JSON.stringify(etapa.competenciasAlvo || []),
+        itens_padrao: JSON.stringify(etapa.itensPadrao || []),
+        materiais_ids: JSON.stringify(etapa.materiaisIds || []),
+        exige_evidencia: etapa.exigeEvidencia,
+        exige_validacao_evidencia: etapa.exigeValidacaoEvidencia,
+      };
+      // Mesma proteção do Programa-pai: se ele já tiver Oferta vinculada, o
+      // backend recusa a alteração de estrutura. Erro sobe para quem chamou.
+      await this.request('saveProgramaEtapaTemplate', { data: body });
+    } catch (e) {
+      console.warn('Erro ao salvar etapa do Programa no GoogleScript:', e);
+      throw e;
+    }
+  }
+  async deleteProgramaEtapaTemplate(id: string): Promise<void> {
+    await this.localFallback.deleteProgramaEtapaTemplate(id);
+    try {
+      await this.request('deleteProgramaEtapaTemplate', { id });
+    } catch (e) {
+      console.warn('Erro ao excluir etapa do Programa no GoogleScript:', e);
+      throw e;
+    }
+  }
 }
 
 // -----------------------------------------------------------------
@@ -4244,6 +4399,27 @@ class DynamicDataService implements IDataService {
   }
   async deleteAreaDesenvolvimento(id: string): Promise<void> {
     await this.getService().deleteAreaDesenvolvimento(id);
+  }
+
+  // ── Motor de Desenvolvimento de Colaboradores — Programa (definição) ──
+  async getProgramas(filtro?: {
+    areaDesenvolvimentoId?: string;
+    tipoPrograma?: TipoPrograma;
+    programaFamiliaId?: string;
+  }): Promise<Programa[]> {
+    return this.getService().getProgramas(filtro);
+  }
+  async saveProgramaTemplate(programa: Programa): Promise<void> {
+    await this.getService().saveProgramaTemplate(programa);
+  }
+  async getProgramaEtapasTemplate(filtro?: { programaId?: string }): Promise<ProgramaEtapaTemplate[]> {
+    return this.getService().getProgramaEtapasTemplate(filtro);
+  }
+  async saveProgramaEtapaTemplate(etapa: ProgramaEtapaTemplate): Promise<void> {
+    await this.getService().saveProgramaEtapaTemplate(etapa);
+  }
+  async deleteProgramaEtapaTemplate(id: string): Promise<void> {
+    await this.getService().deleteProgramaEtapaTemplate(id);
   }
 
   async resetData(): Promise<void> {

@@ -81,6 +81,8 @@ import {
   PerfilObjetivo,
   PerfilConsolidado,
   ResultadoEvolucaoCompetencia,
+  IndicadorDesenvolvimento,
+  EscopoTipoIndicador,
 } from '../types';
 import { StorageAPI } from '../utils/storage';
 
@@ -540,6 +542,16 @@ export interface IDataService {
   concluirObjetivo(id: string, usuarioId?: string): Promise<void>;
   expirarObjetivo(id: string, usuarioId?: string): Promise<void>;
   getPerfilConsolidado(colaboradorId: string): Promise<PerfilConsolidado>;
+
+  // ── Motor de Desenvolvimento de Colaboradores — Indicadores ──
+  // Sem "saveIndicador": o cache só é escrito por recalcularIndicadoresDesenvolvimentoAgora
+  // (Princípio 14 — Indicadores são sempre derivados).
+  getIndicadoresDesenvolvimento(filtro?: {
+    escopoTipo?: EscopoTipoIndicador;
+    escopoId?: string;
+    tipoIndicador?: string;
+  }): Promise<IndicadorDesenvolvimento[]>;
+  recalcularIndicadoresDesenvolvimentoAgora(): Promise<{ totalIndicadores: number }>;
 
   uploadFile(
     file: File,
@@ -1373,6 +1385,41 @@ export class LocalDataService implements IDataService {
     });
 
     return { colaboradorId, competencias, objetivos, inscricoesAtivas: inscricoesResumo };
+  }
+
+  // ── Motor de Desenvolvimento de Colaboradores — Indicadores ──
+  async getIndicadoresDesenvolvimento(filtro?: {
+    escopoTipo?: EscopoTipoIndicador;
+    escopoId?: string;
+    tipoIndicador?: string;
+  }): Promise<IndicadorDesenvolvimento[]> {
+    let indicadores = itensLocalGetArray<IndicadorDesenvolvimento>('indicadoresDesenvolvimento');
+    if (filtro?.escopoTipo) indicadores = indicadores.filter((i) => i.escopoTipo === filtro.escopoTipo);
+    if (filtro?.escopoId) indicadores = indicadores.filter((i) => i.escopoId === filtro.escopoId);
+    if (filtro?.tipoIndicador) indicadores = indicadores.filter((i) => i.tipoIndicador === filtro.tipoIndicador);
+    return indicadores;
+  }
+  // Versão simplificada, só para o modo demo ter algum dado coerente sem
+  // depender do Apps Script — a régua de verdade é recalcularIndicadoresDesenvolvimento_
+  // no Code.gs, que é bem mais completa (setor/cargo/programa/empresa).
+  async recalcularIndicadoresDesenvolvimentoAgora(): Promise<{ totalIndicadores: number }> {
+    const inscricoes = itensLocalGetArray<Inscricao>('inscricoes');
+    const programas = itensLocalGetArray<Programa>('programas');
+    const novoCache: IndicadorDesenvolvimento[] = programas.map((programa) => {
+      const doPrograma = inscricoes.filter((i) => i.programaId === programa.id);
+      const concluidas = doPrograma.filter((i) => i.estadoWorkflow === 'concluida').length;
+      const taxa = doPrograma.length > 0 ? Math.round((concluidas / doPrograma.length) * 100) : 0;
+      return {
+        id: `indicador-taxa_conclusao-programa-${programa.id}`,
+        tipoIndicador: 'taxa_conclusao',
+        escopoTipo: 'programa',
+        escopoId: programa.id,
+        valor: taxa,
+        calculadoEm: new Date().toISOString().slice(0, 10),
+      };
+    });
+    novoCache.forEach((i) => itensLocalSaveItem('indicadoresDesenvolvimento', i));
+    return { totalIndicadores: novoCache.length };
   }
 
   async uploadFile(
@@ -4557,6 +4604,40 @@ export class GoogleScriptDataService implements IDataService {
       return this.localFallback.getPerfilConsolidado(colaboradorId);
     }
   }
+
+  // ── Motor de Desenvolvimento de Colaboradores — Indicadores ──
+  async getIndicadoresDesenvolvimento(filtro?: {
+    escopoTipo?: EscopoTipoIndicador;
+    escopoId?: string;
+    tipoIndicador?: string;
+  }): Promise<IndicadorDesenvolvimento[]> {
+    try {
+      const raw = await this.request<any[]>('getIndicadoresDesenvolvimento', {
+        escopoTipo: filtro?.escopoTipo || '',
+        escopoId: filtro?.escopoId || '',
+        tipoIndicador: filtro?.tipoIndicador || '',
+      });
+      return (raw || []).map((i) => ({
+        id: i.id,
+        tipoIndicador: i.tipo_indicador,
+        escopoTipo: i.escopo_tipo,
+        escopoId: i.escopo_id,
+        valor: Number(i.valor) || 0,
+        calculadoEm: i.calculado_em || undefined,
+      }));
+    } catch (e) {
+      return this.localFallback.getIndicadoresDesenvolvimento(filtro);
+    }
+  }
+  async recalcularIndicadoresDesenvolvimentoAgora(): Promise<{ totalIndicadores: number }> {
+    try {
+      const raw = await this.request<any>('recalcularIndicadoresDesenvolvimentoAgora');
+      return { totalIndicadores: Number(raw?.totalIndicadores) || 0 };
+    } catch (e) {
+      console.warn('Erro ao recalcular Indicadores de Desenvolvimento no GoogleScript:', e);
+      throw e;
+    }
+  }
 }
 
 // -----------------------------------------------------------------
@@ -5160,6 +5241,18 @@ class DynamicDataService implements IDataService {
   }
   async getPerfilConsolidado(colaboradorId: string): Promise<PerfilConsolidado> {
     return this.getService().getPerfilConsolidado(colaboradorId);
+  }
+
+  // ── Motor de Desenvolvimento de Colaboradores — Indicadores ──
+  async getIndicadoresDesenvolvimento(filtro?: {
+    escopoTipo?: EscopoTipoIndicador;
+    escopoId?: string;
+    tipoIndicador?: string;
+  }): Promise<IndicadorDesenvolvimento[]> {
+    return this.getService().getIndicadoresDesenvolvimento(filtro);
+  }
+  async recalcularIndicadoresDesenvolvimentoAgora(): Promise<{ totalIndicadores: number }> {
+    return this.getService().recalcularIndicadoresDesenvolvimentoAgora();
   }
 
   async resetData(): Promise<void> {

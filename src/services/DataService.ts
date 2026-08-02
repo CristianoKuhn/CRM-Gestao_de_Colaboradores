@@ -68,6 +68,15 @@ import {
   Programa,
   TipoPrograma,
   ProgramaEtapaTemplate,
+  Oferta,
+  StatusOferta,
+  Inscricao,
+  EstadoWorkflowInscricao,
+  OrigemInscricao,
+  InscricaoEtapa,
+  ResultadoConclusaoEtapa,
+  Evidencia,
+  EntidadeTipoEvidencia,
 } from '../types';
 import { StorageAPI } from '../utils/storage';
 
@@ -484,6 +493,32 @@ export interface IDataService {
   getProgramaEtapasTemplate(filtro?: { programaId?: string }): Promise<ProgramaEtapaTemplate[]>;
   saveProgramaEtapaTemplate(etapa: ProgramaEtapaTemplate): Promise<void>;
   deleteProgramaEtapaTemplate(id: string): Promise<void>;
+
+  // ── Motor de Desenvolvimento de Colaboradores — Oferta/Inscrição/Etapa/Evidência ──
+  // Camada de execução real. Sem "saveInscricaoEtapa" genérico de status —
+  // todo avanço passa por criarInscricao/concluirEtapa/cancelarInscricao
+  // (Princípio 10 da Especificação v2).
+  getOfertas(filtro?: { programaId?: string; status?: StatusOferta }): Promise<Oferta[]>;
+  saveOferta(oferta: Oferta): Promise<void>;
+  encerrarOferta(id: string): Promise<void>;
+  cancelarOferta(id: string): Promise<void>;
+
+  getInscricoes(filtro?: {
+    colaboradorId?: string;
+    ofertaId?: string;
+    programaId?: string;
+    estadoWorkflow?: EstadoWorkflowInscricao;
+  }): Promise<Inscricao[]>;
+  criarInscricao(colaboradorId: string, ofertaId: string, origem?: OrigemInscricao, usuarioId?: string): Promise<Inscricao>;
+  cancelarInscricao(id: string, motivo: string, usuarioId?: string): Promise<void>;
+
+  getInscricaoEtapas(filtro?: { inscricaoId?: string }): Promise<InscricaoEtapa[]>;
+  concluirEtapa(id: string, usuarioId?: string): Promise<ResultadoConclusaoEtapa>;
+
+  getEvidencias(filtro?: { entidadeTipo?: EntidadeTipoEvidencia; entidadeId?: string }): Promise<Evidencia[]>;
+  anexarEvidencia(evidencia: Evidencia): Promise<void>;
+  validarEvidencia(id: string, validadoPor?: string): Promise<void>;
+  rejeitarEvidencia(id: string, validadoPor?: string): Promise<void>;
 
   uploadFile(
     file: File,
@@ -1059,6 +1094,169 @@ export class LocalDataService implements IDataService {
   }
   async deleteProgramaEtapaTemplate(id: string): Promise<void> {
     itensLocalDeleteItem('programaEtapasTemplate', id);
+  }
+
+  // ── Motor de Desenvolvimento de Colaboradores — Oferta/Inscrição/Etapa/Evidência ──
+  async getOfertas(filtro?: { programaId?: string; status?: StatusOferta }): Promise<Oferta[]> {
+    let ofertas = itensLocalGetArray<Oferta>('ofertas');
+    if (filtro?.programaId) ofertas = ofertas.filter((o) => o.programaId === filtro.programaId);
+    if (filtro?.status) ofertas = ofertas.filter((o) => o.status === filtro.status);
+    return ofertas;
+  }
+  async saveOferta(oferta: Oferta): Promise<void> {
+    itensLocalSaveItem('ofertas', { ...oferta, status: oferta.status || 'aberta' });
+  }
+  async encerrarOferta(id: string): Promise<void> {
+    const oferta = itensLocalGetArray<Oferta>('ofertas').find((o) => o.id === id);
+    if (oferta) itensLocalSaveItem('ofertas', { ...oferta, status: 'encerrada' });
+  }
+  async cancelarOferta(id: string): Promise<void> {
+    const oferta = itensLocalGetArray<Oferta>('ofertas').find((o) => o.id === id);
+    if (oferta) itensLocalSaveItem('ofertas', { ...oferta, status: 'cancelada' });
+  }
+
+  async getInscricoes(filtro?: {
+    colaboradorId?: string;
+    ofertaId?: string;
+    programaId?: string;
+    estadoWorkflow?: EstadoWorkflowInscricao;
+  }): Promise<Inscricao[]> {
+    let inscricoes = itensLocalGetArray<Inscricao>('inscricoes');
+    if (filtro?.colaboradorId) inscricoes = inscricoes.filter((i) => i.colaboradorId === filtro.colaboradorId);
+    if (filtro?.ofertaId) inscricoes = inscricoes.filter((i) => i.ofertaId === filtro.ofertaId);
+    if (filtro?.programaId) inscricoes = inscricoes.filter((i) => i.programaId === filtro.programaId);
+    if (filtro?.estadoWorkflow) inscricoes = inscricoes.filter((i) => i.estadoWorkflow === filtro.estadoWorkflow);
+    return inscricoes;
+  }
+  // Versão simplificada da função de negócio (sem instanciar Itens Operacionais
+  // no modo demo) — suficiente para exercitar o grafo de dependência entre
+  // Etapas localmente. A versão de verdade vive no Code.gs (criarInscricao_).
+  async criarInscricao(colaboradorId: string, ofertaId: string, origem: OrigemInscricao = 'manual'): Promise<Inscricao> {
+    const oferta = itensLocalGetArray<Oferta>('ofertas').find((o) => o.id === ofertaId);
+    if (!oferta) throw new Error('Oferta não encontrada.');
+    if (oferta.status !== 'aberta') throw new Error('Esta Oferta não está aberta para novas Inscrições.');
+    const jaInscrito = itensLocalGetArray<Inscricao>('inscricoes').some(
+      (i) => i.colaboradorId === colaboradorId && i.ofertaId === ofertaId && i.estadoWorkflow !== 'cancelada'
+    );
+    if (jaInscrito) throw new Error('Este colaborador já possui uma Inscrição ativa nesta Oferta.');
+
+    const inscricao: Inscricao = {
+      id: `inscricao-${Date.now()}`,
+      colaboradorId,
+      ofertaId,
+      programaId: oferta.programaId,
+      estadoWorkflow: 'em_andamento',
+      origem,
+      dataInicio: new Date().toISOString().slice(0, 10),
+      percentualConcluido: 0,
+    };
+    itensLocalSaveItem('inscricoes', inscricao);
+
+    const etapasTemplate = itensLocalGetArray<ProgramaEtapaTemplate>('programaEtapasTemplate')
+      .filter((e) => e.programaId === oferta.programaId)
+      .sort((a, b) => a.ordem - b.ordem);
+    etapasTemplate.forEach((etapaTemplate) => {
+      const semDependencia = !etapaTemplate.dependeDeIds || etapaTemplate.dependeDeIds.length === 0;
+      const novaEtapa: InscricaoEtapa = {
+        id: `inscricao-etapa-${Date.now()}-${etapaTemplate.ordem}`,
+        inscricaoId: inscricao.id,
+        etapaTemplateId: etapaTemplate.id,
+        ordem: etapaTemplate.ordem,
+        nome: etapaTemplate.nome,
+        status: semDependencia ? 'disponivel' : 'bloqueada',
+      };
+      itensLocalSaveItem('inscricaoEtapas', novaEtapa);
+    });
+    return inscricao;
+  }
+  async cancelarInscricao(id: string, motivo: string): Promise<void> {
+    const inscricao = itensLocalGetArray<Inscricao>('inscricoes').find((i) => i.id === id);
+    if (!inscricao) throw new Error('Inscrição não encontrada.');
+    itensLocalSaveItem('inscricoes', { ...inscricao, estadoWorkflow: 'cancelada', motivoCancelamento: motivo });
+    itensLocalGetArray<InscricaoEtapa>('inscricaoEtapas')
+      .filter((e) => e.inscricaoId === id && e.status !== 'concluida')
+      .forEach((e) => itensLocalSaveItem('inscricaoEtapas', { ...e, status: 'encerrada_cancelamento' }));
+  }
+
+  async getInscricaoEtapas(filtro?: { inscricaoId?: string }): Promise<InscricaoEtapa[]> {
+    let etapas = itensLocalGetArray<InscricaoEtapa>('inscricaoEtapas');
+    if (filtro?.inscricaoId) etapas = etapas.filter((e) => e.inscricaoId === filtro.inscricaoId);
+    return etapas;
+  }
+  async concluirEtapa(id: string): Promise<ResultadoConclusaoEtapa> {
+    const todasAsEtapas = itensLocalGetArray<InscricaoEtapa>('inscricaoEtapas');
+    const etapaAlvo = todasAsEtapas.find((e) => e.id === id);
+    if (!etapaAlvo) throw new Error('Etapa de inscrição não encontrada.');
+    if (etapaAlvo.status === 'concluida') {
+      return { id, etapasLiberadas: [], percentualConcluido: 0, inscricaoConcluida: false };
+    }
+    itensLocalSaveItem('inscricaoEtapas', { ...etapaAlvo, status: 'concluida', dataConclusao: new Date().toISOString().slice(0, 10) });
+
+    const etapasDaInscricao = todasAsEtapas.filter((e) => e.inscricaoId === etapaAlvo.inscricaoId);
+    const concluidosOuAgora = etapasDaInscricao
+      .filter((e) => e.status === 'concluida' || e.id === id)
+      .map((e) => e.etapaTemplateId);
+    const templates = itensLocalGetArray<ProgramaEtapaTemplate>('programaEtapasTemplate');
+    const etapasLiberadas: string[] = [];
+    etapasDaInscricao
+      .filter((e) => e.status === 'bloqueada')
+      .forEach((etapaCandidata) => {
+        const template = templates.find((t) => t.id === etapaCandidata.etapaTemplateId);
+        if (!template) return;
+        const satisfeita = (template.dependeDeIds || []).every((depId) => concluidosOuAgora.includes(depId));
+        if (satisfeita) {
+          itensLocalSaveItem('inscricaoEtapas', { ...etapaCandidata, status: 'disponivel' });
+          etapasLiberadas.push(etapaCandidata.id);
+        }
+      });
+
+    const total = etapasDaInscricao.length;
+    const concluidasAgora = etapasDaInscricao.filter((e) => e.status === 'concluida' || e.id === id).length;
+    const percentual = total > 0 ? Math.round((concluidasAgora / total) * 100) : 0;
+    let inscricaoConcluida = false;
+    const inscricao = itensLocalGetArray<Inscricao>('inscricoes').find((i) => i.id === etapaAlvo.inscricaoId);
+    if (inscricao) {
+      inscricaoConcluida = concluidasAgora >= total && total > 0;
+      itensLocalSaveItem('inscricoes', {
+        ...inscricao,
+        percentualConcluido: percentual,
+        estadoWorkflow: inscricaoConcluida ? 'concluida' : inscricao.estadoWorkflow,
+        dataConclusao: inscricaoConcluida ? new Date().toISOString().slice(0, 10) : inscricao.dataConclusao,
+      });
+    }
+    return { id, etapasLiberadas, percentualConcluido: percentual, inscricaoConcluida };
+  }
+
+  async getEvidencias(filtro?: { entidadeTipo?: EntidadeTipoEvidencia; entidadeId?: string }): Promise<Evidencia[]> {
+    let evidencias = itensLocalGetArray<Evidencia>('evidencias');
+    if (filtro?.entidadeTipo) evidencias = evidencias.filter((e) => e.entidadeTipo === filtro.entidadeTipo);
+    if (filtro?.entidadeId) evidencias = evidencias.filter((e) => e.entidadeId === filtro.entidadeId);
+    return evidencias;
+  }
+  async anexarEvidencia(evidencia: Evidencia): Promise<void> {
+    itensLocalSaveItem('evidencias', { ...evidencia, status: evidencia.status || 'pendente' });
+  }
+  async validarEvidencia(id: string, validadoPor?: string): Promise<void> {
+    const evidencia = itensLocalGetArray<Evidencia>('evidencias').find((e) => e.id === id);
+    if (evidencia) {
+      itensLocalSaveItem('evidencias', {
+        ...evidencia,
+        status: 'validada',
+        validadoPor,
+        dataValidacao: new Date().toISOString().slice(0, 10),
+      });
+    }
+  }
+  async rejeitarEvidencia(id: string, validadoPor?: string): Promise<void> {
+    const evidencia = itensLocalGetArray<Evidencia>('evidencias').find((e) => e.id === id);
+    if (evidencia) {
+      itensLocalSaveItem('evidencias', {
+        ...evidencia,
+        status: 'rejeitada',
+        validadoPor,
+        dataValidacao: new Date().toISOString().slice(0, 10),
+      });
+    }
   }
 
   async uploadFile(
@@ -3465,6 +3663,7 @@ export class GoogleScriptDataService implements IDataService {
         origemRecorrenciaId: i.origem_recorrencia_id || undefined,
         origemTemplateId: i.origem_template_id || undefined,
         origemGatilhoId: i.origem_gatilho_id || undefined,
+        origemEtapaId: i.origem_etapa_id || undefined,
         tipoOrigem: i.tipo_origem || undefined,
         registroId: i.registro_id || undefined,
         empresaId: i.empresa_id || undefined,
@@ -3503,6 +3702,7 @@ export class GoogleScriptDataService implements IDataService {
         origem_recorrencia_id: item.origemRecorrenciaId || '',
         origem_template_id: item.origemTemplateId || '',
         origem_gatilho_id: item.origemGatilhoId || '',
+        origem_etapa_id: item.origemEtapaId || '',
         tipo_origem: item.tipoOrigem || '',
         registro_id: item.registroId || '',
         empresa_id: item.empresaId || '',
@@ -3889,6 +4089,231 @@ export class GoogleScriptDataService implements IDataService {
       await this.request('deleteProgramaEtapaTemplate', { id });
     } catch (e) {
       console.warn('Erro ao excluir etapa do Programa no GoogleScript:', e);
+      throw e;
+    }
+  }
+
+  // ── Motor de Desenvolvimento de Colaboradores — Oferta/Inscrição/Etapa/Evidência ──
+  async getOfertas(filtro?: { programaId?: string; status?: StatusOferta }): Promise<Oferta[]> {
+    try {
+      const raw = await this.request<any[]>('getOfertas', { programaId: filtro?.programaId || '', status: filtro?.status || '' });
+      return (raw || []).map((o) => ({
+        id: o.id,
+        programaId: o.programa_id,
+        nome: o.nome,
+        dataInicio: o.data_inicio || undefined,
+        dataFim: o.data_fim || undefined,
+        vagas: o.vagas !== '' && o.vagas != null ? Number(o.vagas) : undefined,
+        facilitadorId: o.facilitador_id || undefined,
+        status: o.status,
+        criadoEm: o.criado_em || undefined,
+      }));
+    } catch (e) {
+      return this.localFallback.getOfertas(filtro);
+    }
+  }
+  async saveOferta(oferta: Oferta): Promise<void> {
+    await this.localFallback.saveOferta(oferta);
+    try {
+      const body = {
+        id: oferta.id,
+        programa_id: oferta.programaId,
+        nome: oferta.nome,
+        data_inicio: oferta.dataInicio || '',
+        data_fim: oferta.dataFim || '',
+        vagas: oferta.vagas ?? '',
+        facilitador_id: oferta.facilitadorId || '',
+        status: oferta.status || 'aberta',
+        criado_em: oferta.criadoEm || '',
+      };
+      await this.request('saveOferta', { data: body });
+    } catch (e) {
+      console.warn('Erro ao salvar Oferta no GoogleScript:', e);
+      throw e;
+    }
+  }
+  async encerrarOferta(id: string): Promise<void> {
+    await this.localFallback.encerrarOferta(id);
+    try {
+      await this.request('encerrarOferta', { id });
+    } catch (e) {
+      console.warn('Erro ao encerrar Oferta no GoogleScript:', e);
+      throw e;
+    }
+  }
+  async cancelarOferta(id: string): Promise<void> {
+    await this.localFallback.cancelarOferta(id);
+    try {
+      await this.request('cancelarOferta', { id });
+    } catch (e) {
+      console.warn('Erro ao cancelar Oferta no GoogleScript:', e);
+      throw e;
+    }
+  }
+
+  async getInscricoes(filtro?: {
+    colaboradorId?: string;
+    ofertaId?: string;
+    programaId?: string;
+    estadoWorkflow?: EstadoWorkflowInscricao;
+  }): Promise<Inscricao[]> {
+    try {
+      const raw = await this.request<any[]>('getInscricoes', {
+        colaboradorId: filtro?.colaboradorId || '',
+        ofertaId: filtro?.ofertaId || '',
+        programaId: filtro?.programaId || '',
+        estadoWorkflow: filtro?.estadoWorkflow || '',
+      });
+      return (raw || []).map((i) => ({
+        id: i.id,
+        colaboradorId: i.colaborador_id,
+        ofertaId: i.oferta_id,
+        programaId: i.programa_id,
+        workflowId: i.workflow_id || undefined,
+        estadoWorkflow: i.estado_workflow,
+        origem: i.origem,
+        dataInicio: i.data_inicio || undefined,
+        dataPrevisaoConclusao: i.data_previsao_conclusao || undefined,
+        dataConclusao: i.data_conclusao || undefined,
+        percentualConcluido: Number(i.percentual_concluido) || 0,
+        motivoCancelamento: i.motivo_cancelamento || undefined,
+      }));
+    } catch (e) {
+      return this.localFallback.getInscricoes(filtro);
+    }
+  }
+  // criarInscricao/cancelarInscricao/concluirEtapa são funções de negócio, não
+  // upsert cru (Modelagem Física, seção 2) — o backend pode recusar (Oferta
+  // fechada, Inscrição duplicada, Evidência faltando) e o erro precisa chegar
+  // até quem chamou, nunca ser engolido em silêncio.
+  async criarInscricao(colaboradorId: string, ofertaId: string, origem: OrigemInscricao = 'manual', usuarioId?: string): Promise<Inscricao> {
+    try {
+      const raw = await this.request<any>('criarInscricao', {
+        data: { colaborador_id: colaboradorId, oferta_id: ofertaId, origem, usuario_id: usuarioId || '' },
+      });
+      const inscricao: Inscricao = {
+        id: raw.id,
+        colaboradorId: raw.colaborador_id,
+        ofertaId: raw.oferta_id,
+        programaId: raw.programa_id,
+        workflowId: raw.workflow_id || undefined,
+        estadoWorkflow: raw.estado_workflow,
+        origem: raw.origem,
+        dataInicio: raw.data_inicio || undefined,
+        percentualConcluido: Number(raw.percentual_concluido) || 0,
+      };
+      await this.localFallback.criarInscricao(colaboradorId, ofertaId, origem).catch(() => undefined);
+      return inscricao;
+    } catch (e) {
+      console.warn('Erro ao criar Inscrição no GoogleScript:', e);
+      throw e;
+    }
+  }
+  async cancelarInscricao(id: string, motivo: string, usuarioId?: string): Promise<void> {
+    try {
+      await this.request('cancelarInscricao', { data: { id, motivo, usuario_id: usuarioId || '' } });
+      await this.localFallback.cancelarInscricao(id, motivo).catch(() => undefined);
+    } catch (e) {
+      console.warn('Erro ao cancelar Inscrição no GoogleScript:', e);
+      throw e;
+    }
+  }
+
+  async getInscricaoEtapas(filtro?: { inscricaoId?: string }): Promise<InscricaoEtapa[]> {
+    try {
+      const raw = await this.request<any[]>('getInscricaoEtapas', { inscricaoId: filtro?.inscricaoId || '' });
+      return (raw || []).map((e) => ({
+        id: e.id,
+        inscricaoId: e.inscricao_id,
+        etapaTemplateId: e.etapa_template_id,
+        ordem: Number(e.ordem) || 0,
+        nome: e.nome,
+        status: e.status,
+        dataPrevista: e.data_prevista || undefined,
+        dataConclusao: e.data_conclusao || undefined,
+        responsavelId: e.responsavel_id || undefined,
+        observacoes: e.observacoes || undefined,
+      }));
+    } catch (e) {
+      return this.localFallback.getInscricaoEtapas(filtro);
+    }
+  }
+  async concluirEtapa(id: string, usuarioId?: string): Promise<ResultadoConclusaoEtapa> {
+    try {
+      const raw = await this.request<any>('concluirEtapa', { data: { id, usuario_id: usuarioId || '' } });
+      await this.localFallback.concluirEtapa(id).catch(() => undefined);
+      return {
+        id: raw.id,
+        etapasLiberadas: Array.isArray(raw.etapasLiberadas) ? raw.etapasLiberadas : [],
+        percentualConcluido: Number(raw.percentualConcluido) || 0,
+        inscricaoConcluida: raw.inscricaoConcluida === true,
+      };
+    } catch (e) {
+      console.warn('Erro ao concluir Etapa no GoogleScript:', e);
+      throw e;
+    }
+  }
+
+  async getEvidencias(filtro?: { entidadeTipo?: EntidadeTipoEvidencia; entidadeId?: string }): Promise<Evidencia[]> {
+    try {
+      const raw = await this.request<any[]>('getEvidencias', {
+        entidadeTipo: filtro?.entidadeTipo || '',
+        entidadeId: filtro?.entidadeId || '',
+      });
+      return (raw || []).map((e) => ({
+        id: e.id,
+        entidadeTipo: e.entidade_tipo,
+        entidadeId: e.entidade_id,
+        tipo: e.tipo,
+        url: e.url || undefined,
+        driveFileId: e.drive_file_id || undefined,
+        texto: e.texto || undefined,
+        anexadoPor: e.anexado_por || undefined,
+        data: e.data || undefined,
+        status: e.status,
+        validadoPor: e.validado_por || undefined,
+        dataValidacao: e.data_validacao || undefined,
+      }));
+    } catch (e) {
+      return this.localFallback.getEvidencias(filtro);
+    }
+  }
+  async anexarEvidencia(evidencia: Evidencia): Promise<void> {
+    await this.localFallback.anexarEvidencia(evidencia);
+    try {
+      const body = {
+        id: evidencia.id,
+        entidade_tipo: evidencia.entidadeTipo,
+        entidade_id: evidencia.entidadeId,
+        tipo: evidencia.tipo,
+        url: evidencia.url || '',
+        drive_file_id: evidencia.driveFileId || '',
+        texto: evidencia.texto || '',
+        anexado_por: evidencia.anexadoPor || '',
+        data: evidencia.data || '',
+        status: evidencia.status || 'pendente',
+      };
+      await this.request('anexarEvidencia', { data: body });
+    } catch (e) {
+      console.warn('Erro ao anexar Evidência no GoogleScript:', e);
+      throw e;
+    }
+  }
+  async validarEvidencia(id: string, validadoPor?: string): Promise<void> {
+    await this.localFallback.validarEvidencia(id, validadoPor);
+    try {
+      await this.request('validarEvidencia', { data: { id, validado_por: validadoPor || '' } });
+    } catch (e) {
+      console.warn('Erro ao validar Evidência no GoogleScript:', e);
+      throw e;
+    }
+  }
+  async rejeitarEvidencia(id: string, validadoPor?: string): Promise<void> {
+    await this.localFallback.rejeitarEvidencia(id, validadoPor);
+    try {
+      await this.request('rejeitarEvidencia', { data: { id, validado_por: validadoPor || '' } });
+    } catch (e) {
+      console.warn('Erro ao rejeitar Evidência no GoogleScript:', e);
       throw e;
     }
   }
@@ -4420,6 +4845,52 @@ class DynamicDataService implements IDataService {
   }
   async deleteProgramaEtapaTemplate(id: string): Promise<void> {
     await this.getService().deleteProgramaEtapaTemplate(id);
+  }
+
+  // ── Motor de Desenvolvimento de Colaboradores — Oferta/Inscrição/Etapa/Evidência ──
+  async getOfertas(filtro?: { programaId?: string; status?: StatusOferta }): Promise<Oferta[]> {
+    return this.getService().getOfertas(filtro);
+  }
+  async saveOferta(oferta: Oferta): Promise<void> {
+    await this.getService().saveOferta(oferta);
+  }
+  async encerrarOferta(id: string): Promise<void> {
+    await this.getService().encerrarOferta(id);
+  }
+  async cancelarOferta(id: string): Promise<void> {
+    await this.getService().cancelarOferta(id);
+  }
+  async getInscricoes(filtro?: {
+    colaboradorId?: string;
+    ofertaId?: string;
+    programaId?: string;
+    estadoWorkflow?: EstadoWorkflowInscricao;
+  }): Promise<Inscricao[]> {
+    return this.getService().getInscricoes(filtro);
+  }
+  async criarInscricao(colaboradorId: string, ofertaId: string, origem?: OrigemInscricao, usuarioId?: string): Promise<Inscricao> {
+    return this.getService().criarInscricao(colaboradorId, ofertaId, origem, usuarioId);
+  }
+  async cancelarInscricao(id: string, motivo: string, usuarioId?: string): Promise<void> {
+    await this.getService().cancelarInscricao(id, motivo, usuarioId);
+  }
+  async getInscricaoEtapas(filtro?: { inscricaoId?: string }): Promise<InscricaoEtapa[]> {
+    return this.getService().getInscricaoEtapas(filtro);
+  }
+  async concluirEtapa(id: string, usuarioId?: string): Promise<ResultadoConclusaoEtapa> {
+    return this.getService().concluirEtapa(id, usuarioId);
+  }
+  async getEvidencias(filtro?: { entidadeTipo?: EntidadeTipoEvidencia; entidadeId?: string }): Promise<Evidencia[]> {
+    return this.getService().getEvidencias(filtro);
+  }
+  async anexarEvidencia(evidencia: Evidencia): Promise<void> {
+    await this.getService().anexarEvidencia(evidencia);
+  }
+  async validarEvidencia(id: string, validadoPor?: string): Promise<void> {
+    await this.getService().validarEvidencia(id, validadoPor);
+  }
+  async rejeitarEvidencia(id: string, validadoPor?: string): Promise<void> {
+    await this.getService().rejeitarEvidencia(id, validadoPor);
   }
 
   async resetData(): Promise<void> {

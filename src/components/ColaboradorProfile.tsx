@@ -22,9 +22,11 @@ import {
   ConfiguracaoReconhecimento,
   Tarefa,
   FormularioInstancia,
+  Usuario,
 } from '../types';
 import LinhaDoTempoInteligente from './LinhaDoTempoInteligente';
 import HistoricoInstancias from '../features/formularios/components/HistoricoInstancias';
+import JornadaColaboradorPanel from '../features/desenvolvimento-colaboradores/JornadaColaboradorPanel';
 import {
   Calendar,
   Briefcase,
@@ -70,6 +72,7 @@ interface ColaboradorProfileProps {
   reconhecimentos: Reconhecimento[];
   configReconhecimento: ConfiguracaoReconhecimento;
   tarefas: Tarefa[];
+  currentUser?: Usuario;
   onBack: () => void;
   onUpdateColaborador: (col: Colaborador) => Promise<Colaborador>;
   onAddTimelineRegistro: (reg: TimelineRegistro) => void;
@@ -86,6 +89,7 @@ export default function ColaboradorProfile({
   reconhecimentos,
   configReconhecimento,
   tarefas,
+  currentUser,
   onBack,
   onUpdateColaborador,
   onAddTimelineRegistro,
@@ -550,6 +554,8 @@ export default function ColaboradorProfile({
 
         {/* RIGHT COLUMN: Interactive Timeline & Registry Creation */}
         <div className="lg:col-span-8 space-y-6">
+          <JornadaColaboradorPanel colaboradorId={colaborador.id} currentUser={currentUser} />
+
           {/* Timeline Action Bar */}
           <div className="bg-white border border-slate-100 p-4 rounded-2xl shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
             {/* Quick search timeline */}

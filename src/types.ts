@@ -1541,3 +1541,22 @@ export interface ResultadoEvolucaoCompetencia {
   nivelAnterior?: string;
   nivelAtual: string;
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// MOTOR DE DESENVOLVIMENTO DE COLABORADORES — Indicadores
+// Ver "Especificação Arquitetural Definitiva v2", Princípio 14 ("Indicadores
+// são sempre derivados, nunca escritos manualmente") e "Modelagem Física
+// (Conceitual)", seção 1.11. Sempre lido de um cache recalculado no backend —
+// nunca existe um "saveIndicador" no frontend.
+// ═══════════════════════════════════════════════════════════════════
+
+export type EscopoTipoIndicador = 'setor' | 'cargo' | 'programa' | 'empresa';
+
+export interface IndicadorDesenvolvimento {
+  id: string;
+  tipoIndicador: string;
+  escopoTipo: EscopoTipoIndicador;
+  escopoId: string;
+  valor: number;
+  calculadoEm?: string;
+}

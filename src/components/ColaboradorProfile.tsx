@@ -27,6 +27,7 @@ import {
 import LinhaDoTempoInteligente from './LinhaDoTempoInteligente';
 import HistoricoInstancias from '../features/formularios/components/HistoricoInstancias';
 import JornadaColaboradorPanel from '../features/desenvolvimento-colaboradores/JornadaColaboradorPanel';
+import PerfilCompetenciasPanel from '../features/desenvolvimento-colaboradores/PerfilCompetenciasPanel';
 import {
   Calendar,
   Briefcase,
@@ -555,6 +556,7 @@ export default function ColaboradorProfile({
         {/* RIGHT COLUMN: Interactive Timeline & Registry Creation */}
         <div className="lg:col-span-8 space-y-6">
           <JornadaColaboradorPanel colaboradorId={colaborador.id} currentUser={currentUser} />
+          <PerfilCompetenciasPanel colaboradorId={colaborador.id} currentUser={currentUser} />
 
           {/* Timeline Action Bar */}
           <div className="bg-white border border-slate-100 p-4 rounded-2xl shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">

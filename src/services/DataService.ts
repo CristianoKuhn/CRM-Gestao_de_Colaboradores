@@ -83,6 +83,12 @@ import {
   ResultadoEvolucaoCompetencia,
   IndicadorDesenvolvimento,
   EscopoTipoIndicador,
+  Insight,
+  EntidadeTipoInsight,
+  TipoInsight,
+  StatusInsight,
+  ResultadoDecisaoInsight,
+  VisaoAnalitica,
 } from '../types';
 import { StorageAPI } from '../utils/storage';
 
@@ -552,6 +558,20 @@ export interface IDataService {
     tipoIndicador?: string;
   }): Promise<IndicadorDesenvolvimento[]>;
   recalcularIndicadoresDesenvolvimentoAgora(): Promise<{ totalIndicadores: number }>;
+
+  // ── Motor de Desenvolvimento de Colaboradores — Visão Analítica / Insight ──
+  // Sem "saveInsight": Insights só nascem via gerarInsightsDesenvolvimentoAgora
+  // (regra hoje, IA amanhã) e só mudam de estado via decidirInsight — nunca
+  // por upsert cru (Princípio 15).
+  getInsights(filtro?: {
+    colaboradorId?: string;
+    entidadeTipo?: EntidadeTipoInsight;
+    entidadeId?: string;
+    status?: StatusInsight;
+  }): Promise<Insight[]>;
+  gerarInsightsDesenvolvimentoAgora(): Promise<{ novosInsights: number }>;
+  decidirInsight(id: string, decisao: 'aceito' | 'recusado', usuarioId?: string): Promise<ResultadoDecisaoInsight>;
+  getVisaoAnalitica(colaboradorId: string): Promise<VisaoAnalitica>;
 
   uploadFile(
     file: File,
@@ -1420,6 +1440,90 @@ export class LocalDataService implements IDataService {
     });
     novoCache.forEach((i) => itensLocalSaveItem('indicadoresDesenvolvimento', i));
     return { totalIndicadores: novoCache.length };
+  }
+
+  // ── Motor de Desenvolvimento de Colaboradores — Visão Analítica / Insight ──
+  async getInsights(filtro?: {
+    colaboradorId?: string;
+    entidadeTipo?: EntidadeTipoInsight;
+    entidadeId?: string;
+    status?: StatusInsight;
+  }): Promise<Insight[]> {
+    let insights = itensLocalGetArray<Insight>('insights');
+    if (filtro?.colaboradorId) insights = insights.filter((i) => i.entidadeTipo === 'colaborador' && i.entidadeId === filtro.colaboradorId);
+    if (filtro?.entidadeTipo) insights = insights.filter((i) => i.entidadeTipo === filtro.entidadeTipo);
+    if (filtro?.entidadeId) insights = insights.filter((i) => i.entidadeId === filtro.entidadeId);
+    if (filtro?.status) insights = insights.filter((i) => i.status === filtro.status);
+    return insights;
+  }
+  // Versão simplificada — só a regra de Gap crítico, suficiente para o modo
+  // demo mostrar algo coerente. A régua completa (+ etapas atrasadas + taxa de
+  // conclusão de programa) vive em gerarInsightsDesenvolvimento_ no Code.gs.
+  async gerarInsightsDesenvolvimentoAgora(): Promise<{ novosInsights: number }> {
+    const colaboradores = await StorageAPI.getColaboradores();
+    let total = 0;
+    for (const colaborador of colaboradores) {
+      const perfil = await this.getPerfilConsolidado(colaborador.id);
+      for (const c of perfil.competencias) {
+        if (!c.gap || !c.obrigatorioNoCargo) continue;
+        const jaExiste = itensLocalGetArray<Insight>('insights').some(
+          (i) => i.entidadeId === colaborador.id && i.status === 'pendente' && (i.dadoReferencia as any)?.competenciaId === c.competenciaId
+        );
+        if (jaExiste) continue;
+        itensLocalSaveItem('insights', {
+          id: `insight-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          entidadeTipo: 'colaborador',
+          entidadeId: colaborador.id,
+          tipo: 'risco',
+          origem: 'regra',
+          confianca: 0.8,
+          texto: `Gap crítico em "${c.nome}": nível atual "${c.nivelAtual || 'não avaliado'}", esperado "${c.nivelAlvoCargo}".`,
+          dadoReferencia: { competenciaId: c.competenciaId, competenciaNome: c.nome },
+          status: 'pendente',
+          geradoEm: new Date().toISOString().slice(0, 10),
+        } as Insight);
+        total++;
+      }
+    }
+    return { novosInsights: total };
+  }
+  async decidirInsight(id: string, decisao: 'aceito' | 'recusado'): Promise<ResultadoDecisaoInsight> {
+    const insight = itensLocalGetArray<Insight>('insights').find((i) => i.id === id);
+    if (!insight) throw new Error('Insight não encontrado.');
+    if (insight.status !== 'pendente') throw new Error('Este Insight já foi decidido.');
+    itensLocalSaveItem('insights', { ...insight, status: decisao, decididoEm: new Date().toISOString().slice(0, 10) });
+
+    let efeito: { tipo: string; objetivoId?: string } | null = null;
+    if (decisao === 'aceito' && insight.dadoReferencia && (insight.dadoReferencia as any).competenciaId) {
+      const prazo = new Date();
+      prazo.setDate(prazo.getDate() + 90);
+      const objetivoId = `objetivo-${Date.now()}`;
+      itensLocalSaveItem('perfilObjetivos', {
+        id: objetivoId,
+        colaboradorId: insight.entidadeId,
+        titulo: `Desenvolver competência: ${(insight.dadoReferencia as any).competenciaNome || ''}`,
+        descricao: 'Criado a partir de um Insight aceito (gap de competência).',
+        competenciaId: (insight.dadoReferencia as any).competenciaId,
+        prazo: prazo.toISOString().slice(0, 10),
+        status: 'aberto',
+      });
+      efeito = { tipo: 'objetivo_criado', objetivoId };
+    }
+    return { id, status: decisao, efeito };
+  }
+  async getVisaoAnalitica(colaboradorId: string): Promise<VisaoAnalitica> {
+    const perfil = await this.getPerfilConsolidado(colaboradorId);
+    const colaboradores = await StorageAPI.getColaboradores();
+    const colaborador = colaboradores.find((c) => c.id === colaboradorId);
+    const inscricoesDoColaborador = itensLocalGetArray<Inscricao>('inscricoes').filter((i) => i.colaboradorId === colaboradorId);
+    const idsInscricoes = new Set(inscricoesDoColaborador.map((i) => i.id));
+    const etapasAtrasadas = itensLocalGetArray<InscricaoEtapa>('inscricaoEtapas').filter(
+      (e) => e.status === 'atrasada' && idsInscricoes.has(e.inscricaoId)
+    ).length;
+    const indicadoresSetor = itensLocalGetArray<IndicadorDesenvolvimento>('indicadoresDesenvolvimento').filter(
+      (i) => i.escopoTipo === 'setor' && i.escopoId === (colaborador?.setorId || '')
+    );
+    return { colaboradorId, perfil, etapasAtrasadas, indicadoresSetor };
   }
 
   async uploadFile(
@@ -4638,6 +4742,81 @@ export class GoogleScriptDataService implements IDataService {
       throw e;
     }
   }
+
+  // ── Motor de Desenvolvimento de Colaboradores — Visão Analítica / Insight ──
+  async getInsights(filtro?: {
+    colaboradorId?: string;
+    entidadeTipo?: EntidadeTipoInsight;
+    entidadeId?: string;
+    status?: StatusInsight;
+  }): Promise<Insight[]> {
+    try {
+      const raw = await this.request<any[]>('getInsights', {
+        colaboradorId: filtro?.colaboradorId || '',
+        entidadeTipo: filtro?.entidadeTipo || '',
+        entidadeId: filtro?.entidadeId || '',
+        status: filtro?.status || '',
+      });
+      return (raw || []).map((i) => ({
+        id: i.id,
+        entidadeTipo: i.entidade_tipo,
+        entidadeId: i.entidade_id,
+        tipo: i.tipo,
+        origem: i.origem,
+        confianca: Number(i.confianca) || 0,
+        texto: i.texto,
+        dadoReferencia: i.dado_referencia && typeof i.dado_referencia === 'object' ? i.dado_referencia : undefined,
+        status: i.status,
+        geradoEm: i.gerado_em || undefined,
+        decididoPor: i.decidido_por || undefined,
+        decididoEm: i.decidido_em || undefined,
+      }));
+    } catch (e) {
+      return this.localFallback.getInsights(filtro);
+    }
+  }
+  async gerarInsightsDesenvolvimentoAgora(): Promise<{ novosInsights: number }> {
+    try {
+      const raw = await this.request<any>('gerarInsightsDesenvolvimentoAgora');
+      return { novosInsights: Number(raw?.novosInsights) || 0 };
+    } catch (e) {
+      console.warn('Erro ao gerar Insights de Desenvolvimento no GoogleScript:', e);
+      throw e;
+    }
+  }
+  // decidirInsight é função de negócio (Princípio 15) — pode gerar um efeito
+  // real (ex.: criar Objetivo) quando aceito; o erro (Insight já decidido,
+  // não encontrado) precisa chegar até quem chamou.
+  async decidirInsight(id: string, decisao: 'aceito' | 'recusado', usuarioId?: string): Promise<ResultadoDecisaoInsight> {
+    try {
+      const raw = await this.request<any>('decidirInsight', { data: { id, decisao, usuario_id: usuarioId || '' } });
+      await this.localFallback.decidirInsight(id, decisao).catch(() => undefined);
+      return { id: raw.id, status: raw.status, efeito: raw.efeito || null };
+    } catch (e) {
+      console.warn('Erro ao decidir Insight no GoogleScript:', e);
+      throw e;
+    }
+  }
+  async getVisaoAnalitica(colaboradorId: string): Promise<VisaoAnalitica> {
+    try {
+      const raw = await this.request<any>('getVisaoAnalitica', { colaboradorId });
+      return {
+        colaboradorId: raw.colaboradorId,
+        perfil: raw.perfil,
+        etapasAtrasadas: Number(raw.etapasAtrasadas) || 0,
+        indicadoresSetor: (raw.indicadoresSetor || []).map((i: any) => ({
+          id: i.id,
+          tipoIndicador: i.tipo_indicador,
+          escopoTipo: i.escopo_tipo,
+          escopoId: i.escopo_id,
+          valor: Number(i.valor) || 0,
+          calculadoEm: i.calculado_em || undefined,
+        })),
+      };
+    } catch (e) {
+      return this.localFallback.getVisaoAnalitica(colaboradorId);
+    }
+  }
 }
 
 // -----------------------------------------------------------------
@@ -5253,6 +5432,25 @@ class DynamicDataService implements IDataService {
   }
   async recalcularIndicadoresDesenvolvimentoAgora(): Promise<{ totalIndicadores: number }> {
     return this.getService().recalcularIndicadoresDesenvolvimentoAgora();
+  }
+
+  // ── Motor de Desenvolvimento de Colaboradores — Visão Analítica / Insight ──
+  async getInsights(filtro?: {
+    colaboradorId?: string;
+    entidadeTipo?: EntidadeTipoInsight;
+    entidadeId?: string;
+    status?: StatusInsight;
+  }): Promise<Insight[]> {
+    return this.getService().getInsights(filtro);
+  }
+  async gerarInsightsDesenvolvimentoAgora(): Promise<{ novosInsights: number }> {
+    return this.getService().gerarInsightsDesenvolvimentoAgora();
+  }
+  async decidirInsight(id: string, decisao: 'aceito' | 'recusado', usuarioId?: string): Promise<ResultadoDecisaoInsight> {
+    return this.getService().decidirInsight(id, decisao, usuarioId);
+  }
+  async getVisaoAnalitica(colaboradorId: string): Promise<VisaoAnalitica> {
+    return this.getService().getVisaoAnalitica(colaboradorId);
   }
 
   async resetData(): Promise<void> {

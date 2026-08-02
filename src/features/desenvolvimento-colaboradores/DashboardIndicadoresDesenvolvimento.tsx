@@ -4,9 +4,9 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Usuario, Setor, Cargo, Programa, IndicadorDesenvolvimento } from '../../types';
+import { Usuario, Setor, Cargo, Programa, IndicadorDesenvolvimento, Insight } from '../../types';
 import { DataService } from '../../services/DataService';
-import { BarChart3, RefreshCw, AlertTriangle, TrendingUp, Users, Building2 } from 'lucide-react';
+import { BarChart3, RefreshCw, AlertTriangle, TrendingUp, Users, Building2, Sparkles } from 'lucide-react';
 
 interface DashboardIndicadoresDesenvolvimentoProps {
   currentUser: Usuario;
@@ -52,6 +52,8 @@ const DashboardIndicadoresDesenvolvimento: React.FC<DashboardIndicadoresDesenvol
   const [recalculando, setRecalculando] = useState(false);
   const [indicadores, setIndicadores] = useState<IndicadorDesenvolvimento[]>([]);
   const [programas, setProgramas] = useState<Programa[]>([]);
+  const [insightsPrograma, setInsightsPrograma] = useState<Insight[]>([]);
+  const [gerandoInsights, setGerandoInsights] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
   const podeRecalcular = currentUser.perfil === 'Administrador';
@@ -59,12 +61,14 @@ const DashboardIndicadoresDesenvolvimento: React.FC<DashboardIndicadoresDesenvol
   const carregar = useCallback(async () => {
     setCarregando(true);
     try {
-      const [listaIndicadores, listaProgramas] = await Promise.all([
+      const [listaIndicadores, listaProgramas, listaInsights] = await Promise.all([
         DataService.getIndicadoresDesenvolvimento(),
         DataService.getProgramas(),
+        DataService.getInsights({ entidadeTipo: 'programa', status: 'pendente' }),
       ]);
       setIndicadores(listaIndicadores);
       setProgramas(listaProgramas);
+      setInsightsPrograma(listaInsights);
     } finally {
       setCarregando(false);
     }
@@ -85,6 +89,24 @@ const DashboardIndicadoresDesenvolvimento: React.FC<DashboardIndicadoresDesenvol
     } finally {
       setRecalculando(false);
     }
+  };
+
+  const gerarInsights = async () => {
+    setErro(null);
+    setGerandoInsights(true);
+    try {
+      await DataService.gerarInsightsDesenvolvimentoAgora();
+      await carregar();
+    } catch (e: any) {
+      setErro(e?.message || 'Não foi possível gerar os insights agora.');
+    } finally {
+      setGerandoInsights(false);
+    }
+  };
+
+  const decidirInsightPrograma = async (id: string, decisao: 'aceito' | 'recusado') => {
+    await DataService.decidirInsight(id, decisao, currentUser.id);
+    await carregar();
   };
 
   const valorDe = (tipoIndicador: string, escopoTipo: string, escopoId: string): number | null => {
@@ -121,13 +143,22 @@ const DashboardIndicadoresDesenvolvimento: React.FC<DashboardIndicadoresDesenvol
           </div>
         </div>
         {podeRecalcular && (
-          <button
-            onClick={recalcular}
-            disabled={recalculando}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-teal-700 bg-teal-50 hover:bg-teal-100 transition-colors disabled:opacity-50"
-          >
-            <RefreshCw size={14} className={recalculando ? 'animate-spin' : ''} /> Recalcular agora
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={recalcular}
+              disabled={recalculando}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-teal-700 bg-teal-50 hover:bg-teal-100 transition-colors disabled:opacity-50"
+            >
+              <RefreshCw size={14} className={recalculando ? 'animate-spin' : ''} /> Recalcular agora
+            </button>
+            <button
+              onClick={gerarInsights}
+              disabled={gerandoInsights}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 transition-colors disabled:opacity-50"
+            >
+              <Sparkles size={14} className={gerandoInsights ? 'animate-spin' : ''} /> Gerar insights agora
+            </button>
+          </div>
         )}
       </div>
 
@@ -135,6 +166,43 @@ const DashboardIndicadoresDesenvolvimento: React.FC<DashboardIndicadoresDesenvol
         <div className="flex items-start gap-2 text-xs text-amber-700 bg-amber-50 rounded-xl px-3 py-2">
           <AlertTriangle size={14} className="shrink-0 mt-0.5" />
           {erro}
+        </div>
+      )}
+
+      {insightsPrograma.length > 0 && (
+        <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-6">
+          <div className="flex items-center gap-2 mb-4">
+            <Sparkles size={18} className="text-amber-500" />
+            <h3 className="font-bold text-slate-800">Insights de Programa</h3>
+          </div>
+          <div className="space-y-2">
+            {insightsPrograma.map((insight) => (
+              <div key={insight.id} className="flex items-start gap-3 rounded-2xl border border-amber-100 bg-amber-50/40 px-4 py-3">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm text-slate-700">{insight.texto}</p>
+                  <p className="text-[10px] text-slate-400 mt-1 uppercase tracking-wide">
+                    {nomePrograma(insight.entidadeId)} · confiança {Math.round(insight.confianca * 100)}%
+                  </p>
+                </div>
+                {podeRecalcular && (
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      onClick={() => decidirInsightPrograma(insight.id, 'aceito')}
+                      className="text-[11px] font-semibold text-teal-600 bg-teal-50 hover:bg-teal-100 rounded-lg px-2 py-1"
+                    >
+                      Aceitar
+                    </button>
+                    <button
+                      onClick={() => decidirInsightPrograma(insight.id, 'recusado')}
+                      className="text-[11px] font-semibold text-slate-500 bg-slate-100 hover:bg-slate-200 rounded-lg px-2 py-1"
+                    >
+                      Recusar
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

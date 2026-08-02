@@ -12,10 +12,12 @@ import {
   AreaDesenvolvimento,
   CompetenciaBiblioteca,
   MaterialBiblioteca,
+  Oferta,
 } from '../../types';
 import { DataService } from '../../services/DataService';
 import ProgramaManager from './components/programa/ProgramaManager';
 import ProgramaEtapasManager from './components/programa/ProgramaEtapasManager';
+import OfertaManager from './components/programa/OfertaManager';
 import { ClipboardList, RefreshCw } from 'lucide-react';
 
 interface ProgramasDesenvolvimentoProps {
@@ -32,6 +34,7 @@ const ProgramasDesenvolvimento: React.FC<ProgramasDesenvolvimentoProps> = ({ cur
   const [carregando, setCarregando] = useState(true);
   const [programas, setProgramas] = useState<Programa[]>([]);
   const [etapas, setEtapas] = useState<ProgramaEtapaTemplate[]>([]);
+  const [ofertas, setOfertas] = useState<Oferta[]>([]);
   const [areas, setAreas] = useState<AreaDesenvolvimento[]>([]);
   const [competencias, setCompetencias] = useState<CompetenciaBiblioteca[]>([]);
   const [materiais, setMateriais] = useState<MaterialBiblioteca[]>([]);
@@ -61,8 +64,12 @@ const ProgramasDesenvolvimento: React.FC<ProgramasDesenvolvimentoProps> = ({ cur
   }, []);
 
   const carregarEtapasDoPrograma = useCallback(async (programaId: string) => {
-    const lista = await DataService.getProgramaEtapasTemplate({ programaId });
+    const [lista, listaOfertas] = await Promise.all([
+      DataService.getProgramaEtapasTemplate({ programaId }),
+      DataService.getOfertas({ programaId }),
+    ]);
     setEtapas(lista);
+    setOfertas(listaOfertas);
   }, []);
 
   useEffect(() => {
@@ -74,6 +81,7 @@ const ProgramasDesenvolvimento: React.FC<ProgramasDesenvolvimentoProps> = ({ cur
       carregarEtapasDoPrograma(programaSelecionadoId);
     } else {
       setEtapas([]);
+      setOfertas([]);
     }
   }, [programaSelecionadoId, carregarEtapasDoPrograma]);
 
@@ -90,6 +98,19 @@ const ProgramasDesenvolvimento: React.FC<ProgramasDesenvolvimentoProps> = ({ cur
 
   const excluirEtapa = async (id: string) => {
     await DataService.deleteProgramaEtapaTemplate(id);
+    if (programaSelecionadoId) await carregarEtapasDoPrograma(programaSelecionadoId);
+  };
+
+  const salvarOferta = async (oferta: Oferta) => {
+    await DataService.saveOferta(oferta);
+    if (programaSelecionadoId) await carregarEtapasDoPrograma(programaSelecionadoId);
+  };
+  const encerrarOferta = async (id: string) => {
+    await DataService.encerrarOferta(id);
+    if (programaSelecionadoId) await carregarEtapasDoPrograma(programaSelecionadoId);
+  };
+  const cancelarOferta = async (id: string) => {
+    await DataService.cancelarOferta(id);
     if (programaSelecionadoId) await carregarEtapasDoPrograma(programaSelecionadoId);
   };
 
@@ -136,18 +157,28 @@ const ProgramasDesenvolvimento: React.FC<ProgramasDesenvolvimentoProps> = ({ cur
           somenteLeitura={!podeEditar}
         />
         {programaSelecionado ? (
-          <ProgramaEtapasManager
-            programa={programaSelecionado}
-            etapas={etapas}
-            competencias={competencias}
-            materiais={materiais}
-            onSalvar={salvarEtapa}
-            onExcluir={excluirEtapa}
-            somenteLeitura={!podeEditar}
-          />
+          <div className="space-y-6">
+            <ProgramaEtapasManager
+              programa={programaSelecionado}
+              etapas={etapas}
+              competencias={competencias}
+              materiais={materiais}
+              onSalvar={salvarEtapa}
+              onExcluir={excluirEtapa}
+              somenteLeitura={!podeEditar}
+            />
+            <OfertaManager
+              programa={programaSelecionado}
+              ofertas={ofertas}
+              onSalvar={salvarOferta}
+              onEncerrar={encerrarOferta}
+              onCancelar={cancelarOferta}
+              somenteLeitura={!podeEditar}
+            />
+          </div>
         ) : (
           <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-6 flex items-center justify-center text-sm text-slate-400 h-full min-h-[200px]">
-            Selecione um Programa à esquerda para gerenciar suas Etapas.
+            Selecione um Programa à esquerda para gerenciar suas Etapas e Ofertas.
           </div>
         )}
       </div>

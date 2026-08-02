@@ -1560,3 +1560,49 @@ export interface IndicadorDesenvolvimento {
   valor: number;
   calculadoEm?: string;
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// MOTOR DE DESENVOLVIMENTO DE COLABORADORES — Visão Analítica / Insight
+// Ver "Especificação Arquitetural Definitiva v2", Princípios 15 e 23, e
+// "Modelagem Física (Conceitual)", seção 1.11. Última camada do Roadmap do
+// Domínio: fecha o motor deixando-o pronto para IA sem expor o domínio bruto
+// a nenhum consumidor externo.
+// ═══════════════════════════════════════════════════════════════════
+
+export type EntidadeTipoInsight = 'colaborador' | 'programa' | 'inscricao' | 'competencia';
+export type TipoInsight = 'risco' | 'sugestao' | 'prognostico';
+export type OrigemInsight = 'regra' | 'ia';
+export type StatusInsight = 'pendente' | 'aceito' | 'recusado';
+
+// Observação gerada (hoje por regra explícita, no futuro por IA) — nunca
+// altera nada sozinha (Princípio 15). Só um aceite humano gera efeito real.
+export interface Insight {
+  id: string;
+  entidadeTipo: EntidadeTipoInsight;
+  entidadeId: string;
+  tipo: TipoInsight;
+  origem: OrigemInsight;
+  confianca: number;
+  texto: string;
+  dadoReferencia?: Record<string, unknown>;
+  status: StatusInsight;
+  geradoEm?: string;
+  decididoPor?: string;
+  decididoEm?: string;
+}
+
+export interface ResultadoDecisaoInsight {
+  id: string;
+  status: StatusInsight;
+  efeito?: { tipo: string; objetivoId?: string } | null;
+}
+
+// A Visão Analítica é a única coisa que um mecanismo de IA (ou a regra que o
+// precede) pode consultar (Princípio 23) — nunca o Perfil, os Eventos ou
+// qualquer outra entidade do domínio diretamente.
+export interface VisaoAnalitica {
+  colaboradorId: string;
+  perfil: PerfilConsolidado;
+  etapasAtrasadas: number;
+  indicadoresSetor: IndicadorDesenvolvimento[];
+}

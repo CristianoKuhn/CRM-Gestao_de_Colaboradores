@@ -77,6 +77,10 @@ import {
   ResultadoConclusaoEtapa,
   Evidencia,
   EntidadeTipoEvidencia,
+  PerfilCompetencia,
+  PerfilObjetivo,
+  PerfilConsolidado,
+  ResultadoEvolucaoCompetencia,
 } from '../types';
 import { StorageAPI } from '../utils/storage';
 
@@ -519,6 +523,23 @@ export interface IDataService {
   anexarEvidencia(evidencia: Evidencia): Promise<void>;
   validarEvidencia(id: string, validadoPor?: string): Promise<void>;
   rejeitarEvidencia(id: string, validadoPor?: string): Promise<void>;
+
+  // ── Motor de Desenvolvimento de Colaboradores — Perfil (Aggregate Root) ──
+  // Sem "savePerfilCompetencia" genérico: toda mudança de nível passa por
+  // avaliarCompetencia, que é quem decide se altera ou não o cache (Princípio 2).
+  getPerfilCompetencias(colaboradorId: string): Promise<PerfilCompetencia[]>;
+  avaliarCompetencia(
+    colaboradorId: string,
+    competenciaId: string,
+    nivel: string,
+    usuarioId?: string,
+    origemId?: string
+  ): Promise<ResultadoEvolucaoCompetencia>;
+  getPerfilObjetivos(colaboradorId: string): Promise<PerfilObjetivo[]>;
+  saveObjetivo(objetivo: PerfilObjetivo): Promise<void>;
+  concluirObjetivo(id: string, usuarioId?: string): Promise<void>;
+  expirarObjetivo(id: string, usuarioId?: string): Promise<void>;
+  getPerfilConsolidado(colaboradorId: string): Promise<PerfilConsolidado>;
 
   uploadFile(
     file: File,
@@ -1257,6 +1278,101 @@ export class LocalDataService implements IDataService {
         dataValidacao: new Date().toISOString().slice(0, 10),
       });
     }
+  }
+
+  // ── Motor de Desenvolvimento de Colaboradores — Perfil (Aggregate Root) ──
+  async getPerfilCompetencias(colaboradorId: string): Promise<PerfilCompetencia[]> {
+    return itensLocalGetArray<PerfilCompetencia>('perfilCompetencias').filter((p) => p.colaboradorId === colaboradorId);
+  }
+  async avaliarCompetencia(
+    colaboradorId: string,
+    competenciaId: string,
+    nivel: string
+  ): Promise<ResultadoEvolucaoCompetencia> {
+    const competencia = itensLocalGetArray<CompetenciaBiblioteca>('competenciasBiblioteca').find((c) => c.id === competenciaId);
+    const escala = competencia?.niveis || [];
+    const existente = itensLocalGetArray<PerfilCompetencia>('perfilCompetencias').find(
+      (p) => p.colaboradorId === colaboradorId && p.competenciaId === competenciaId
+    );
+    const nivelAnterior = existente?.nivelAtual || '';
+    itensLocalSaveItem('perfilCompetencias', {
+      id: existente?.id || `perfil-comp-${Date.now()}`,
+      colaboradorId,
+      competenciaId,
+      nivelAtual: nivel,
+      atualizadoEm: new Date().toISOString().slice(0, 10),
+    });
+    return { alterado: escala.indexOf(nivel) !== escala.indexOf(nivelAnterior), nivelAnterior, nivelAtual: nivel };
+  }
+  async getPerfilObjetivos(colaboradorId: string): Promise<PerfilObjetivo[]> {
+    return itensLocalGetArray<PerfilObjetivo>('perfilObjetivos').filter((o) => o.colaboradorId === colaboradorId);
+  }
+  async saveObjetivo(objetivo: PerfilObjetivo): Promise<void> {
+    itensLocalSaveItem('perfilObjetivos', { ...objetivo, status: objetivo.status || 'aberto' });
+  }
+  async concluirObjetivo(id: string): Promise<void> {
+    const objetivo = itensLocalGetArray<PerfilObjetivo>('perfilObjetivos').find((o) => o.id === id);
+    if (objetivo) {
+      itensLocalSaveItem('perfilObjetivos', { ...objetivo, status: 'alcancado', dataConclusao: new Date().toISOString().slice(0, 10) });
+    }
+  }
+  async expirarObjetivo(id: string): Promise<void> {
+    const objetivo = itensLocalGetArray<PerfilObjetivo>('perfilObjetivos').find((o) => o.id === id);
+    if (objetivo) itensLocalSaveItem('perfilObjetivos', { ...objetivo, status: 'expirado' });
+  }
+  async getPerfilConsolidado(colaboradorId: string): Promise<PerfilConsolidado> {
+    const colaboradores = await StorageAPI.getColaboradores();
+    const colaborador = colaboradores.find((c) => c.id === colaboradorId);
+    const cargoId = colaborador?.cargoId || '';
+
+    const competenciasBiblioteca = itensLocalGetArray<CompetenciaBiblioteca>('competenciasBiblioteca').filter((c) => c.ativo);
+    const perfilCompetencias = itensLocalGetArray<PerfilCompetencia>('perfilCompetencias').filter((p) => p.colaboradorId === colaboradorId);
+    const matrizDoCargo = itensLocalGetArray<MatrizCompetenciaCargo>('matrizCompetenciasCargo').filter((m) => m.cargoId === cargoId);
+
+    const idsRelevantes = new Set<string>([
+      ...perfilCompetencias.map((p) => p.competenciaId),
+      ...matrizDoCargo.map((m) => m.competenciaId),
+    ]);
+    const competencias = Array.from(idsRelevantes).map((competenciaId) => {
+      const competencia = competenciasBiblioteca.find((c) => c.id === competenciaId);
+      const perfilItem = perfilCompetencias.find((p) => p.competenciaId === competenciaId);
+      const matrizItem = matrizDoCargo.find((m) => m.competenciaId === competenciaId);
+      const escala = competencia?.niveis || [];
+      const posAtual = perfilItem ? escala.indexOf(perfilItem.nivelAtual) : -1;
+      const posAlvo = matrizItem ? escala.indexOf(matrizItem.nivelAlvo) : -1;
+      return {
+        competenciaId,
+        nome: competencia?.nome || 'Competência removida',
+        nivelAtual: perfilItem?.nivelAtual || '',
+        nivelAlvoCargo: matrizItem?.nivelAlvo || '',
+        obrigatorioNoCargo: matrizItem?.obrigatorio || false,
+        gap: posAlvo >= 0 && posAtual < posAlvo,
+      };
+    });
+
+    const objetivos = await this.getPerfilObjetivos(colaboradorId);
+
+    const inscricoesAtivas = itensLocalGetArray<Inscricao>('inscricoes').filter(
+      (i) => i.colaboradorId === colaboradorId && i.estadoWorkflow === 'em_andamento'
+    );
+    const todasAsEtapas = itensLocalGetArray<InscricaoEtapa>('inscricaoEtapas');
+    const programas = itensLocalGetArray<Programa>('programas');
+    const ofertas = itensLocalGetArray<Oferta>('ofertas');
+    const inscricoesResumo = inscricoesAtivas.map((inscricao) => {
+      const programa = programas.find((p) => p.id === inscricao.programaId);
+      const oferta = ofertas.find((o) => o.id === inscricao.ofertaId);
+      const etapas = todasAsEtapas.filter((e) => e.inscricaoId === inscricao.id);
+      const proxima = etapas.find((e) => e.status === 'disponivel' || e.status === 'em_andamento');
+      return {
+        inscricaoId: inscricao.id,
+        programaNome: programa?.nome || '',
+        ofertaNome: oferta?.nome || '',
+        percentualConcluido: inscricao.percentualConcluido,
+        proximaEtapa: proxima?.nome || '',
+      };
+    });
+
+    return { colaboradorId, competencias, objetivos, inscricoesAtivas: inscricoesResumo };
   }
 
   async uploadFile(
@@ -4317,6 +4433,130 @@ export class GoogleScriptDataService implements IDataService {
       throw e;
     }
   }
+
+  // ── Motor de Desenvolvimento de Colaboradores — Perfil (Aggregate Root) ──
+  async getPerfilCompetencias(colaboradorId: string): Promise<PerfilCompetencia[]> {
+    try {
+      const raw = await this.request<any[]>('getPerfilCompetencias', { colaboradorId });
+      return (raw || []).map((p) => ({
+        id: p.id,
+        colaboradorId: p.colaborador_id,
+        competenciaId: p.competencia_id,
+        nivelAtual: p.nivel_atual,
+        atualizadoEm: p.atualizado_em || undefined,
+        atualizadoPor: p.atualizado_por || undefined,
+      }));
+    } catch (e) {
+      return this.localFallback.getPerfilCompetencias(colaboradorId);
+    }
+  }
+  // avaliarCompetencia é função de negócio (Princípio 2 — nada escreve no
+  // Perfil fora de evento); o backend decide se altera o cache ou não, e o
+  // erro (parâmetros inválidos) precisa chegar até quem chamou.
+  async avaliarCompetencia(
+    colaboradorId: string,
+    competenciaId: string,
+    nivel: string,
+    usuarioId?: string,
+    origemId?: string
+  ): Promise<ResultadoEvolucaoCompetencia> {
+    try {
+      const raw = await this.request<any>('avaliarCompetencia', {
+        data: {
+          colaborador_id: colaboradorId,
+          competencia_id: competenciaId,
+          nivel,
+          usuario_id: usuarioId || '',
+          origem_id: origemId || '',
+        },
+      });
+      await this.localFallback.avaliarCompetencia(colaboradorId, competenciaId, nivel).catch(() => undefined);
+      return {
+        alterado: raw.alterado === true,
+        nivelAnterior: raw.nivelAnterior || undefined,
+        nivelAtual: raw.nivelAtual || nivel,
+      };
+    } catch (e) {
+      console.warn('Erro ao avaliar Competência no GoogleScript:', e);
+      throw e;
+    }
+  }
+  async getPerfilObjetivos(colaboradorId: string): Promise<PerfilObjetivo[]> {
+    try {
+      const raw = await this.request<any[]>('getPerfilObjetivos', { colaboradorId });
+      return (raw || []).map((o) => ({
+        id: o.id,
+        colaboradorId: o.colaborador_id,
+        titulo: o.titulo,
+        descricao: o.descricao || undefined,
+        competenciaId: o.competencia_id || undefined,
+        prazo: o.prazo || undefined,
+        status: o.status,
+        dataConclusao: o.data_conclusao || undefined,
+      }));
+    } catch (e) {
+      return this.localFallback.getPerfilObjetivos(colaboradorId);
+    }
+  }
+  async saveObjetivo(objetivo: PerfilObjetivo): Promise<void> {
+    await this.localFallback.saveObjetivo(objetivo);
+    try {
+      const body = {
+        id: objetivo.id,
+        colaborador_id: objetivo.colaboradorId,
+        titulo: objetivo.titulo,
+        descricao: objetivo.descricao || '',
+        competencia_id: objetivo.competenciaId || '',
+        prazo: objetivo.prazo || '',
+        status: objetivo.status || 'aberto',
+        data_conclusao: objetivo.dataConclusao || '',
+      };
+      await this.request('saveObjetivo', { data: body });
+    } catch (e) {
+      console.warn('Erro ao salvar Objetivo no GoogleScript:', e);
+      throw e;
+    }
+  }
+  async concluirObjetivo(id: string, usuarioId?: string): Promise<void> {
+    await this.localFallback.concluirObjetivo(id);
+    try {
+      await this.request('concluirObjetivo', { data: { id, usuario_id: usuarioId || '' } });
+    } catch (e) {
+      console.warn('Erro ao concluir Objetivo no GoogleScript:', e);
+      throw e;
+    }
+  }
+  async expirarObjetivo(id: string, usuarioId?: string): Promise<void> {
+    await this.localFallback.expirarObjetivo(id);
+    try {
+      await this.request('expirarObjetivo', { data: { id, usuario_id: usuarioId || '' } });
+    } catch (e) {
+      console.warn('Erro ao expirar Objetivo no GoogleScript:', e);
+      throw e;
+    }
+  }
+  async getPerfilConsolidado(colaboradorId: string): Promise<PerfilConsolidado> {
+    try {
+      const raw = await this.request<any>('getPerfilConsolidado', { colaboradorId });
+      return {
+        colaboradorId: raw.colaboradorId,
+        competencias: raw.competencias || [],
+        objetivos: (raw.objetivos || []).map((o: any) => ({
+          id: o.id,
+          colaboradorId: o.colaborador_id,
+          titulo: o.titulo,
+          descricao: o.descricao || undefined,
+          competenciaId: o.competencia_id || undefined,
+          prazo: o.prazo || undefined,
+          status: o.status,
+          dataConclusao: o.data_conclusao || undefined,
+        })),
+        inscricoesAtivas: raw.inscricoesAtivas || [],
+      };
+    } catch (e) {
+      return this.localFallback.getPerfilConsolidado(colaboradorId);
+    }
+  }
 }
 
 // -----------------------------------------------------------------
@@ -4891,6 +5131,35 @@ class DynamicDataService implements IDataService {
   }
   async rejeitarEvidencia(id: string, validadoPor?: string): Promise<void> {
     await this.getService().rejeitarEvidencia(id, validadoPor);
+  }
+
+  // ── Motor de Desenvolvimento de Colaboradores — Perfil (Aggregate Root) ──
+  async getPerfilCompetencias(colaboradorId: string): Promise<PerfilCompetencia[]> {
+    return this.getService().getPerfilCompetencias(colaboradorId);
+  }
+  async avaliarCompetencia(
+    colaboradorId: string,
+    competenciaId: string,
+    nivel: string,
+    usuarioId?: string,
+    origemId?: string
+  ): Promise<ResultadoEvolucaoCompetencia> {
+    return this.getService().avaliarCompetencia(colaboradorId, competenciaId, nivel, usuarioId, origemId);
+  }
+  async getPerfilObjetivos(colaboradorId: string): Promise<PerfilObjetivo[]> {
+    return this.getService().getPerfilObjetivos(colaboradorId);
+  }
+  async saveObjetivo(objetivo: PerfilObjetivo): Promise<void> {
+    await this.getService().saveObjetivo(objetivo);
+  }
+  async concluirObjetivo(id: string, usuarioId?: string): Promise<void> {
+    await this.getService().concluirObjetivo(id, usuarioId);
+  }
+  async expirarObjetivo(id: string, usuarioId?: string): Promise<void> {
+    await this.getService().expirarObjetivo(id, usuarioId);
+  }
+  async getPerfilConsolidado(colaboradorId: string): Promise<PerfilConsolidado> {
+    return this.getService().getPerfilConsolidado(colaboradorId);
   }
 
   async resetData(): Promise<void> {

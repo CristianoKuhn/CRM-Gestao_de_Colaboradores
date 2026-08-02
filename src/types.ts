@@ -1469,3 +1469,75 @@ export interface ResultadoConclusaoEtapa {
   percentualConcluido: number;
   inscricaoConcluida: boolean;
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// MOTOR DE DESENVOLVIMENTO DE COLABORADORES — Perfil (Aggregate Root)
+// Ver "Especificação Arquitetural Definitiva v2", Princípio 19, e "Modelagem
+// Física (Conceitual)", seções 1.6 e 6. O Perfil é o único estado que
+// realmente persiste (Princípio 1) — tudo o mais (Programa, Inscrição, Etapa,
+// Avaliação, Certificação, Mentoria, Feedback) só existe para gerar eventos
+// que o alimentam. Nunca há um "savePerfilCompetencia" genérico de nível —
+// toda mudança passa por uma ação de negócio (avaliarCompetencia), nunca por
+// upsert cru (Princípio 2).
+// ═══════════════════════════════════════════════════════════════════
+
+// Cache do nível atual de uma Competência para um Colaborador — o histórico de
+// evolução em si não tem tipo próprio no frontend porque não é uma tabela
+// nova: vive em HistoricoAlteracoes (entidade "perfil_competencia"), já
+// genérica na plataforma.
+export interface PerfilCompetencia {
+  id: string;
+  colaboradorId: string;
+  competenciaId: string;
+  nivelAtual: string;
+  atualizadoEm?: string;
+  atualizadoPor?: string;
+}
+
+export type StatusObjetivo = 'aberto' | 'alcancado' | 'expirado';
+
+// Meta nomeada e com prazo — pode (ou não) estar ligada a uma Competência
+// (Glossário da Especificação v2: "nem todo Objetivo é uma Competência").
+export interface PerfilObjetivo {
+  id: string;
+  colaboradorId: string;
+  titulo: string;
+  descricao?: string;
+  competenciaId?: string;
+  prazo?: string;
+  status: StatusObjetivo;
+  dataConclusao?: string;
+}
+
+export interface CompetenciaResumoPerfil {
+  competenciaId: string;
+  nome: string;
+  nivelAtual: string;
+  nivelAlvoCargo: string;
+  obrigatorioNoCargo: boolean;
+  gap: boolean;
+}
+
+export interface InscricaoResumoPerfil {
+  inscricaoId: string;
+  programaNome: string;
+  ofertaNome: string;
+  percentualConcluido: number;
+  proximaEtapa: string;
+}
+
+// PerfilConsolidadoDTO (Modelagem Física, seção 6) — o formato que a tela de
+// perfil do colaborador consome numa única chamada ao backend, já com o Gap de
+// Competência calculado (Perfil real vs. Matriz de Competências do Cargo).
+export interface PerfilConsolidado {
+  colaboradorId: string;
+  competencias: CompetenciaResumoPerfil[];
+  objetivos: PerfilObjetivo[];
+  inscricoesAtivas: InscricaoResumoPerfil[];
+}
+
+export interface ResultadoEvolucaoCompetencia {
+  alterado: boolean;
+  nivelAnterior?: string;
+  nivelAtual: string;
+}

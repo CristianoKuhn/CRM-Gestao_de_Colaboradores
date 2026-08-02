@@ -1202,6 +1202,11 @@ export interface ItemOperacional {
   origemRecorrenciaId?: string;
   origemTemplateId?: string;
   origemGatilhoId?: string;
+  // Origem no Motor de Desenvolvimento de Colaboradores: quando o item foi
+  // instanciado a partir de uma Etapa de Inscrição (ver Especificação v2,
+  // Princípio 18 e Modelagem Física, seção 1.4). Usado para saber quando a
+  // Etapa inteira pode ser concluída automaticamente.
+  origemEtapaId?: string;
 
   // Ponte com o antigo módulo Tarefas (ver arquitetura, seção 17).
   tipoOrigem?: TipoRegistro | string;
@@ -1365,4 +1370,102 @@ export interface ProgramaEtapaTemplate {
   materiaisIds: string[];
   exigeEvidencia: boolean;
   exigeValidacaoEvidencia: boolean;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// MOTOR DE DESENVOLVIMENTO DE COLABORADORES — Oferta/Inscrição/Etapa/Evidência
+// Ver "Especificação Arquitetural Definitiva v2" e "Modelagem Física
+// (Conceitual)", seções 1.4/1.5. Esta é a camada de EXECUÇÃO real — Oferta
+// publica um Programa, Inscrição vincula um Colaborador a uma Oferta, e
+// InscricaoEtapa é a projeção, por colaborador, das ProgramaEtapasTemplate.
+// A atualização do Perfil em si (Competências-alvo avaliadas) fica para a
+// próxima rodada do Roadmap do Domínio.
+// ═══════════════════════════════════════════════════════════════════
+
+export type StatusOferta = 'aberta' | 'encerrada' | 'cancelada';
+
+// Publicação concreta e datada de um Programa — uma "edição"/"turma". Um
+// Programa pode ter várias Ofertas simultâneas (Princípio 20 — Programa nunca
+// é executado diretamente, só através de uma Oferta).
+export interface Oferta {
+  id: string;
+  programaId: string;
+  nome: string;
+  dataInicio?: string;
+  dataFim?: string;
+  vagas?: number;
+  facilitadorId?: string;
+  status: StatusOferta;
+  criadoEm?: string;
+}
+
+export type EstadoWorkflowInscricao = 'em_andamento' | 'concluida' | 'cancelada';
+export type OrigemInscricao = 'automatico' | 'indicacao' | 'autoinscricao' | 'recomendacao' | 'manual';
+
+// Vínculo entre um Colaborador e uma Oferta específica (nunca diretamente com
+// o Programa — Princípio 21). Um colaborador pode ter várias Inscrições
+// simultâneas, em Ofertas de Programas diferentes (Princípio 11).
+export interface Inscricao {
+  id: string;
+  colaboradorId: string;
+  ofertaId: string;
+  programaId: string;
+  workflowId?: string;
+  estadoWorkflow: EstadoWorkflowInscricao;
+  origem: OrigemInscricao;
+  dataInicio?: string;
+  dataPrevisaoConclusao?: string;
+  dataConclusao?: string;
+  percentualConcluido: number; // cache — sempre derivado (Princípio 14)
+  motivoCancelamento?: string;
+}
+
+export type StatusEtapaInscricao =
+  | 'bloqueada'
+  | 'disponivel'
+  | 'em_andamento'
+  | 'concluida'
+  | 'atrasada'
+  | 'encerrada_cancelamento';
+
+export interface InscricaoEtapa {
+  id: string;
+  inscricaoId: string;
+  etapaTemplateId: string;
+  ordem: number;
+  nome: string;
+  status: StatusEtapaInscricao;
+  dataPrevista?: string;
+  dataConclusao?: string;
+  responsavelId?: string;
+  observacoes?: string;
+}
+
+export type EntidadeTipoEvidencia = 'item_operacional' | 'etapa' | 'avaliacao' | 'certificacao' | 'mentoria';
+export type TipoEvidencia = 'documento' | 'video' | 'imagem' | 'observacao' | 'formulario' | 'assinatura' | 'aprovacao';
+export type StatusEvidencia = 'pendente' | 'validada' | 'rejeitada';
+
+// Prova associada à conclusão de um Item/Etapa/Avaliação/Certificação/Mentoria
+// (Princípio 18). Quando o Programa exige prova, a conclusão só é válida com
+// ao menos uma Evidência anexada (e validada, se o Programa também exigir).
+export interface Evidencia {
+  id: string;
+  entidadeTipo: EntidadeTipoEvidencia;
+  entidadeId: string;
+  tipo: TipoEvidencia;
+  url?: string;
+  driveFileId?: string;
+  texto?: string;
+  anexadoPor?: string;
+  data?: string;
+  status: StatusEvidencia;
+  validadoPor?: string;
+  dataValidacao?: string;
+}
+
+export interface ResultadoConclusaoEtapa {
+  id: string;
+  etapasLiberadas: string[];
+  percentualConcluido: number;
+  inscricaoConcluida: boolean;
 }

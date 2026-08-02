@@ -685,6 +685,7 @@ export default function App() {
                 reconhecimentos={reconhecimentos}
                 configReconhecimento={configReconhecimento}
                 tarefas={tarefas}
+                currentUser={currentUser || undefined}
                 onBack={() => setSelectedColaboradorId(null)}
                 onUpdateColaborador={handleUpdateColaborador}
                 onAddTimelineRegistro={handleAddTimelineRegistro}

@@ -2,7 +2,8 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  */
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { DataService } from '../services/DataService';
 import {
   Users,
   CheckSquare,
@@ -18,8 +19,6 @@ import {
   TimelineRegistro,
   Tarefa,
   Usuario,
-  OnboardingItem,
-  OnboardingChecklist,
   AvaliacaoExperiencia,
   ConfiguracaoAlertas,
 } from '../types';
@@ -49,9 +48,6 @@ interface DashboardProps {
   onOpenNewRegistroModal: (colaboradorId?: string) => void;
   currentUser: Usuario;
   onUpdateColaborador: (colaborador: Colaborador) => Promise<Colaborador> | void;
-  onboardingItems: OnboardingItem[];
-  onboardingChecklists: OnboardingChecklist[];
-  onSaveOnboardingChecklist: (checklist: OnboardingChecklist) => void;
   avaliacoesExperiencia: AvaliacaoExperiencia[];
   onUpdateAvaliacaoExperiencia: (avaliacao: AvaliacaoExperiencia) => void;
   configuracaoAlertas: ConfiguracaoAlertas;
@@ -81,14 +77,42 @@ export default function Dashboard({
   onOpenNewRegistroModal,
   currentUser,
   onUpdateColaborador,
-  onboardingItems,
-  onboardingChecklists,
-  onSaveOnboardingChecklist,
   avaliacoesExperiencia,
   onUpdateAvaliacaoExperiencia,
   configuracaoAlertas,
 }: DashboardProps) {
   const [avaliacaoAberta, setAvaliacaoAberta] = useState<LembreteAvaliacao | null>(null);
+  const [inscricoesOnboarding, setInscricoesOnboarding] = useState<
+    { colaborador: Colaborador; percentualConcluido: number }[]
+  >([]);
+
+  // Motor de Desenvolvimento de Colaboradores — o widget lê direto de
+  // Inscrições em Programas tipo "onboarding" (Sprint 1 da Reestruturação
+  // ERP). Sem prop-drilling desde App.tsx: o próprio widget busca o que
+  // precisa, mesmo padrão de PainelAnalyticsFormularios logo abaixo.
+  useEffect(() => {
+    let cancelado = false;
+    (async () => {
+      const [programasOnboarding, inscricoesEmAndamento] = await Promise.all([
+        DataService.getProgramas({ tipoPrograma: 'onboarding' }),
+        DataService.getInscricoes({ estadoWorkflow: 'em_andamento' }),
+      ]);
+      if (cancelado) return;
+      const idsProgramasOnboarding = new Set(programasOnboarding.map((p) => p.id));
+      const colaboradorPorId = new Map(colaboradores.map((c) => [c.id, c]));
+      const lista = inscricoesEmAndamento
+        .filter((i) => idsProgramasOnboarding.has(i.programaId))
+        .map((i) => {
+          const colaborador = colaboradorPorId.get(i.colaboradorId);
+          return colaborador ? { colaborador, percentualConcluido: i.percentualConcluido } : null;
+        })
+        .filter((item): item is { colaborador: Colaborador; percentualConcluido: number } => item !== null);
+      setInscricoesOnboarding(lista);
+    })();
+    return () => {
+      cancelado = true;
+    };
+  }, [colaboradores]);
 
   const colaboradoresAtivos = colaboradores.filter((c) => c.situacao !== 'Desligado');
   const colAcompanhamento = colaboradores.filter((c) => c.situacao === 'Em Acompanhamento');
@@ -151,16 +175,9 @@ export default function Dashboard({
   );
 
   // ── Onboarding pendente ───────────────────────────────────────────────
-  const onboardingPendentes = colaboradoresAtivos
-    .map((c) => {
-      const itensDoSetor = onboardingItems.filter((i) => i.setorIds.includes(c.setorId));
-      if (itensDoSetor.length === 0) return null;
-      const checklist = onboardingChecklists.find((ck) => ck.colaboradorId === c.id);
-      const concluidos = checklist?.itemsConcluidos?.length || 0;
-      if (concluidos >= itensDoSetor.length) return null;
-      return { colaborador: c, total: itensDoSetor.length, concluidos };
-    })
-    .filter((o): o is { colaborador: Colaborador; total: number; concluidos: number } => o !== null);
+  // (calculado via useEffect acima, a partir de Inscrições reais do Motor de
+  // Desenvolvimento — ver `inscricoesOnboarding`)
+
 
   const abrirAvaliacao = (lembrete: LembreteAvaliacao) => setAvaliacaoAberta(lembrete);
 
@@ -352,20 +369,18 @@ export default function Dashboard({
             <ClipboardCheck size={18} className="text-slate-500" />
             <h2 className="text-sm font-bold text-slate-800">Onboarding em andamento</h2>
           </div>
-          {onboardingPendentes.length === 0 ? (
+          {inscricoesOnboarding.length === 0 ? (
             <p className="text-xs text-slate-400">Nenhum onboarding em aberto.</p>
           ) : (
             <div className="flex flex-col gap-2">
-              {onboardingPendentes.map(({ colaborador, total, concluidos }) => (
+              {inscricoesOnboarding.map(({ colaborador, percentualConcluido }) => (
                 <button
                   key={colaborador.id}
                   onClick={() => onSelectColaborador(colaborador.id)}
                   className="flex items-center justify-between bg-slate-50 rounded-xl px-3 py-2.5 text-left hover:bg-slate-100 transition"
                 >
                   <span className="text-xs font-bold text-slate-700">{colaborador.nome}</span>
-                  <span className="text-[10px] font-bold text-slate-500">
-                    {concluidos}/{total} itens
-                  </span>
+                  <span className="text-[10px] font-bold text-slate-500">{percentualConcluido}% concluído</span>
                 </button>
               ))}
             </div>

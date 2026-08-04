@@ -18,8 +18,6 @@ import {
   GoogleScriptConfig,
   DataSourceProvider,
   Usuario,
-  OnboardingItem,
-  OnboardingChecklist,
   AvaliacaoExperiencia,
   Documento,
   Reconhecimento,
@@ -100,8 +98,6 @@ export default function App() {
     isConnected: false,
   });
   const [activeProvider, setActiveProvider] = useState<DataSourceProvider>('local');
-  const [onboardingItems, setOnboardingItems] = useState<OnboardingItem[]>([]);
-  const [onboardingChecklists, setOnboardingChecklists] = useState<OnboardingChecklist[]>([]);
   const [avaliacoesExperiencia, setAvaliacoesExperiencia] = useState<AvaliacaoExperiencia[]>([]);
   const [configuracaoAlertas, setConfiguracaoAlertas] = useState<ConfiguracaoAlertas>({
     diasSemInteracao: 30,
@@ -148,7 +144,7 @@ export default function App() {
   // Carregar dados de forma reativa do serviço ativo
   const loadAllData = async () => {
     try {
-      const [cols, timelineData, tarefasData, setoresData, cargosData, lideresData, empresasData, usuariosData, onbItems, onbChecklists, avaliacoesExpData, docsData, recsData, configRecData, metasLidData, metasSetData, acompData] = await Promise.all([
+      const [cols, timelineData, tarefasData, setoresData, cargosData, lideresData, empresasData, usuariosData, avaliacoesExpData, docsData, recsData, configRecData, metasLidData, metasSetData, acompData] = await Promise.all([
         DataService.getColaboradores(),
         DataService.getTimeline(),
         DataService.getTarefas(),
@@ -157,8 +153,6 @@ export default function App() {
         DataService.getLideres(),
         DataService.getEmpresas(),
         DataService.getUsuarios(),
-        DataService.getOnboardingItems(),
-        DataService.getOnboardingChecklists(),
         // Avaliações de Experiência
         DataService.getAvaliacoesExperiencia(),
         // P3: Documentos
@@ -183,8 +177,6 @@ export default function App() {
       setLideres(lideresData);
       setEmpresas(empresasData);
       setUsuarios(usuariosData);
-      setOnboardingItems(onbItems);
-      setOnboardingChecklists(onbChecklists);
       setAvaliacoesExperiencia(avaliacoesExpData);
 
       // P3: Documentos
@@ -218,23 +210,14 @@ export default function App() {
     return col;
   };
 
-  // Sincronizar ao criar colaborador - com auto onboarding e avaliações de experiência
+  // Sincronizar ao criar colaborador - com avaliações de experiência.
+  // O Onboarding automático não é mais responsabilidade do frontend: desde o
+  // Sprint 1 da Reestruturação ERP, é o backend (motorElegibilidadeOnboarding_,
+  // dentro da própria action saveColaborador) quem cria a Inscrição no
+  // Programa de Onboarding do setor, numa única transação server-side —
+  // eliminando a duplicidade com o antigo OnboardingChecklist client-side.
   const handleAddColaborador = async (col: Colaborador) => {
     await DataService.saveColaborador(col);
-
-    // Gerar Onboarding Checklist baseado nos itens configurados para o setor
-    const onboardingItems = await DataService.getOnboardingItems();
-    const itensDoSetor = onboardingItems.filter(item => item.setorIds.includes(col.setorId));
-    
-    if (itensDoSetor.length > 0) {
-      const checklist: OnboardingChecklist = {
-        id: `oc-${Date.now()}`,
-        colaboradorId: col.id,
-        itemsConcluidos: [],
-        dataCriacao: new Date().toISOString(),
-      };
-      await DataService.saveOnboardingChecklist(checklist);
-    }
 
     // Gerar Avaliações de Experiência (15, 30, 60, 90 dias)
     const dataAdmissao = new Date(col.dataAdmissao);
@@ -296,21 +279,6 @@ export default function App() {
 
   const handleUpdateLider = async (lider: Lider) => {
     await DataService.saveLider(lider);
-    loadAllData();
-  };
-
-  const handleAddOnboardingItem = async (item: OnboardingItem) => {
-    await DataService.saveOnboardingItem(item);
-    loadAllData();
-  };
-
-  const handleDeleteOnboardingItem = async (id: string) => {
-    await DataService.deleteOnboardingItem(id);
-    loadAllData();
-  };
-
-  const handleSaveOnboardingChecklist = async (checklist: OnboardingChecklist) => {
-    await DataService.saveOnboardingChecklist(checklist);
     loadAllData();
   };
 
@@ -664,9 +632,6 @@ export default function App() {
                 onOpenNewRegistroModal={handleQuickFeedbackTrigger}
                 currentUser={currentUser}
                 onUpdateColaborador={handleUpdateColaborador}
-                onboardingItems={onboardingItems}
-                onboardingChecklists={onboardingChecklists}
-                onSaveOnboardingChecklist={handleSaveOnboardingChecklist}
                 avaliacoesExperiencia={avaliacoesExperiencia}
                 onUpdateAvaliacaoExperiencia={handleUpdateAvaliacaoExperiencia}
                 configuracaoAlertas={configuracaoAlertas}
@@ -790,10 +755,8 @@ export default function App() {
               activeProvider={activeProvider}
               onChangeProvider={setActiveProvider}
               setores={setores}
-              onboardingItems={onboardingItems}
-              onAddOnboardingItem={handleAddOnboardingItem}
-              onDeleteOnboardingItem={handleDeleteOnboardingItem}
               currentUser={currentUser!}
+              onIrParaProgramasDesenvolvimento={() => setActiveTab('desenvolvimento-programas')}
               empresas={empresas}
               cargos={cargos}
               lideres={lideres}

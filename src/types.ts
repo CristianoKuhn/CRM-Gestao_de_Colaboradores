@@ -1207,6 +1207,10 @@ export interface ItemOperacional {
   // Princípio 18 e Modelagem Física, seção 1.4). Usado para saber quando a
   // Etapa inteira pode ser concluída automaticamente.
   origemEtapaId?: string;
+  // Rastreabilidade direta ao Programa, sem precisar saltar por
+  // Etapa → Inscrição → Oferta (princípio aprovado: Programa → Execução →
+  // Workflow → Etapa → Tarefa).
+  origemProgramaId?: string;
 
   // Ponte com o antigo módulo Tarefas (ver arquitetura, seção 17).
   tipoOrigem?: TipoRegistro | string;
@@ -1226,6 +1230,24 @@ export interface ItemEvento {
   dadosEvento?: Record<string, unknown>;
   autorId?: string;
   data: string;
+}
+
+export type ItemTipoComentario = 'item_operacional' | 'inscricao_etapa';
+
+// Ativação da aba ItensComentarios (reservada desde o Motor de Itens
+// Operacionais, nunca implementada até o Sprint 1 da Reestruturação ERP) —
+// é o canal de "observações" exigido como metadado das Tarefas (princípio
+// aprovado: responsáveis, datas, dependências, evidências, prioridade e
+// observações). `itemTipo` desambigua entre um Item Operacional e uma Etapa
+// de Inscrição, já que o mesmo mecanismo serve para os dois.
+export interface ItemComentario {
+  id: string;
+  itemId: string;
+  itemTipo: ItemTipoComentario;
+  autorId?: string;
+  texto: string;
+  anexos?: Anexo[];
+  data?: string;
 }
 
 // ═══════════════════════════════════════════════════════════════════

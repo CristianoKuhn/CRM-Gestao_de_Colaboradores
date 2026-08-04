@@ -59,6 +59,7 @@ import {
   ItemOperacional,
   CategoriaItem,
   ItemEvento,
+  ItemComentario,
   CapacidadeBiblioteca,
   CompetenciaBiblioteca,
   MaterialBiblioteca,
@@ -477,6 +478,9 @@ export interface IDataService {
   deleteCategoriaItem(id: string): Promise<void>;
   getItensEventos(itemId: string): Promise<ItemEvento[]>;
   saveItemEvento(evento: ItemEvento): Promise<void>;
+  getItensComentarios(filtro?: { itemId?: string; itemTipo?: 'item_operacional' | 'inscricao_etapa' }): Promise<ItemComentario[]>;
+  saveItemComentario(comentario: ItemComentario): Promise<void>;
+  migrarOnboardingParaMotorDesenvolvimento(): Promise<{ templates: unknown; checklists: unknown }>;
 
   // ── Motor de Desenvolvimento de Colaboradores — Biblioteca Corporativa ──
   // Ver "Especificação Arquitetural Definitiva v2" e "Modelagem Física
@@ -1073,6 +1077,20 @@ export class LocalDataService implements IDataService {
   }
   async saveItemEvento(evento: ItemEvento): Promise<void> {
     itensLocalSaveItem('itensEventos', evento);
+  }
+  async getItensComentarios(filtro?: { itemId?: string; itemTipo?: 'item_operacional' | 'inscricao_etapa' }): Promise<ItemComentario[]> {
+    let comentarios = itensLocalGetArray<ItemComentario>('itensComentarios');
+    if (filtro?.itemId) comentarios = comentarios.filter((c) => c.itemId === filtro.itemId);
+    if (filtro?.itemTipo) comentarios = comentarios.filter((c) => c.itemTipo === filtro.itemTipo);
+    return comentarios;
+  }
+  async saveItemComentario(comentario: ItemComentario): Promise<void> {
+    itensLocalSaveItem('itensComentarios', { ...comentario, data: comentario.data || new Date().toISOString().slice(0, 10) });
+  }
+  // Migração não se aplica ao modo demo (não há sistema legado local) —
+  // retorna zerado para a tela não quebrar caso alguém clique no modo demo.
+  async migrarOnboardingParaMotorDesenvolvimento(): Promise<{ templates: unknown; checklists: unknown }> {
+    return { templates: { programasCriados: 0 }, checklists: { migradas: 0 } };
   }
 
   // ── Motor de Desenvolvimento de Colaboradores — Biblioteca Corporativa ──
@@ -3931,6 +3949,7 @@ export class GoogleScriptDataService implements IDataService {
         origemTemplateId: i.origem_template_id || undefined,
         origemGatilhoId: i.origem_gatilho_id || undefined,
         origemEtapaId: i.origem_etapa_id || undefined,
+        origemProgramaId: i.origem_programa_id || undefined,
         tipoOrigem: i.tipo_origem || undefined,
         registroId: i.registro_id || undefined,
         empresaId: i.empresa_id || undefined,
@@ -3970,6 +3989,7 @@ export class GoogleScriptDataService implements IDataService {
         origem_template_id: item.origemTemplateId || '',
         origem_gatilho_id: item.origemGatilhoId || '',
         origem_etapa_id: item.origemEtapaId || '',
+        origem_programa_id: item.origemProgramaId || '',
         tipo_origem: item.tipoOrigem || '',
         registro_id: item.registroId || '',
         empresa_id: item.empresaId || '',
@@ -4054,6 +4074,51 @@ export class GoogleScriptDataService implements IDataService {
       await this.request('saveItemEvento', { data: body });
     } catch (e) {
       console.warn('Erro ao salvar evento de item no GoogleScript:', e);
+    }
+  }
+  async getItensComentarios(filtro?: { itemId?: string; itemTipo?: 'item_operacional' | 'inscricao_etapa' }): Promise<ItemComentario[]> {
+    try {
+      const raw = await this.request<any[]>('getItensComentarios', { itemId: filtro?.itemId || '', itemTipo: filtro?.itemTipo || '' });
+      return (raw || []).map((c) => ({
+        id: c.id,
+        itemId: c.item_id,
+        itemTipo: c.item_tipo,
+        autorId: c.autor_id || undefined,
+        texto: c.texto,
+        anexos: Array.isArray(c.anexos) ? c.anexos : undefined,
+        data: c.data || undefined,
+      }));
+    } catch (e) {
+      return this.localFallback.getItensComentarios(filtro);
+    }
+  }
+  async saveItemComentario(comentario: ItemComentario): Promise<void> {
+    await this.localFallback.saveItemComentario(comentario);
+    try {
+      const body = {
+        id: comentario.id,
+        item_id: comentario.itemId,
+        item_tipo: comentario.itemTipo,
+        autor_id: comentario.autorId || '',
+        texto: comentario.texto,
+        anexos: JSON.stringify(comentario.anexos || []),
+        data: comentario.data || '',
+      };
+      await this.request('saveItemComentario', { data: body });
+    } catch (e) {
+      console.warn('Erro ao salvar observação no GoogleScript:', e);
+      throw e;
+    }
+  }
+  // Sprint 1 da Reestruturação ERP — dispara as migrações de Onboarding
+  // legado (aditivas, idempotentes). O erro precisa chegar até quem chamou:
+  // é uma ação administrativa deliberada, não um autosave silencioso.
+  async migrarOnboardingParaMotorDesenvolvimento(): Promise<{ templates: unknown; checklists: unknown }> {
+    try {
+      return await this.request<{ templates: unknown; checklists: unknown }>('migrarOnboardingParaMotorDesenvolvimento');
+    } catch (e) {
+      console.warn('Erro ao migrar Onboarding legado no GoogleScript:', e);
+      throw e;
     }
   }
 
@@ -5283,6 +5348,15 @@ class DynamicDataService implements IDataService {
   }
   async saveItemEvento(evento: ItemEvento): Promise<void> {
     await this.getService().saveItemEvento(evento);
+  }
+  async getItensComentarios(filtro?: { itemId?: string; itemTipo?: 'item_operacional' | 'inscricao_etapa' }): Promise<ItemComentario[]> {
+    return this.getService().getItensComentarios(filtro);
+  }
+  async saveItemComentario(comentario: ItemComentario): Promise<void> {
+    await this.getService().saveItemComentario(comentario);
+  }
+  async migrarOnboardingParaMotorDesenvolvimento(): Promise<{ templates: unknown; checklists: unknown }> {
+    return this.getService().migrarOnboardingParaMotorDesenvolvimento();
   }
 
   // ── Motor de Desenvolvimento de Colaboradores — Biblioteca Corporativa ──

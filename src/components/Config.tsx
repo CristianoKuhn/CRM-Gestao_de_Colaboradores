@@ -4,12 +4,12 @@
  */
 
 import React, { useState } from 'react';
+import { DataService } from '../services/DataService';
 import { 
   SupabaseConfig, 
   GoogleScriptConfig, 
   DataSourceProvider, 
   Setor, 
-  OnboardingItem,
   Usuario,
   Empresa,
   Cargo,
@@ -50,10 +50,11 @@ interface ConfigProps {
   activeProvider: DataSourceProvider;
   onChangeProvider: (provider: DataSourceProvider) => void;
   setores: Setor[];
-  onboardingItems: OnboardingItem[];
-  onAddOnboardingItem: (item: OnboardingItem) => void;
-  onDeleteOnboardingItem: (id: string) => void;
   currentUser: Usuario;
+  // Sprint 1 da Reestruturação ERP: Onboarding deixou de ser configurado
+  // aqui — vira um Programa como qualquer outro, em "Programas de
+  // Desenvolvimento". Este handler é só o atalho de navegação.
+  onIrParaProgramasDesenvolvimento?: () => void;
   // Novos props para o Dashboard Admin
   empresas?: Empresa[];
   cargos?: Cargo[];
@@ -76,10 +77,8 @@ export default function Config({
   activeProvider,
   onChangeProvider,
   setores,
-  onboardingItems,
-  onAddOnboardingItem,
-  onDeleteOnboardingItem,
   currentUser,
+  onIrParaProgramasDesenvolvimento,
   empresas = [],
   cargos = [],
   lideres = [],
@@ -93,9 +92,8 @@ export default function Config({
   onUpdateLider,
 }: ConfigProps) {
   const [webAppUrl, setWebAppUrl] = useState(googleConfig.webAppUrl || '');
-  const [newOnboardingSetores, setNewOnboardingSetores] = useState<string[]>([]);
-  const [newOnboardingTitulo, setNewOnboardingTitulo] = useState('');
-  const [newOnboardingDesc, setNewOnboardingDesc] = useState('');
+  const [migrandoOnboarding, setMigrandoOnboarding] = useState(false);
+  const [resultadoMigracaoOnboarding, setResultadoMigracaoOnboarding] = useState<string | null>(null);
 
   const canManageOnboarding = currentUser.perfil === 'Administrador' || 
                              currentUser.perfil === 'Coordenador' || 
@@ -185,21 +183,6 @@ export default function Config({
     }
   };
 
-  const handleAddOnboarding = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newOnboardingTitulo || newOnboardingSetores.length === 0) return;
-
-    onAddOnboardingItem({
-      id: `onb-${Date.now()}`,
-      setorIds: newOnboardingSetores,
-      titulo: newOnboardingTitulo,
-      descricao: newOnboardingDesc,
-    });
-    setNewOnboardingTitulo('');
-    setNewOnboardingDesc('');
-    setNewOnboardingSetores([]);
-  };
-
   // Handlers para Dashboard Admin
   const handleAddSetor = (e: React.FormEvent) => {
     e.preventDefault();
@@ -260,6 +243,28 @@ export default function Config({
   // Obter colaboradores por líder
   const getColaboradoresByLider = (liderId: string) => {
     return colaboradores.filter(c => c.liderId === liderId);
+  };
+
+  // Sprint 1 da Reestruturação ERP — dispara, uma vez, a migração aditiva do
+  // Onboarding legado (OnboardingItems/OnboardingChecklists) para o Motor de
+  // Desenvolvimento (Programa/Oferta/Inscrição/Etapa). Idempotente: pode ser
+  // clicado mais de uma vez sem duplicar nada.
+  const handleMigrarOnboarding = async () => {
+    setMigrandoOnboarding(true);
+    setResultadoMigracaoOnboarding(null);
+    try {
+      const resultado = await DataService.migrarOnboardingParaMotorDesenvolvimento();
+      const templates = resultado.templates as { setoresComItens?: number; programasCriados?: number; programasJaExistentes?: number };
+      const checklists = resultado.checklists as { migradas?: number; jaMigradasAntes?: number; semProgramaNoSetor?: number };
+      setResultadoMigracaoOnboarding(
+        `${templates.programasCriados ?? 0} programa(s) criado(s) (${templates.programasJaExistentes ?? 0} já existiam) · ` +
+        `${checklists.migradas ?? 0} checklist(s) migrado(s) para Inscrição (${checklists.jaMigradasAntes ?? 0} já migrados antes).`
+      );
+    } catch (e: any) {
+      setResultadoMigracaoOnboarding(e?.message || 'Não foi possível concluir a migração agora.');
+    } finally {
+      setMigrandoOnboarding(false);
+    }
   };
 
   return (
@@ -734,108 +739,50 @@ export default function Config({
         </div>
       )}
 
-      {/* Seção de Onboarding - Mantida */}
+      {/* Sprint 1 da Reestruturação ERP — Onboarding unificado no Motor de Desenvolvimento */}
       {canManageOnboarding && (
-        <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-6">
+        <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-5">
           <div className="flex items-center gap-2 border-b border-slate-50 pb-3">
             <ClipboardList size={18} className="text-teal-600" />
-            <h2 className="font-extrabold text-slate-900 text-sm uppercase tracking-wider">Parametrização de Onboarding</h2>
+            <h2 className="font-extrabold text-slate-900 text-sm uppercase tracking-wider">Onboarding</h2>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            {/* Form to add new item */}
-            <form onSubmit={handleAddOnboarding} className="space-y-4 bg-slate-50 p-5 rounded-2xl border border-slate-100">
-              <h3 className="text-xs font-bold text-slate-700 uppercase">Novo Item de Check-in</h3>
-              
-              <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Setores Alvo (Selecione um ou mais)</label>
-                <div className="flex flex-wrap gap-1.5 p-2.5 bg-white border border-slate-200 rounded-xl max-h-32 overflow-y-auto">
-                  {setores.map(s => (
-                    <button
-                      key={s.id}
-                      type="button"
-                      onClick={() => {
-                        setNewOnboardingSetores(prev => 
-                          prev.includes(s.id) 
-                            ? prev.filter(id => id !== s.id) 
-                            : [...prev, s.id]
-                        );
-                      }}
-                      className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all border ${
-                        newOnboardingSetores.includes(s.id)
-                          ? 'bg-teal-500 text-white border-teal-500'
-                          : 'bg-slate-50 text-slate-500 border-slate-100 hover:border-teal-300'
-                      }`}
-                    >
-                      {s.nome}
-                    </button>
-                  ))}
-                </div>
-              </div>
+          <p className="text-xs text-slate-500 leading-relaxed max-w-2xl">
+            O Onboarding não é mais configurado aqui — ele passou a ser um Programa como qualquer outro
+            (Formação de Liderança, Capacitação, PDI...), todos usando o mesmo motor. Configure as Etapas,
+            os itens de checklist e o critério de elegibilidade por setor em{' '}
+            <span className="font-bold text-teal-700">Programas de Desenvolvimento</span>.
+          </p>
 
-              <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Título da Ação</label>
-                <input
-                  type="text"
-                  value={newOnboardingTitulo}
-                  onChange={(e) => setNewOnboardingTitulo(e.target.value)}
-                  placeholder="Ex: Entrega de Equipamentos"
-                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-1 focus:ring-teal-500"
-                  required
-                />
-              </div>
+          {onIrParaProgramasDesenvolvimento && (
+            <button
+              type="button"
+              onClick={onIrParaProgramasDesenvolvimento}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-white bg-teal-600 hover:bg-teal-500 transition-colors"
+            >
+              <ClipboardList size={14} />
+              Ir para Programas de Desenvolvimento
+            </button>
+          )}
 
-              <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Descrição / Instrução</label>
-                <textarea
-                  value={newOnboardingDesc}
-                  onChange={(e) => setNewOnboardingDesc(e.target.value)}
-                  placeholder="Ex: Entregar notebook, mouse e configurar e-mail corporativo."
-                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-1 focus:ring-teal-500 h-20 resize-none"
-                />
-              </div>
-
-              <button
-                type="submit"
-                className="w-full py-2.5 bg-teal-600 hover:bg-teal-500 text-white font-extrabold rounded-xl text-xs shadow-sm transition flex items-center justify-center gap-1.5 cursor-pointer"
-              >
-                <PlusCircle size={14} />
-                Adicionar ao Setor
-              </button>
-            </form>
-
-            {/* List of current items by sector */}
-            <div className="space-y-4">
-              <h3 className="text-xs font-bold text-slate-700 uppercase">Itens Cadastrados</h3>
-              <div className="max-h-[350px] overflow-y-auto space-y-3 pr-2 custom-scrollbar">
-                {onboardingItems.map(item => (
-                  <div key={item.id} className="flex items-center justify-between p-2.5 bg-white border border-slate-100 rounded-xl hover:border-slate-200 transition-all group">
-                    <div className="min-w-0">
-                      <p className="text-xs font-bold text-slate-800 truncate">{item.titulo}</p>
-                      <div className="flex flex-wrap gap-1 mt-0.5">
-                        {item.setorIds.map(sid => (
-                          <span key={sid} className="px-1 py-0.5 bg-slate-50 text-slate-400 rounded text-[8px] font-bold">
-                            {setores.find(s => s.id === sid)?.nome || sid}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => onDeleteOnboardingItem(item.id)}
-                      className="p-1.5 text-slate-300 hover:text-rose-500 transition-colors cursor-pointer"
-                      title="Remover Item"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                ))}
-                {onboardingItems.length === 0 && (
-                  <div className="text-center py-10 text-slate-400">
-                    <p className="text-xs">Nenhum item de onboarding configurado ainda.</p>
-                  </div>
-                )}
-              </div>
-            </div>
+          <div className="border-t border-slate-50 pt-5">
+            <h3 className="text-xs font-bold text-slate-700 uppercase mb-2">Migração do Onboarding legado</h3>
+            <p className="text-[11px] text-slate-400 leading-relaxed mb-3 max-w-2xl">
+              Migra os itens e checklists do sistema antigo para Programas/Inscrições reais — aditivo e
+              idempotente (pode clicar mais de uma vez sem duplicar nada; nenhum dado antigo é apagado).
+              Rode uma vez após validar a nova tela de Programas de Desenvolvimento.
+            </p>
+            <button
+              type="button"
+              onClick={handleMigrarOnboarding}
+              disabled={migrandoOnboarding}
+              className="px-4 py-2 rounded-xl text-xs font-bold text-teal-700 bg-teal-50 hover:bg-teal-100 transition-colors disabled:opacity-50"
+            >
+              {migrandoOnboarding ? 'Migrando...' : 'Migrar Onboarding legado agora'}
+            </button>
+            {resultadoMigracaoOnboarding && (
+              <p className="text-[11px] text-slate-500 mt-2">{resultadoMigracaoOnboarding}</p>
+            )}
           </div>
         </div>
       )}

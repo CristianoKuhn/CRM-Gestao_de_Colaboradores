@@ -3,511 +3,480 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Usuario, Programa, Oferta, Inscricao, InscricaoEtapa, Evidencia, TipoEvidencia } from '../../types';
+import { DataService } from '../../services/DataService';
 import {
-  Programa,
-  ProgramaEtapaTemplate,
-  CompetenciaBiblioteca,
-  MaterialBiblioteca,
-  TipoItemPadraoEtapa,
-  PrazoBaseEtapa,
-} from '../../../../types';
-import { ListOrdered, Plus, Edit2, Trash2, X, Save, ShieldCheck, GitBranch, UserCheck } from 'lucide-react';
+  GraduationCap,
+  ChevronDown,
+  ChevronUp,
+  CheckCircle2,
+  Circle,
+  Lock,
+  Plus,
+  X,
+  Save,
+  Paperclip,
+  ShieldCheck,
+  ShieldAlert,
+  AlertTriangle,
+  RefreshCw,
+  UserCheck,
+  UserX,
+} from 'lucide-react';
 
-interface ProgramaEtapasManagerProps {
-  programa: Programa;
-  etapas: ProgramaEtapaTemplate[];
-  competencias: CompetenciaBiblioteca[];
-  materiais: MaterialBiblioteca[];
-  onSalvar: (etapa: ProgramaEtapaTemplate) => Promise<void>;
-  onExcluir: (id: string) => Promise<void>;
-  somenteLeitura?: boolean;
+interface JornadaColaboradorPanelProps {
+  colaboradorId: string;
+  currentUser?: Usuario;
 }
 
-const TIPOS_ITEM: { valor: TipoItemPadraoEtapa; label: string }[] = [
-  { valor: 'atividade', label: 'Atividade' },
-  { valor: 'treinamento', label: 'Treinamento' },
-  { valor: 'checklist', label: 'Checklist' },
+const TIPOS_EVIDENCIA: { valor: TipoEvidencia; label: string }[] = [
+  { valor: 'documento', label: 'Documento' },
+  { valor: 'video', label: 'Vídeo' },
+  { valor: 'imagem', label: 'Imagem' },
+  { valor: 'observacao', label: 'Observação' },
+  { valor: 'formulario', label: 'Formulário' },
+  { valor: 'assinatura', label: 'Assinatura' },
+  { valor: 'aprovacao', label: 'Aprovação' },
 ];
 
-const PRAZOS_BASE: { valor: PrazoBaseEtapa; label: string }[] = [
-  { valor: 'admissao', label: 'A partir da admissão' },
-  { valor: 'oferta', label: 'A partir do início da Oferta' },
-  { valor: 'etapa_anterior', label: 'A partir da conclusão da etapa anterior' },
-];
-
-function etapaVazia(programaId: string, proximaOrdem: number): ProgramaEtapaTemplate {
-  return {
-    id: '',
-    programaId,
-    ordem: proximaOrdem,
-    nome: '',
-    objetivos: '',
-    dependeDeIds: [],
-    prazoDias: 10,
-    prazoBase: 'admissao',
-    competenciasAlvo: [],
-    itensPadrao: [],
-    materiaisIds: [],
-    exigeEvidencia: false,
-    exigeValidacaoEvidencia: false,
-    exigeAprovacao: false,
-  };
-}
+const STATUS_ETAPA_LABEL: Record<string, { label: string; className: string }> = {
+  bloqueada: { label: 'Bloqueada', className: 'bg-slate-100 text-slate-400' },
+  disponivel: { label: 'Disponível', className: 'bg-indigo-50 text-indigo-600' },
+  em_andamento: { label: 'Em andamento', className: 'bg-amber-50 text-amber-600' },
+  concluida: { label: 'Concluída', className: 'bg-teal-50 text-teal-600' },
+  atrasada: { label: 'Atrasada', className: 'bg-rose-50 text-rose-600' },
+  encerrada_cancelamento: { label: 'Encerrada (cancelamento)', className: 'bg-slate-100 text-slate-400' },
+};
 
 const inputBase =
   'w-full px-3 py-2 rounded-xl border border-slate-200 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-400';
-const labelBase = 'block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1';
 
-// A dependência entre etapas é um grafo explícito (dependeDeIds), nunca um bloqueio
-// binário fixo (Princípio 10 da Especificação v2) — por isso o seletor de dependência
-// abaixo é multi-seleção de outras etapas do mesmo Programa, não um campo "anterior/próxima".
-const ProgramaEtapasManager: React.FC<ProgramaEtapasManagerProps> = ({
-  programa,
-  etapas,
-  competencias,
-  materiais,
-  onSalvar,
-  onExcluir,
-  somenteLeitura,
-}) => {
-  const [editando, setEditando] = useState<ProgramaEtapaTemplate | null>(null);
-  const [confirmandoExclusao, setConfirmandoExclusao] = useState<string | null>(null);
-  const [erroSalvar, setErroSalvar] = useState<string | null>(null);
-  const [novoItemTitulo, setNovoItemTitulo] = useState('');
-  const [novoItemTipo, setNovoItemTipo] = useState<TipoItemPadraoEtapa>('atividade');
+// Motor de Desenvolvimento de Colaboradores — visão dentro do perfil (Roadmap do
+// Domínio: Inscrições e Etapas, camada de execução). Nenhuma escrita acontece
+// direto aqui: toda ação chama as funções de negócio do backend (criarInscricao,
+// concluirEtapa, anexarEvidencia...), nunca upsert cru de status (Princípio 10
+// da Especificação v2).
+const JornadaColaboradorPanel: React.FC<JornadaColaboradorPanelProps> = ({ colaboradorId, currentUser }) => {
+  const [carregando, setCarregando] = useState(true);
+  const [inscricoes, setInscricoes] = useState<Inscricao[]>([]);
+  const [etapasPorInscricao, setEtapasPorInscricao] = useState<Record<string, InscricaoEtapa[]>>({});
+  const [evidenciasPorEtapa, setEvidenciasPorEtapa] = useState<Record<string, Evidencia[]>>({});
+  const [programas, setProgramas] = useState<Programa[]>([]);
+  const [ofertas, setOfertas] = useState<Oferta[]>([]);
+  const [inscricaoExpandidaId, setInscricaoExpandidaId] = useState<string | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+  const [modalNovaInscricao, setModalNovaInscricao] = useState(false);
+  const [ofertaEscolhidaId, setOfertaEscolhidaId] = useState('');
+  const [modalEvidencia, setModalEvidencia] = useState<string | null>(null); // id da etapa
+  const [novaEvidenciaTipo, setNovaEvidenciaTipo] = useState<TipoEvidencia>('observacao');
+  const [novaEvidenciaTexto, setNovaEvidenciaTexto] = useState('');
+  const [novaEvidenciaUrl, setNovaEvidenciaUrl] = useState('');
 
-  const etapasOrdenadas = [...etapas].sort((a, b) => a.ordem - b.ordem);
-  const competenciasAtivas = competencias.filter((c) => c.ativo);
+  const podeGerir = !!currentUser; // app interno de gestão — quem acessa o perfil já é staff
 
-  const salvar = async () => {
-    if (!editando || !editando.nome.trim()) return;
-    setErroSalvar(null);
+  const carregar = useCallback(async () => {
+    setCarregando(true);
     try {
-      await onSalvar({ ...editando, id: editando.id || `etapa-template-${Date.now()}` });
-      setEditando(null);
-    } catch (e: any) {
-      setErroSalvar(
-        e?.message || 'Este Programa já possui Ofertas publicadas; a estrutura de etapas não pode mais ser alterada.'
+      const [listaInscricoes, listaProgramas, listaOfertas] = await Promise.all([
+        DataService.getInscricoes({ colaboradorId }),
+        DataService.getProgramas(),
+        DataService.getOfertas(),
+      ]);
+      setInscricoes(listaInscricoes);
+      setProgramas(listaProgramas);
+      setOfertas(listaOfertas);
+
+      const etapasEntries = await Promise.all(
+        listaInscricoes.map(async (i) => [i.id, await DataService.getInscricaoEtapas({ inscricaoId: i.id })] as const)
       );
+      const mapaEtapas: Record<string, InscricaoEtapa[]> = {};
+      etapasEntries.forEach(([id, etapas]) => {
+        mapaEtapas[id] = [...etapas].sort((a, b) => a.ordem - b.ordem);
+      });
+      setEtapasPorInscricao(mapaEtapas);
+    } finally {
+      setCarregando(false);
+    }
+  }, [colaboradorId]);
+
+  useEffect(() => {
+    carregar();
+  }, [carregar]);
+
+  const carregarEvidenciasDaEtapa = async (etapaId: string) => {
+    const lista = await DataService.getEvidencias({ entidadeTipo: 'etapa', entidadeId: etapaId });
+    setEvidenciasPorEtapa((atual) => ({ ...atual, [etapaId]: lista }));
+  };
+
+  const toggleInscricaoExpandida = async (inscricaoId: string) => {
+    const abrindo = inscricaoExpandidaId !== inscricaoId;
+    setInscricaoExpandidaId(abrindo ? inscricaoId : null);
+    if (abrindo) {
+      const etapas = etapasPorInscricao[inscricaoId] || [];
+      await Promise.all(etapas.map((e) => carregarEvidenciasDaEtapa(e.id)));
     }
   };
 
+  const concluir = async (etapaId: string) => {
+    setErro(null);
+    try {
+      await DataService.concluirEtapa(etapaId, currentUser?.id);
+      await carregar();
+    } catch (e: any) {
+      setErro(e?.message || 'Não foi possível concluir esta etapa.');
+    }
+  };
+
+  const aprovar = async (etapaId: string) => {
+    setErro(null);
+    try {
+      await DataService.aprovarEtapa(etapaId, currentUser?.id);
+      await carregar();
+    } catch (e: any) {
+      setErro(e?.message || 'Não foi possível aprovar esta etapa.');
+    }
+  };
+
+  const rejeitar = async (etapaId: string) => {
+    setErro(null);
+    try {
+      await DataService.rejeitarEtapa(etapaId, currentUser?.id);
+      await carregar();
+    } catch (e: any) {
+      setErro(e?.message || 'Não foi possível rejeitar esta etapa.');
+    }
+  };
+
+  const abrirNovaInscricao = () => {
+    setErro(null);
+    setOfertaEscolhidaId('');
+    setModalNovaInscricao(true);
+  };
+
+  const confirmarNovaInscricao = async () => {
+    if (!ofertaEscolhidaId) return;
+    setErro(null);
+    try {
+      await DataService.criarInscricao(colaboradorId, ofertaEscolhidaId, 'indicacao', currentUser?.id);
+      setModalNovaInscricao(false);
+      await carregar();
+    } catch (e: any) {
+      setErro(e?.message || 'Não foi possível criar a Inscrição.');
+    }
+  };
+
+  const salvarEvidencia = async () => {
+    if (!modalEvidencia) return;
+    const evidencia: Evidencia = {
+      id: `evidencia-${Date.now()}`,
+      entidadeTipo: 'etapa',
+      entidadeId: modalEvidencia,
+      tipo: novaEvidenciaTipo,
+      texto: novaEvidenciaTexto || undefined,
+      url: novaEvidenciaUrl || undefined,
+      anexadoPor: currentUser?.id,
+      status: 'pendente',
+    };
+    await DataService.anexarEvidencia(evidencia);
+    await carregarEvidenciasDaEtapa(modalEvidencia);
+    setModalEvidencia(null);
+    setNovaEvidenciaTexto('');
+    setNovaEvidenciaUrl('');
+  };
+
+  const validarOuRejeitar = async (evidenciaId: string, etapaId: string, aprovar: boolean) => {
+    if (aprovar) await DataService.validarEvidencia(evidenciaId, currentUser?.id);
+    else await DataService.rejeitarEvidencia(evidenciaId, currentUser?.id);
+    await carregarEvidenciasDaEtapa(etapaId);
+  };
+
+  const nomePrograma = (programaId: string) => programas.find((p) => p.id === programaId)?.nome || 'Programa';
+  const nomeOferta = (ofertaId: string) => ofertas.find((o) => o.id === ofertaId)?.nome || '';
+
+  const ofertasDisponiveisParaInscricao = ofertas.filter(
+    (o) => o.status === 'aberta' && !inscricoes.some((i) => i.ofertaId === o.id && i.estadoWorkflow !== 'cancelada')
+  );
+
+  if (carregando) {
+    return (
+      <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-6 flex items-center gap-2 text-sm text-slate-400">
+        <RefreshCw size={16} className="animate-spin" /> Carregando jornada de desenvolvimento...
+      </div>
+    );
+  }
+
   return (
     <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-6">
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <div className="flex items-center gap-2">
-          <ListOrdered size={18} className="text-teal-500" />
-          <h3 className="font-bold text-slate-800">Etapas de "{programa.nome}"</h3>
+          <div className="w-9 h-9 rounded-xl bg-teal-500/10 flex items-center justify-center text-teal-600">
+            <GraduationCap size={18} />
+          </div>
+          <div>
+            <h3 className="font-bold text-slate-800">Jornada de Desenvolvimento</h3>
+            <p className="text-xs text-slate-400">Programas em que este colaborador está inscrito</p>
+          </div>
         </div>
-        {!somenteLeitura && (
+        {podeGerir && (
           <button
-            onClick={() => {
-              setErroSalvar(null);
-              setEditando(etapaVazia(programa.id, etapasOrdenadas.length + 1));
-            }}
+            onClick={abrirNovaInscricao}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-teal-700 bg-teal-50 hover:bg-teal-100 transition-colors"
           >
-            <Plus size={14} /> Nova etapa
+            <Plus size={14} /> Nova inscrição
           </button>
         )}
       </div>
 
-      {etapasOrdenadas.length === 0 ? (
-        <p className="text-sm text-slate-400 py-6 text-center">Nenhuma etapa cadastrada para este programa ainda.</p>
-      ) : (
-        <div className="space-y-2">
-          {etapasOrdenadas.map((etapa) => (
-            <div key={etapa.id} className="rounded-2xl border border-slate-100 px-4 py-3 hover:border-slate-200 transition-colors">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-8 h-8 rounded-xl bg-teal-50 flex items-center justify-center text-teal-700 font-bold text-xs shrink-0">
-                    {etapa.ordem}
-                  </div>
-                  <div className="min-w-0">
-                    <p className="font-semibold text-sm text-slate-800 truncate">{etapa.nome}</p>
-                    <p className="text-[11px] text-slate-400">
-                      {etapa.itensPadrao.length} item(ns) · {etapa.competenciasAlvo.length} competência(s)-alvo
-                      {etapa.exigeEvidencia && ' · exige evidência'}
-                      {etapa.exigeAprovacao && ' · exige aprovação'}
-                    </p>
-                  </div>
-                </div>
-                {!somenteLeitura && (
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button
-                      onClick={() => {
-                        setErroSalvar(null);
-                        setEditando(etapa);
-                      }}
-                      className="p-2 rounded-lg text-slate-400 hover:text-teal-600 hover:bg-teal-50 transition-colors"
-                      title="Editar"
-                    >
-                      <Edit2 size={14} />
-                    </button>
-                    {confirmandoExclusao === etapa.id ? (
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => {
-                            onExcluir(etapa.id);
-                            setConfirmandoExclusao(null);
-                          }}
-                          className="text-[11px] font-semibold text-white bg-rose-500 hover:bg-rose-600 rounded-lg px-2 py-1"
-                        >
-                          Confirmar
-                        </button>
-                        <button
-                          onClick={() => setConfirmandoExclusao(null)}
-                          className="text-[11px] font-semibold text-slate-500 hover:bg-slate-100 rounded-lg px-2 py-1"
-                        >
-                          Cancelar
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => setConfirmandoExclusao(etapa.id)}
-                        className="p-2 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
-                        title="Excluir"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-              {etapa.dependeDeIds.length > 0 && (
-                <div className="flex items-center gap-1.5 mt-2 ml-11">
-                  <GitBranch size={12} className="text-slate-400" />
-                  <span className="text-[11px] text-slate-400">
-                    Depende de:{' '}
-                    {etapa.dependeDeIds
-                      .map((id) => etapas.find((e) => e.id === id)?.nome || id)
-                      .join(', ')}
-                  </span>
-                </div>
-              )}
-            </div>
-          ))}
+      {erro && (
+        <div className="flex items-start gap-2 text-xs text-amber-700 bg-amber-50 rounded-xl px-3 py-2 mb-3">
+          <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+          {erro}
         </div>
       )}
 
-      {editando && (
+      {inscricoes.length === 0 ? (
+        <p className="text-sm text-slate-400 py-6 text-center">
+          Nenhuma Inscrição ainda. Se o Programa de Onboarding do setor estiver configurado como automático, a
+          Inscrição nasce sozinha quando o colaborador é admitido.
+        </p>
+      ) : (
+        <div className="space-y-3">
+          {inscricoes.map((inscricao) => {
+            const etapas = etapasPorInscricao[inscricao.id] || [];
+            const expandida = inscricaoExpandidaId === inscricao.id;
+            return (
+              <div key={inscricao.id} className="rounded-2xl border border-slate-100 overflow-hidden">
+                <button
+                  onClick={() => toggleInscricaoExpandida(inscricao.id)}
+                  className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-50/60 transition-colors"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-9 h-9 rounded-xl bg-teal-50 flex items-center justify-center text-teal-700 shrink-0 text-xs font-bold">
+                      {inscricao.percentualConcluido}%
+                    </div>
+                    <div className="min-w-0 text-left">
+                      <p className="font-semibold text-sm text-slate-800 truncate">
+                        {nomePrograma(inscricao.programaId)}{' '}
+                        <span className="text-slate-400 font-normal">· {nomeOferta(inscricao.ofertaId)}</span>
+                      </p>
+                      <p className="text-[11px] text-slate-400">
+                        {inscricao.estadoWorkflow === 'concluida'
+                          ? 'Concluída'
+                          : inscricao.estadoWorkflow === 'cancelada'
+                          ? `Cancelada${inscricao.motivoCancelamento ? ' — ' + inscricao.motivoCancelamento : ''}`
+                          : 'Em andamento'}{' '}
+                        · origem: {inscricao.origem}
+                      </p>
+                    </div>
+                  </div>
+                  {expandida ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
+                </button>
+
+                {expandida && (
+                  <div className="border-t border-slate-100 px-4 py-3 space-y-2 bg-slate-50/40">
+                    {etapas.map((etapa) => {
+                      const statusInfo = STATUS_ETAPA_LABEL[etapa.status] || STATUS_ETAPA_LABEL.bloqueada;
+                      const evidencias = evidenciasPorEtapa[etapa.id] || [];
+                      const aprovacaoPendente = etapa.estadoAprovacao === 'pendente';
+                      const aprovacaoRejeitada = etapa.estadoAprovacao === 'rejeitado';
+                      const podeConcluir =
+                        podeGerir &&
+                        (etapa.status === 'disponivel' || etapa.status === 'em_andamento') &&
+                        !aprovacaoPendente &&
+                        !aprovacaoRejeitada;
+                      return (
+                        <div key={etapa.id} className="rounded-xl border border-slate-100 bg-white px-3 py-2.5">
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <div className="flex items-center gap-2 min-w-0">
+                              {etapa.status === 'concluida' ? (
+                                <CheckCircle2 size={16} className="text-teal-500 shrink-0" />
+                              ) : etapa.status === 'bloqueada' ? (
+                                <Lock size={14} className="text-slate-300 shrink-0" />
+                              ) : (
+                                <Circle size={14} className="text-indigo-400 shrink-0" />
+                              )}
+                              <span className="text-sm font-semibold text-slate-700 truncate">
+                                {etapa.ordem}. {etapa.nome}
+                              </span>
+                              <span className={`text-[10px] font-semibold uppercase tracking-wide rounded-full px-2 py-0.5 shrink-0 ${statusInfo.className}`}>
+                                {statusInfo.label}
+                              </span>
+                              {aprovacaoPendente && (
+                                <span className="text-[10px] font-semibold uppercase tracking-wide rounded-full px-2 py-0.5 shrink-0 bg-indigo-50 text-indigo-600">
+                                  aguardando aprovação
+                                </span>
+                              )}
+                              {aprovacaoRejeitada && (
+                                <span className="text-[10px] font-semibold uppercase tracking-wide rounded-full px-2 py-0.5 shrink-0 bg-rose-50 text-rose-600">
+                                  aprovação rejeitada
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              {podeGerir && etapa.status !== 'bloqueada' && etapa.status !== 'concluida' && etapa.status !== 'encerrada_cancelamento' && (
+                                <button
+                                  onClick={() => {
+                                    setModalEvidencia(etapa.id);
+                                    setNovaEvidenciaTipo('observacao');
+                                  }}
+                                  className="flex items-center gap-1 text-[11px] font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg px-2 py-1"
+                                >
+                                  <Paperclip size={11} /> Evidência
+                                </button>
+                              )}
+                              {podeGerir && aprovacaoPendente && (
+                                <>
+                                  <button
+                                    onClick={() => aprovar(etapa.id)}
+                                    className="flex items-center gap-1 text-[11px] font-semibold text-teal-700 bg-teal-50 hover:bg-teal-100 rounded-lg px-2.5 py-1"
+                                  >
+                                    <UserCheck size={11} /> Aprovar
+                                  </button>
+                                  <button
+                                    onClick={() => rejeitar(etapa.id)}
+                                    className="flex items-center gap-1 text-[11px] font-semibold text-rose-600 bg-rose-50 hover:bg-rose-100 rounded-lg px-2.5 py-1"
+                                  >
+                                    <UserX size={11} /> Rejeitar
+                                  </button>
+                                </>
+                              )}
+                              {podeConcluir && (
+                                <button
+                                  onClick={() => concluir(etapa.id)}
+                                  className="text-[11px] font-semibold text-white bg-teal-600 hover:bg-teal-700 rounded-lg px-2.5 py-1"
+                                >
+                                  Concluir etapa
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                          {evidencias.length > 0 && (
+                            <div className="mt-2 space-y-1 pl-6">
+                              {evidencias.map((ev) => (
+                                <div key={ev.id} className="flex items-center justify-between gap-2 text-[11px] text-slate-500">
+                                  <span className="truncate">
+                                    <span className="font-semibold text-slate-600">
+                                      {TIPOS_EVIDENCIA.find((t) => t.valor === ev.tipo)?.label}
+                                    </span>
+                                    {ev.texto ? `: ${ev.texto}` : ''}
+                                    {ev.url ? ` (${ev.url})` : ''}
+                                  </span>
+                                  <span className="flex items-center gap-1.5 shrink-0">
+                                    {ev.status === 'validada' && (
+                                      <span title="Validada"><ShieldCheck size={12} className="text-teal-500" /></span>
+                                    )}
+                                    {ev.status === 'rejeitada' && (
+                                      <span title="Rejeitada"><ShieldAlert size={12} className="text-rose-500" /></span>
+                                    )}
+                                    {ev.status === 'pendente' && podeGerir && (
+                                      <>
+                                        <button
+                                          onClick={() => validarOuRejeitar(ev.id, etapa.id, true)}
+                                          className="text-teal-600 hover:underline"
+                                        >
+                                          Validar
+                                        </button>
+                                        <button
+                                          onClick={() => validarOuRejeitar(ev.id, etapa.id, false)}
+                                          className="text-rose-500 hover:underline"
+                                        >
+                                          Rejeitar
+                                        </button>
+                                      </>
+                                    )}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {modalNovaInscricao && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl shadow-2xl max-w-xl w-full p-6 border border-slate-100 max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-6 border border-slate-100">
             <div className="flex items-center justify-between mb-4">
-              <h4 className="font-bold text-slate-800">{editando.id ? 'Editar etapa' : 'Nova etapa'}</h4>
-              <button onClick={() => setEditando(null)} className="text-slate-400 hover:text-slate-600">
+              <h4 className="font-bold text-slate-800">Nova inscrição</h4>
+              <button onClick={() => setModalNovaInscricao(false)} className="text-slate-400 hover:text-slate-600">
                 <X size={18} />
               </button>
             </div>
-
-            {erroSalvar && (
-              <div className="text-xs text-amber-700 bg-amber-50 rounded-xl px-3 py-2 mb-3">{erroSalvar}</div>
-            )}
-
-            <div className="space-y-3">
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className={labelBase}>Ordem</label>
-                  <input
-                    type="number"
-                    className={inputBase}
-                    value={editando.ordem}
-                    onChange={(e) => setEditando({ ...editando, ordem: Number(e.target.value) })}
-                  />
-                </div>
-                <div className="col-span-2">
-                  <label className={labelBase}>Nome</label>
-                  <input
-                    className={inputBase}
-                    value={editando.nome}
-                    onChange={(e) => setEditando({ ...editando, nome: e.target.value })}
-                    placeholder="Ex.: Primeiros 10 dias"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className={labelBase}>Objetivos (opcional)</label>
-                <textarea
-                  className={inputBase}
-                  rows={2}
-                  value={editando.objetivos || ''}
-                  onChange={(e) => setEditando({ ...editando, objetivos: e.target.value })}
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className={labelBase}>Prazo (dias)</label>
-                  <input
-                    type="number"
-                    className={inputBase}
-                    value={editando.prazoDias ?? ''}
-                    onChange={(e) => setEditando({ ...editando, prazoDias: Number(e.target.value) })}
-                  />
-                </div>
-                <div>
-                  <label className={labelBase}>Contado a partir de</label>
-                  <select
-                    className={inputBase}
-                    value={editando.prazoBase}
-                    onChange={(e) => setEditando({ ...editando, prazoBase: e.target.value as PrazoBaseEtapa })}
-                  >
-                    {PRAZOS_BASE.map((p) => (
-                      <option key={p.valor} value={p.valor}>
-                        {p.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className={labelBase}>Depende de (outras etapas deste programa)</label>
-                <div className="flex flex-wrap gap-1.5">
-                  {etapasOrdenadas
-                    .filter((e) => e.id && e.id !== editando.id)
-                    .map((e) => {
-                      const marcada = editando.dependeDeIds.includes(e.id);
-                      return (
-                        <button
-                          key={e.id}
-                          onClick={() =>
-                            setEditando({
-                              ...editando,
-                              dependeDeIds: marcada
-                                ? editando.dependeDeIds.filter((id) => id !== e.id)
-                                : [...editando.dependeDeIds, e.id],
-                            })
-                          }
-                          className={`text-[11px] font-semibold rounded-full px-2.5 py-1 transition-colors ${
-                            marcada ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-                          }`}
-                        >
-                          {e.nome}
-                        </button>
-                      );
-                    })}
-                  {etapasOrdenadas.filter((e) => e.id && e.id !== editando.id).length === 0 && (
-                    <span className="text-xs text-slate-400 italic">Nenhuma outra etapa ainda para depender.</span>
-                  )}
-                </div>
-              </div>
-
-              <div>
-                <label className={labelBase}>Competências-alvo</label>
-                <div className="flex flex-wrap gap-1.5 mb-2">
-                  {editando.competenciasAlvo.map((ca, idx) => {
-                    const comp = competenciasAtivas.find((c) => c.id === ca.competenciaId);
-                    return (
-                      <span
-                        key={`${ca.competenciaId}-${idx}`}
-                        className="flex items-center gap-1 text-[11px] font-semibold bg-teal-50 text-teal-700 rounded-full px-2.5 py-1"
-                      >
-                        {comp?.nome || ca.competenciaId} → {ca.nivelAlvo}
-                        <button
-                          onClick={() =>
-                            setEditando({
-                              ...editando,
-                              competenciasAlvo: editando.competenciasAlvo.filter((_, i) => i !== idx),
-                            })
-                          }
-                          className="text-teal-400 hover:text-rose-500"
-                        >
-                          <X size={11} />
-                        </button>
-                      </span>
-                    );
-                  })}
-                </div>
-                {competenciasAtivas.length > 0 && (
-                  <div className="flex gap-2">
-                    <select
-                      className={inputBase}
-                      id="select-nova-competencia-alvo"
-                      defaultValue={competenciasAtivas[0].id}
-                    >
-                      {competenciasAtivas.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.nome}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      onClick={() => {
-                        const select = document.getElementById('select-nova-competencia-alvo') as HTMLSelectElement | null;
-                        const competenciaId = select?.value || competenciasAtivas[0].id;
-                        const comp = competenciasAtivas.find((c) => c.id === competenciaId);
-                        const nivelAlvo = comp?.niveis[comp.niveis.length - 1] || '';
-                        setEditando({
-                          ...editando,
-                          competenciasAlvo: [...editando.competenciasAlvo, { competenciaId, nivelAlvo }],
-                        });
-                      }}
-                      className="px-3 rounded-xl text-sm font-semibold text-teal-700 bg-teal-50 hover:bg-teal-100 shrink-0"
-                    >
-                      <Plus size={14} />
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <label className={labelBase}>Itens padrão (atividades/treinamentos/checklist)</label>
-                <div className="space-y-1 mb-2">
-                  {editando.itensPadrao.map((item, idx) => (
-                    <div
-                      key={idx}
-                      className="flex items-center justify-between text-xs bg-slate-50 rounded-xl px-3 py-1.5"
-                    >
-                      <span>
-                        <span className="font-semibold text-slate-700">{item.titulo}</span>{' '}
-                        <span className="text-slate-400">
-                          ({TIPOS_ITEM.find((t) => t.valor === item.tipoItem)?.label})
-                        </span>
-                      </span>
-                      <button
-                        onClick={() =>
-                          setEditando({ ...editando, itensPadrao: editando.itensPadrao.filter((_, i) => i !== idx) })
-                        }
-                        className="text-slate-400 hover:text-rose-500"
-                      >
-                        <X size={12} />
-                      </button>
-                    </div>
+            {ofertasDisponiveisParaInscricao.length === 0 ? (
+              <p className="text-sm text-slate-400">Nenhuma Oferta aberta disponível no momento.</p>
+            ) : (
+              <div className="space-y-3">
+                <select className={inputBase} value={ofertaEscolhidaId} onChange={(e) => setOfertaEscolhidaId(e.target.value)}>
+                  <option value="">Selecione uma Oferta</option>
+                  {ofertasDisponiveisParaInscricao.map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {nomePrograma(o.programaId)} · {o.nome}
+                    </option>
                   ))}
-                </div>
-                <div className="flex gap-2">
-                  <select
-                    className={inputBase + ' max-w-[140px]'}
-                    value={novoItemTipo}
-                    onChange={(e) => setNovoItemTipo(e.target.value as TipoItemPadraoEtapa)}
-                  >
-                    {TIPOS_ITEM.map((t) => (
-                      <option key={t.valor} value={t.valor}>
-                        {t.label}
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    className={inputBase}
-                    value={novoItemTitulo}
-                    onChange={(e) => setNovoItemTitulo(e.target.value)}
-                    placeholder="Título do item"
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && novoItemTitulo.trim()) {
-                        setEditando({
-                          ...editando,
-                          itensPadrao: [...editando.itensPadrao, { titulo: novoItemTitulo.trim(), tipoItem: novoItemTipo }],
-                        });
-                        setNovoItemTitulo('');
-                      }
-                    }}
-                  />
-                  <button
-                    onClick={() => {
-                      if (!novoItemTitulo.trim()) return;
-                      setEditando({
-                        ...editando,
-                        itensPadrao: [...editando.itensPadrao, { titulo: novoItemTitulo.trim(), tipoItem: novoItemTipo }],
-                      });
-                      setNovoItemTitulo('');
-                    }}
-                    className="px-3 rounded-xl text-sm font-semibold text-teal-700 bg-teal-50 hover:bg-teal-100 shrink-0"
-                  >
-                    <Plus size={14} />
-                  </button>
-                </div>
+                </select>
               </div>
-
-              {materiais.length > 0 && (
-                <div>
-                  <label className={labelBase}>Materiais associados</label>
-                  <div className="flex flex-wrap gap-1.5">
-                    {materiais.map((m) => {
-                      const marcado = editando.materiaisIds.includes(m.id);
-                      return (
-                        <button
-                          key={m.id}
-                          onClick={() =>
-                            setEditando({
-                              ...editando,
-                              materiaisIds: marcado
-                                ? editando.materiaisIds.filter((id) => id !== m.id)
-                                : [...editando.materiaisIds, m.id],
-                            })
-                          }
-                          className={`text-[11px] font-semibold rounded-full px-2.5 py-1 transition-colors ${
-                            marcado ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-                          }`}
-                        >
-                          {m.nome}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              <div className="flex items-center gap-4 pt-1">
-                <label className="flex items-center gap-2 text-sm text-slate-600">
-                  <input
-                    type="checkbox"
-                    checked={editando.exigeEvidencia}
-                    onChange={(e) =>
-                      setEditando({
-                        ...editando,
-                        exigeEvidencia: e.target.checked,
-                        exigeValidacaoEvidencia: e.target.checked ? editando.exigeValidacaoEvidencia : false,
-                      })
-                    }
-                  />
-                  Exige Evidência para concluir
-                </label>
-                {editando.exigeEvidencia && (
-                  <label className="flex items-center gap-2 text-sm text-slate-600">
-                    <input
-                      type="checkbox"
-                      checked={editando.exigeValidacaoEvidencia}
-                      onChange={(e) => setEditando({ ...editando, exigeValidacaoEvidencia: e.target.checked })}
-                    />
-                    <ShieldCheck size={14} className="text-teal-500" /> Evidência precisa ser validada
-                  </label>
-                )}
-              </div>
-
-              <div>
-                <label className="flex items-center gap-2 text-sm text-slate-600 mb-2">
-                  <input
-                    type="checkbox"
-                    checked={editando.exigeAprovacao}
-                    onChange={(e) => setEditando({ ...editando, exigeAprovacao: e.target.checked })}
-                  />
-                  <UserCheck size={14} className="text-indigo-500" /> Exige aprovação formal (distinta de quem executa)
-                </label>
-                {editando.exigeAprovacao && (
-                  <input
-                    className={inputBase}
-                    value={editando.papelAprovador || ''}
-                    onChange={(e) => setEditando({ ...editando, papelAprovador: e.target.value })}
-                    placeholder="Papel de quem aprova (ex.: Líder do setor, RH) — opcional"
-                  />
-                )}
-                <p className="text-[11px] text-slate-400 mt-1">
-                  Quando marcada, a Etapa só conclui depois de aprovada — quem aprova nunca é o mesmo papel de quem
-                  executou (rastreabilidade Programa → Execução → Workflow → Etapa → Tarefa).
-                </p>
-              </div>
-            </div>
-
+            )}
             <div className="flex items-center justify-end gap-2 mt-6">
-              <button
-                onClick={() => setEditando(null)}
-                className="px-4 py-2 rounded-xl text-sm font-medium text-slate-500 hover:bg-slate-50"
-              >
+              <button onClick={() => setModalNovaInscricao(false)} className="px-4 py-2 rounded-xl text-sm font-medium text-slate-500 hover:bg-slate-50">
                 Cancelar
               </button>
               <button
-                onClick={salvar}
+                onClick={confirmarNovaInscricao}
+                disabled={!ofertaEscolhidaId}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-white bg-teal-600 hover:bg-teal-700 disabled:opacity-50"
+              >
+                <Save size={15} /> Inscrever
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modalEvidencia && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-6 border border-slate-100">
+            <div className="flex items-center justify-between mb-4">
+              <h4 className="font-bold text-slate-800">Anexar evidência</h4>
+              <button onClick={() => setModalEvidencia(null)} className="text-slate-400 hover:text-slate-600">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="space-y-3">
+              <select className={inputBase} value={novaEvidenciaTipo} onChange={(e) => setNovaEvidenciaTipo(e.target.value as TipoEvidencia)}>
+                {TIPOS_EVIDENCIA.map((t) => (
+                  <option key={t.valor} value={t.valor}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+              <textarea
+                className={inputBase}
+                rows={2}
+                placeholder="Observação (opcional)"
+                value={novaEvidenciaTexto}
+                onChange={(e) => setNovaEvidenciaTexto(e.target.value)}
+              />
+              <input
+                className={inputBase}
+                placeholder="Link (opcional)"
+                value={novaEvidenciaUrl}
+                onChange={(e) => setNovaEvidenciaUrl(e.target.value)}
+              />
+            </div>
+            <div className="flex items-center justify-end gap-2 mt-6">
+              <button onClick={() => setModalEvidencia(null)} className="px-4 py-2 rounded-xl text-sm font-medium text-slate-500 hover:bg-slate-50">
+                Cancelar
+              </button>
+              <button
+                onClick={salvarEvidencia}
                 className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-white bg-teal-600 hover:bg-teal-700"
               >
                 <Save size={15} /> Salvar
@@ -520,4 +489,4 @@ const ProgramaEtapasManager: React.FC<ProgramaEtapasManagerProps> = ({
   );
 };
 
-export default ProgramaEtapasManager;
+export default JornadaColaboradorPanel;

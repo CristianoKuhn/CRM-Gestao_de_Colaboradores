@@ -1392,6 +1392,11 @@ export interface ProgramaEtapaTemplate {
   materiaisIds: string[];
   exigeEvidencia: boolean;
   exigeValidacaoEvidencia: boolean;
+  // Sprint 2 da Reestruturação ERP: distingue quem EXECUTA (responsavelId, na
+  // instância) de quem APROVA a Etapa — nem toda Etapa precisa, mas quando
+  // precisa, aprovador nunca é o mesmo papel de quem executou.
+  exigeAprovacao: boolean;
+  papelAprovador?: string;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1450,6 +1455,8 @@ export type StatusEtapaInscricao =
   | 'atrasada'
   | 'encerrada_cancelamento';
 
+export type EstadoAprovacaoEtapa = 'nao_aplicavel' | 'pendente' | 'aprovado' | 'rejeitado';
+
 export interface InscricaoEtapa {
   id: string;
   inscricaoId: string;
@@ -1461,6 +1468,14 @@ export interface InscricaoEtapa {
   dataConclusao?: string;
   responsavelId?: string;
   observacoes?: string;
+  // Sprint 2 da Reestruturação ERP — aprovação formal, distinta da execução.
+  aprovadorId?: string;
+  estadoAprovacao: EstadoAprovacaoEtapa;
+}
+
+export interface ResultadoDecisaoAprovacaoEtapa {
+  id: string;
+  estadoAprovacao: EstadoAprovacaoEtapa;
 }
 
 export type EntidadeTipoEvidencia = 'item_operacional' | 'etapa' | 'avaliacao' | 'certificacao' | 'mentoria';
@@ -1514,6 +1529,18 @@ export interface PerfilCompetencia {
   nivelAtual: string;
   atualizadoEm?: string;
   atualizadoPor?: string;
+}
+
+// Sprint 2 da Reestruturação ERP: liga o resultado de uma FormularioInstancia
+// (Motor de Formulários) a uma Competência avaliada — quando a instância
+// conclui, cada linha aqui vira uma chamada real a evoluirCompetenciaPerfil_
+// no backend (nunca escrita direta no Perfil).
+export interface AvaliacaoCompetenciaResultado {
+  id: string;
+  formularioInstanciaId: string;
+  competenciaId: string;
+  nivelAtribuido: string;
+  peso?: number;
 }
 
 export type StatusObjetivo = 'aberto' | 'alcancado' | 'expirado';

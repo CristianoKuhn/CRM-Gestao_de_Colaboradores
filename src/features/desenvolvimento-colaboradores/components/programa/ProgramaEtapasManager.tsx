@@ -12,7 +12,7 @@ import {
   TipoItemPadraoEtapa,
   PrazoBaseEtapa,
 } from '../../../../types';
-import { ListOrdered, Plus, Edit2, Trash2, X, Save, ShieldCheck, GitBranch } from 'lucide-react';
+import { ListOrdered, Plus, Edit2, Trash2, X, Save, ShieldCheck, GitBranch, UserCheck } from 'lucide-react';
 
 interface ProgramaEtapasManagerProps {
   programa: Programa;
@@ -51,6 +51,7 @@ function etapaVazia(programaId: string, proximaOrdem: number): ProgramaEtapaTemp
     materiaisIds: [],
     exigeEvidencia: false,
     exigeValidacaoEvidencia: false,
+    exigeAprovacao: false,
   };
 }
 
@@ -128,6 +129,7 @@ const ProgramaEtapasManager: React.FC<ProgramaEtapasManagerProps> = ({
                     <p className="text-[11px] text-slate-400">
                       {etapa.itensPadrao.length} item(ns) · {etapa.competenciasAlvo.length} competência(s)-alvo
                       {etapa.exigeEvidencia && ' · exige evidência'}
+                      {etapa.exigeAprovacao && ' · exige aprovação'}
                     </p>
                   </div>
                 </div>
@@ -471,6 +473,29 @@ const ProgramaEtapasManager: React.FC<ProgramaEtapasManagerProps> = ({
                     <ShieldCheck size={14} className="text-teal-500" /> Evidência precisa ser validada
                   </label>
                 )}
+              </div>
+
+              <div>
+                <label className="flex items-center gap-2 text-sm text-slate-600 mb-2">
+                  <input
+                    type="checkbox"
+                    checked={editando.exigeAprovacao}
+                    onChange={(e) => setEditando({ ...editando, exigeAprovacao: e.target.checked })}
+                  />
+                  <UserCheck size={14} className="text-indigo-500" /> Exige aprovação formal (distinta de quem executa)
+                </label>
+                {editando.exigeAprovacao && (
+                  <input
+                    className={inputBase}
+                    value={editando.papelAprovador || ''}
+                    onChange={(e) => setEditando({ ...editando, papelAprovador: e.target.value })}
+                    placeholder="Papel de quem aprova (ex.: Líder do setor, RH) — opcional"
+                  />
+                )}
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Quando marcada, a Etapa só conclui depois de aprovada — quem aprova nunca é o mesmo papel de quem
+                  executou (rastreabilidade Programa → Execução → Workflow → Etapa → Tarefa).
+                </p>
               </div>
             </div>
 

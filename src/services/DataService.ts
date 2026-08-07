@@ -76,9 +76,11 @@ import {
   OrigemInscricao,
   InscricaoEtapa,
   ResultadoConclusaoEtapa,
+  ResultadoDecisaoAprovacaoEtapa,
   Evidencia,
   EntidadeTipoEvidencia,
   PerfilCompetencia,
+  AvaliacaoCompetenciaResultado,
   PerfilObjetivo,
   PerfilConsolidado,
   ResultadoEvolucaoCompetencia,
@@ -530,6 +532,17 @@ export interface IDataService {
 
   getInscricaoEtapas(filtro?: { inscricaoId?: string }): Promise<InscricaoEtapa[]>;
   concluirEtapa(id: string, usuarioId?: string): Promise<ResultadoConclusaoEtapa>;
+  // Sprint 2 da Reestruturação ERP — aprovação formal distinta de execução.
+  aprovarEtapa(id: string, usuarioId?: string): Promise<ResultadoDecisaoAprovacaoEtapa>;
+  rejeitarEtapa(id: string, usuarioId?: string): Promise<ResultadoDecisaoAprovacaoEtapa>;
+  // Sprint 2 — liga o resultado de uma Avaliação (Motor de Formulários) às
+  // Competências. Sem "saveAvaliacaoCompetenciaResultado" unitário — sempre
+  // em lote, mesmo padrão de saveRespostasCamposBatch.
+  getAvaliacaoCompetenciaResultados(instanciaId: string): Promise<AvaliacaoCompetenciaResultado[]>;
+  saveAvaliacaoCompetenciaResultadosBatch(
+    instanciaId: string,
+    resultados: AvaliacaoCompetenciaResultado[]
+  ): Promise<{ instanciaId: string; totalGravado: number }>;
 
   getEvidencias(filtro?: { entidadeTipo?: EntidadeTipoEvidencia; entidadeId?: string }): Promise<Evidencia[]>;
   anexarEvidencia(evidencia: Evidencia): Promise<void>;
@@ -1235,6 +1248,7 @@ export class LocalDataService implements IDataService {
         ordem: etapaTemplate.ordem,
         nome: etapaTemplate.nome,
         status: semDependencia ? 'disponivel' : 'bloqueada',
+        estadoAprovacao: etapaTemplate.exigeAprovacao ? 'pendente' : 'nao_aplicavel',
       };
       itensLocalSaveItem('inscricaoEtapas', novaEtapa);
     });
@@ -1296,6 +1310,35 @@ export class LocalDataService implements IDataService {
       });
     }
     return { id, etapasLiberadas, percentualConcluido: percentual, inscricaoConcluida };
+  }
+  async aprovarEtapa(id: string, usuarioId?: string): Promise<ResultadoDecisaoAprovacaoEtapa> {
+    return this.decidirAprovacaoEtapaLocal_(id, 'aprovado', usuarioId);
+  }
+  async rejeitarEtapa(id: string, usuarioId?: string): Promise<ResultadoDecisaoAprovacaoEtapa> {
+    return this.decidirAprovacaoEtapaLocal_(id, 'rejeitado', usuarioId);
+  }
+  private async decidirAprovacaoEtapaLocal_(
+    id: string,
+    decisao: 'aprovado' | 'rejeitado',
+    usuarioId?: string
+  ): Promise<ResultadoDecisaoAprovacaoEtapa> {
+    const etapa = itensLocalGetArray<InscricaoEtapa>('inscricaoEtapas').find((e) => e.id === id);
+    if (!etapa) throw new Error('Etapa de inscrição não encontrada.');
+    if (etapa.estadoAprovacao === 'nao_aplicavel') throw new Error('Esta Etapa não exige aprovação formal.');
+    itensLocalSaveItem('inscricaoEtapas', { ...etapa, estadoAprovacao: decisao, aprovadorId: usuarioId });
+    return { id, estadoAprovacao: decisao };
+  }
+  async getAvaliacaoCompetenciaResultados(instanciaId: string): Promise<AvaliacaoCompetenciaResultado[]> {
+    return itensLocalGetArray<AvaliacaoCompetenciaResultado>('avaliacaoCompetenciaResultados').filter(
+      (r) => r.formularioInstanciaId === instanciaId
+    );
+  }
+  async saveAvaliacaoCompetenciaResultadosBatch(
+    instanciaId: string,
+    resultados: AvaliacaoCompetenciaResultado[]
+  ): Promise<{ instanciaId: string; totalGravado: number }> {
+    resultados.forEach((r) => itensLocalSaveItem('avaliacaoCompetenciaResultados', { ...r, formularioInstanciaId: instanciaId }));
+    return { instanciaId, totalGravado: resultados.length };
   }
 
   async getEvidencias(filtro?: { entidadeTipo?: EntidadeTipoEvidencia; entidadeId?: string }): Promise<Evidencia[]> {
@@ -4384,6 +4427,8 @@ export class GoogleScriptDataService implements IDataService {
         materiaisIds: Array.isArray(e.materiais_ids) ? e.materiais_ids : [],
         exigeEvidencia: e.exige_evidencia === true || e.exige_evidencia === 'true',
         exigeValidacaoEvidencia: e.exige_validacao_evidencia === true || e.exige_validacao_evidencia === 'true',
+        exigeAprovacao: e.exige_aprovacao === true || e.exige_aprovacao === 'true',
+        papelAprovador: e.papel_aprovador || undefined,
       }));
     } catch (e) {
       return this.localFallback.getProgramaEtapasTemplate(filtro);
@@ -4406,6 +4451,8 @@ export class GoogleScriptDataService implements IDataService {
         materiais_ids: JSON.stringify(etapa.materiaisIds || []),
         exige_evidencia: etapa.exigeEvidencia,
         exige_validacao_evidencia: etapa.exigeValidacaoEvidencia,
+        exige_aprovacao: etapa.exigeAprovacao,
+        papel_aprovador: etapa.papelAprovador || '',
       };
       // Mesma proteção do Programa-pai: se ele já tiver Oferta vinculada, o
       // backend recusa a alteração de estrutura. Erro sobe para quem chamou.
@@ -4565,6 +4612,8 @@ export class GoogleScriptDataService implements IDataService {
         dataConclusao: e.data_conclusao || undefined,
         responsavelId: e.responsavel_id || undefined,
         observacoes: e.observacoes || undefined,
+        aprovadorId: e.aprovador_id || undefined,
+        estadoAprovacao: e.estado_aprovacao || 'nao_aplicavel',
       }));
     } catch (e) {
       return this.localFallback.getInscricaoEtapas(filtro);
@@ -4582,6 +4631,59 @@ export class GoogleScriptDataService implements IDataService {
       };
     } catch (e) {
       console.warn('Erro ao concluir Etapa no GoogleScript:', e);
+      throw e;
+    }
+  }
+  // Sprint 2 da Reestruturação ERP — aprovação formal, distinta de execução.
+  async aprovarEtapa(id: string, usuarioId?: string): Promise<ResultadoDecisaoAprovacaoEtapa> {
+    try {
+      const raw = await this.request<any>('aprovarEtapa', { data: { id, usuario_id: usuarioId || '' } });
+      return { id: raw.id, estadoAprovacao: raw.estadoAprovacao };
+    } catch (e) {
+      console.warn('Erro ao aprovar Etapa no GoogleScript:', e);
+      throw e;
+    }
+  }
+  async rejeitarEtapa(id: string, usuarioId?: string): Promise<ResultadoDecisaoAprovacaoEtapa> {
+    try {
+      const raw = await this.request<any>('rejeitarEtapa', { data: { id, usuario_id: usuarioId || '' } });
+      return { id: raw.id, estadoAprovacao: raw.estadoAprovacao };
+    } catch (e) {
+      console.warn('Erro ao rejeitar Etapa no GoogleScript:', e);
+      throw e;
+    }
+  }
+  async getAvaliacaoCompetenciaResultados(instanciaId: string): Promise<AvaliacaoCompetenciaResultado[]> {
+    try {
+      const raw = await this.request<any[]>('getAvaliacaoCompetenciaResultados', { instanciaId });
+      return (raw || []).map((r) => ({
+        id: r.id,
+        formularioInstanciaId: r.formulario_instancia_id,
+        competenciaId: r.competencia_id,
+        nivelAtribuido: r.nivel_atribuido,
+        peso: r.peso !== '' && r.peso != null ? Number(r.peso) : undefined,
+      }));
+    } catch (e) {
+      return [];
+    }
+  }
+  async saveAvaliacaoCompetenciaResultadosBatch(
+    instanciaId: string,
+    resultados: AvaliacaoCompetenciaResultado[]
+  ): Promise<{ instanciaId: string; totalGravado: number }> {
+    try {
+      const body = resultados.map((r) => ({
+        id: r.id,
+        competencia_id: r.competenciaId,
+        nivel_atribuido: r.nivelAtribuido,
+        peso: r.peso ?? '',
+      }));
+      const raw = await this.request<any>('saveAvaliacaoCompetenciaResultadosBatch', {
+        data: { instanciaId, resultados: body },
+      });
+      return { instanciaId, totalGravado: Number(raw?.totalGravado) || resultados.length };
+    } catch (e) {
+      console.warn('Erro ao salvar resultados de avaliação de competência no GoogleScript:', e);
       throw e;
     }
   }
@@ -5453,6 +5555,21 @@ class DynamicDataService implements IDataService {
   }
   async concluirEtapa(id: string, usuarioId?: string): Promise<ResultadoConclusaoEtapa> {
     return this.getService().concluirEtapa(id, usuarioId);
+  }
+  async aprovarEtapa(id: string, usuarioId?: string): Promise<ResultadoDecisaoAprovacaoEtapa> {
+    return this.getService().aprovarEtapa(id, usuarioId);
+  }
+  async rejeitarEtapa(id: string, usuarioId?: string): Promise<ResultadoDecisaoAprovacaoEtapa> {
+    return this.getService().rejeitarEtapa(id, usuarioId);
+  }
+  async getAvaliacaoCompetenciaResultados(instanciaId: string): Promise<AvaliacaoCompetenciaResultado[]> {
+    return this.getService().getAvaliacaoCompetenciaResultados(instanciaId);
+  }
+  async saveAvaliacaoCompetenciaResultadosBatch(
+    instanciaId: string,
+    resultados: AvaliacaoCompetenciaResultado[]
+  ): Promise<{ instanciaId: string; totalGravado: number }> {
+    return this.getService().saveAvaliacaoCompetenciaResultadosBatch(instanciaId, resultados);
   }
   async getEvidencias(filtro?: { entidadeTipo?: EntidadeTipoEvidencia; entidadeId?: string }): Promise<Evidencia[]> {
     return this.getService().getEvidencias(filtro);

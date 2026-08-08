@@ -18,6 +18,7 @@ import {
   Usuario,
   OnboardingItem,
   OnboardingChecklist,
+  AvaliacaoExperiencia,
   AlertaInteligente,
   ConfiguracaoAlertas,
   Documento,
@@ -327,8 +328,8 @@ export interface IDataService {
   saveOnboardingChecklist(checklist: OnboardingChecklist): Promise<void>;
 
   // Avaliações de Experiência (15, 30, 60, 90 dias)
-  getAvaliacoesExperiencia(): Promise<any[]>;
-  saveAvaliacaoExperiencia(avaliacao: any): Promise<void>;
+  getAvaliacoesExperiencia(colaboradorId?: string): Promise<AvaliacaoExperiencia[]>;
+  saveAvaliacaoExperiencia(avaliacao: AvaliacaoExperiencia): Promise<void>;
   deleteAvaliacaoExperiencia(id: string): Promise<void>;
 
   // Avaliação 180°
@@ -678,10 +679,10 @@ export class LocalDataService implements IDataService {
   }
 
   // Avaliações de Experiência
-  async getAvaliacoesExperiencia(): Promise<any[]> {
+  async getAvaliacoesExperiencia(): Promise<AvaliacaoExperiencia[]> {
     return StorageAPI.getAvaliacoesExperiencia();
   }
-  async saveAvaliacaoExperiencia(avaliacao: any): Promise<void> {
+  async saveAvaliacaoExperiencia(avaliacao: AvaliacaoExperiencia): Promise<void> {
     StorageAPI.saveAvaliacaoExperiencia(avaliacao);
   }
   async deleteAvaliacaoExperiencia(id: string): Promise<void> {
@@ -2346,15 +2347,54 @@ export class GoogleScriptDataService implements IDataService {
     } catch (e) {}
   }
 
-  // Avaliações de Experiência
-  async getAvaliacoesExperiencia(): Promise<any[]> {
-    return this.localFallback.getAvaliacoesExperiencia();
+  // Avaliações de Experiência — achado da auditoria do Sprint 3: esta
+  // implementação só escrevia no localStorage (this.localFallback), nunca no
+  // Sheets de verdade. Corrigido para seguir o mesmo padrão write-through +
+  // request() de todo o resto do arquivo.
+  async getAvaliacoesExperiencia(colaboradorId?: string): Promise<AvaliacaoExperiencia[]> {
+    try {
+      const raw = await this.request<any[]>('getAvaliacoesExperiencia', { colaboradorId: colaboradorId || '' });
+      return (raw || []).map((a) => ({
+        id: a.id,
+        colaboradorId: a.colaborador_id,
+        dias: Number(a.dias) || 0,
+        dataVencimento: a.data_vencimento,
+        status: a.status,
+        resultado: a.resultado || undefined,
+        dataRealizacao: a.data_realizacao || undefined,
+        observacoes: a.observacoes || undefined,
+      }));
+    } catch (e) {
+      return this.localFallback.getAvaliacoesExperiencia();
+    }
   }
-  async saveAvaliacaoExperiencia(avaliacao: any): Promise<void> {
+  async saveAvaliacaoExperiencia(avaliacao: AvaliacaoExperiencia): Promise<void> {
     await this.localFallback.saveAvaliacaoExperiencia(avaliacao);
+    try {
+      const body = {
+        id: avaliacao.id,
+        colaborador_id: avaliacao.colaboradorId,
+        dias: avaliacao.dias,
+        data_vencimento: avaliacao.dataVencimento,
+        status: avaliacao.status,
+        resultado: avaliacao.resultado || '',
+        data_realizacao: avaliacao.dataRealizacao || '',
+        observacoes: avaliacao.observacoes || '',
+      };
+      await this.request('saveAvaliacaoExperiencia', { data: body });
+    } catch (e) {
+      console.warn('Erro ao salvar Avaliação de Experiência no GoogleScript:', e);
+      throw e;
+    }
   }
   async deleteAvaliacaoExperiencia(id: string): Promise<void> {
     await this.localFallback.deleteAvaliacaoExperiencia(id);
+    try {
+      await this.request('deleteAvaliacaoExperiencia', { id });
+    } catch (e) {
+      console.warn('Erro ao excluir Avaliação de Experiência no GoogleScript:', e);
+      throw e;
+    }
   }
 
   // Resultados Avaliação 180°
@@ -5077,10 +5117,10 @@ class DynamicDataService implements IDataService {
   }
 
   // Avaliações de Experiência
-  async getAvaliacoesExperiencia(): Promise<any[]> {
-    return this.getService().getAvaliacoesExperiencia();
+  async getAvaliacoesExperiencia(colaboradorId?: string): Promise<AvaliacaoExperiencia[]> {
+    return this.getService().getAvaliacoesExperiencia(colaboradorId);
   }
-  async saveAvaliacaoExperiencia(avaliacao: any): Promise<void> {
+  async saveAvaliacaoExperiencia(avaliacao: AvaliacaoExperiencia): Promise<void> {
     await this.getService().saveAvaliacaoExperiencia(avaliacao);
   }
   async deleteAvaliacaoExperiencia(id: string): Promise<void> {

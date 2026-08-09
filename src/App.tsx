@@ -29,7 +29,7 @@ import {
   ConfiguracaoAlertas,
 } from './types';
 import Sidebar from './components/Sidebar';
-import Dashboard from './components/Dashboard';
+import DashboardExecutiva from './components/DashboardExecutiva';
 import Colaboradores from './components/Colaboradores';
 import ColaboradorProfile from './components/ColaboradorProfile';
 import Tarefas from './components/Tarefas';
@@ -608,10 +608,13 @@ export default function App() {
         <div className="flex-1 overflow-y-auto bg-slate-50/50">
           {/* Renders Selected View */}
           {activeTab === 'dashboard' && (
-              <Dashboard
+              <DashboardExecutiva
                 colaboradores={colaboradoresVisiveis}
                 timeline={timelineVisivel}
                 tarefas={tarefasVisiveis}
+                reconhecimentos={reconhecimentos}
+                alertas={alertasVisiveis}
+                setores={setoresVisiveis}
                 onNavigateToList={handleNavigateFromDashboard}
                 onSelectColaborador={handleSelectColaborador}
                 onOpenNewRegistroModal={handleQuickFeedbackTrigger}

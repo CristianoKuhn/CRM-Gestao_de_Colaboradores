@@ -21,6 +21,9 @@ import {
   AvaliacaoExperiencia,
   PrioridadeRegistro,
   StatusRegistro,
+  Inscricao,
+  InscricaoEtapa,
+  AlertaInteligente,
 } from '../types';
 import { DataService } from '../services/DataService';
 import { PlanejadorFerias, CONFIGURACAO_FERIAS_PADRAO } from './PlanejadorFerias';
@@ -58,7 +61,7 @@ type SubTab = 'dashboard' | 'calendario' | 'ferias' | 'dayoff' | 'folgas' | 'con
 
 interface AlertaGestaoPessoas {
   id: string;
-  tipo: 'ferias_90_dias' | 'ferias_vencendo' | 'dayoff_pendente' | 'aniversario' | 'aniversario_empresa' | 'folga_pendente' | 'conflito_setor';
+  tipo: 'ferias_90_dias' | 'ferias_vencendo' | 'dayoff_pendente' | 'aniversario' | 'aniversario_empresa' | 'folga_pendente' | 'conflito_setor' | 'etapa_desenvolvimento_atrasada';
   titulo: string;
   descricao: string;
   colaboradorId?: string;
@@ -69,7 +72,7 @@ interface AlertaGestaoPessoas {
 
 interface EventoCalendario {
   id: string;
-  tipo: 'ferias' | 'dayoff' | 'folga' | 'aniversario' | 'aniversario_empresa' | 'avaliacao' | 'feedback' | 'pdi' | 'treinamento';
+  tipo: 'ferias' | 'dayoff' | 'folga' | 'aniversario' | 'aniversario_empresa' | 'avaliacao' | 'feedback' | 'pdi' | 'treinamento' | 'etapa_desenvolvimento';
   titulo: string;
   data: string;
   colaboradorId?: string;
@@ -410,6 +413,18 @@ export default function GestaoPessoas({
   const [config, setConfig] = useState<ConfiguracaoGestaoPessoas | null>(null);
   const [configFerias, setConfigFerias] = useState<ConfiguracaoFerias | null>(null);
   const [showSugestaoDistribuicao, setShowSugestaoDistribuicao] = useState(false);
+
+  // Motor de Desenvolvimento de Colaboradores — Gestão de Pessoas era a
+  // última tela "cega" para Programas/Inscrições/Etapas (onboarding, PDI,
+  // capacitação etc.): o colaborador podia estar com uma Etapa atrasada e
+  // isso nunca aparecia no calendário nem nos Alertas Inteligentes daqui,
+  // mesmo o backend já calculando tudo isso todo dia (marcarEtapasAtrasadas_,
+  // dentro de gerarAlertasAutomaticos). Mesmo padrão de auto-fetch já usado
+  // no widget "Onboarding em andamento" do Dashboard.tsx — sem prop-drilling
+  // desde App.tsx.
+  const [inscricoesDesenvolvimento, setInscricoesDesenvolvimento] = useState<Inscricao[]>([]);
+  const [etapasDesenvolvimento, setEtapasDesenvolvimento] = useState<InscricaoEtapa[]>([]);
+  const [alertasEtapasAtrasadas, setAlertasEtapasAtrasadas] = useState<AlertaInteligente[]>([]);
   
   // Filtros
   const [filtroAno, setFiltroAno] = useState(ANO_ATUAL);
@@ -452,13 +467,29 @@ export default function GestaoPessoas({
   }, []);
 
   const loadData = async () => {
-    const [feriasData, dayoffsData, folgasData, periodosData, configData, configFeriasData] = await Promise.all([
+    const [
+      feriasData,
+      dayoffsData,
+      folgasData,
+      periodosData,
+      configData,
+      configFeriasData,
+      inscricoesData,
+      etapasData,
+      alertasData,
+    ] = await Promise.all([
       DataService.getFerias(),
       DataService.getDayOffs(),
       DataService.getFolgas(),
       DataService.getPeriodosAquisitivos(),
       DataService.getConfiguracaoGestaoPessoas(),
       DataService.getConfiguracaoFerias(),
+      // Motor de Desenvolvimento de Colaboradores — Inscrições em andamento
+      // (onboarding, PDI, capacitação...) e suas Etapas, para alimentar o
+      // calendário e os Alertas Inteligentes desta tela.
+      DataService.getInscricoes({ estadoWorkflow: 'em_andamento' }),
+      DataService.getInscricaoEtapas(),
+      DataService.getAlertasInteligentes(),
     ]);
     setFerias(feriasData);
     setDayOffs(dayoffsData);
@@ -466,6 +497,11 @@ export default function GestaoPessoas({
     setPeriodosAquisitivos(periodosData);
     setConfig(configData);
     setConfigFerias(configFeriasData);
+    setInscricoesDesenvolvimento(inscricoesData);
+    setEtapasDesenvolvimento(etapasData);
+    setAlertasEtapasAtrasadas(
+      alertasData.filter((a) => a.tipo === 'etapa_desenvolvimento_atrasada' && a.status !== 'resolvido')
+    );
   };
 
   // ==========================================
@@ -605,11 +641,30 @@ export default function GestaoPessoas({
       }
     });
     
+    // Etapas de Desenvolvimento atrasadas (onboarding, PDI, capacitação...) —
+    // o alerta já vem pronto do backend (marcarEtapasAtrasadas_, dentro do
+    // job diário gerarAlertasAutomaticos), com título/descrição formatados;
+    // aqui só projetamos para o mesmo formato usado nesta tela, para entrar
+    // na mesma lista e ordenação que os demais alertas de pessoas.
+    alertasEtapasAtrasadas.forEach((alertaEtapa) => {
+      const col = colaboradores.find((c) => c.id === alertaEtapa.colaboradorId);
+      if (!col || col.situacao === 'Desligado') return;
+      listaAlertas.push({
+        id: `etapa-dev-${alertaEtapa.id}`,
+        tipo: 'etapa_desenvolvimento_atrasada',
+        titulo: alertaEtapa.titulo || `Etapa de desenvolvimento atrasada: ${col.nome}`,
+        descricao: alertaEtapa.descricao,
+        colaboradorId: alertaEtapa.colaboradorId,
+        data: alertaEtapa.dataReferencia || undefined,
+        nivel: 'urgent',
+      });
+    });
+
     return listaAlertas.sort((a, b) => {
       const ordem = { urgent: 0, warning: 1, info: 2 };
       return ordem[a.nivel] - ordem[b.nivel];
     });
-  }, [colaboradores, dayOffs, ferias, periodosAquisitivos, setores]);
+  }, [colaboradores, dayOffs, ferias, periodosAquisitivos, setores, alertasEtapasAtrasadas]);
 
   // Férias previstos nos próximos 90 dias
   const feriasProximos90Dias = useMemo(() => {
@@ -776,8 +831,31 @@ export default function GestaoPessoas({
       }
     });
     
+    // Etapas de Desenvolvimento (onboarding, PDI, capacitação...) em aberto —
+    // Motor de Desenvolvimento de Colaboradores. Só entram Etapas já
+    // liberadas/em curso/atrasadas (nunca "bloqueada", que ainda depende de
+    // outra Etapa concluir) e com data prevista definida.
+    const inscricaoPorId = new Map(inscricoesDesenvolvimento.map((i) => [i.id, i]));
+    etapasDesenvolvimento.forEach((etapa) => {
+      if (!etapa.dataPrevista) return;
+      if (!['disponivel', 'em_andamento', 'atrasada'].includes(etapa.status)) return;
+      const inscricao = inscricaoPorId.get(etapa.inscricaoId);
+      if (!inscricao) return;
+      const col = colaboradores.find((c) => c.id === inscricao.colaboradorId);
+      if (!col || col.situacao === 'Desligado') return;
+      eventos.push({
+        id: `etapa-dev-${etapa.id}`,
+        tipo: 'etapa_desenvolvimento',
+        titulo: `Desenvolvimento: ${etapa.nome} — ${col.nome}`,
+        data: etapa.dataPrevista,
+        colaboradorId: col.id,
+        setorId: col.setorId,
+        cor: etapa.status === 'atrasada' ? '#dc2626' : '#6366f1',
+      });
+    });
+
     return eventos;
-  }, [colaboradores, ferias, dayOffs, folgas, avaliacoesExperiencia]);
+  }, [colaboradores, ferias, dayOffs, folgas, avaliacoesExperiencia, inscricoesDesenvolvimento, etapasDesenvolvimento]);
 
   // ==========================================
   // HANDLERS
@@ -1272,6 +1350,7 @@ export default function GestaoPessoas({
               <option value="aniversario">Aniversários</option>
               <option value="aniversario_empresa">Aniv. Empresa</option>
               <option value="avaliacao">Avaliações</option>
+              <option value="etapa_desenvolvimento">Desenvolvimento (Onboarding/PDI)</option>
             </select>
             
             {(filtroMes !== null || filtroSetor || filtroTipoEvento) && (

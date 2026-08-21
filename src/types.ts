@@ -197,7 +197,14 @@ export type TipoAlerta =
   | 'sem_interacao'
   | 'aniversario_nascimento'
   | 'aniversario_casa'
-  | 'avaliacao_180';
+  | 'avaliacao_180'
+  // Gerado por marcarEtapasAtrasadas_ (Code.gs) — Etapa de um Programa de
+  // Desenvolvimento (onboarding, PDI, capacitação etc.) cuja data prevista já
+  // passou sem conclusão. Existia no backend desde a Sprint de Indicadores,
+  // mas faltava aqui — o tipo real chegava do Sheets sem bater com nenhum
+  // valor do union, e por isso nenhuma tela conseguia filtrar/tratar esse
+  // alerta com segurança de tipos.
+  | 'etapa_desenvolvimento_atrasada';
 
 export type StatusAlerta = 'pendente' | 'reconhecido' | 'resolvido';
 

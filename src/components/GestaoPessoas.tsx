@@ -1672,8 +1672,8 @@ export default function GestaoPessoas({
           <div>
             <p className="text-xs font-bold text-blue-800">Como funciona o DayOff?</p>
             <p className="text-[11px] text-blue-600 leading-relaxed mt-1">
-              O DayOff é uma folga especial granteda no mês do aniversário do colaborador. 
-              Deve ser utilizado até 30 dias após o aniversário. O cálculo é automático 
+              O DayOff é uma folga especial garantida no mês do aniversário do colaborador. 
+              Deve ser utilizado dentro do mês de aniversário do mesmo. O cálculo é automático 
               baseado na data de nascimento do colaborador.
             </p>
           </div>

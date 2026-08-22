@@ -21,6 +21,7 @@ import {
   ChevronRight,
   Trash2,
   CheckCircle2,
+  UserX,
 } from 'lucide-react';
 
 interface SistemaNotificacoesProps {
@@ -94,6 +95,14 @@ export default function SistemaNotificacoes({
         return 'warning';
       case 'sem_interacao':
         return 'error';
+      case 'etapa_desenvolvimento_atrasada':
+        return 'warning';
+      // Colaborador novo sem onboarding automático — falta de configuração
+      // (Programa sem Oferta aberta), não um problema do colaborador em si,
+      // mas ainda assim urgente: enquanto não resolvido, ele não tem nenhum
+      // onboarding rodando.
+      case 'onboarding_sem_oferta':
+        return 'error';
       default:
         return 'info';
     }
@@ -109,6 +118,10 @@ export default function SistemaNotificacoes({
         return <CheckCircle2 size={16} />;
       case 'sem_interacao':
         return <AlertTriangle size={16} />;
+      case 'etapa_desenvolvimento_atrasada':
+        return <Clock size={16} />;
+      case 'onboarding_sem_oferta':
+        return <UserX size={16} />;
       default:
         return <Bell size={16} />;
     }

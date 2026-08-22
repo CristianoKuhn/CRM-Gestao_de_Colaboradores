@@ -61,7 +61,7 @@ type SubTab = 'dashboard' | 'calendario' | 'ferias' | 'dayoff' | 'folgas' | 'con
 
 interface AlertaGestaoPessoas {
   id: string;
-  tipo: 'ferias_90_dias' | 'ferias_vencendo' | 'dayoff_pendente' | 'aniversario' | 'aniversario_empresa' | 'folga_pendente' | 'conflito_setor' | 'etapa_desenvolvimento_atrasada';
+  tipo: 'ferias_90_dias' | 'ferias_vencendo' | 'dayoff_pendente' | 'aniversario' | 'aniversario_empresa' | 'folga_pendente' | 'conflito_setor' | 'etapa_desenvolvimento_atrasada' | 'onboarding_sem_oferta';
   titulo: string;
   descricao: string;
   colaboradorId?: string;
@@ -425,6 +425,11 @@ export default function GestaoPessoas({
   const [inscricoesDesenvolvimento, setInscricoesDesenvolvimento] = useState<Inscricao[]>([]);
   const [etapasDesenvolvimento, setEtapasDesenvolvimento] = useState<InscricaoEtapa[]>([]);
   const [alertasEtapasAtrasadas, setAlertasEtapasAtrasadas] = useState<AlertaInteligente[]>([]);
+  // Colaborador novo sem Inscrição automática porque o Programa elegível não
+  // tinha Oferta aberta (motorElegibilidadeOnboarding_, Code.gs) — separado de
+  // alertasEtapasAtrasadas porque é um problema de CONFIGURAÇÃO (falta
+  // publicar uma Oferta), não de execução atrasada.
+  const [alertasOnboardingSemOferta, setAlertasOnboardingSemOferta] = useState<AlertaInteligente[]>([]);
   
   // Filtros
   const [filtroAno, setFiltroAno] = useState(ANO_ATUAL);
@@ -501,6 +506,9 @@ export default function GestaoPessoas({
     setEtapasDesenvolvimento(etapasData);
     setAlertasEtapasAtrasadas(
       alertasData.filter((a) => a.tipo === 'etapa_desenvolvimento_atrasada' && a.status !== 'resolvido')
+    );
+    setAlertasOnboardingSemOferta(
+      alertasData.filter((a) => a.tipo === 'onboarding_sem_oferta' && a.status !== 'resolvido')
     );
   };
 
@@ -660,11 +668,31 @@ export default function GestaoPessoas({
       });
     });
 
+    // Colaborador novo sem Inscrição automática de onboarding, porque o
+    // Programa elegível não tem nenhuma Oferta aberta — motorElegibilidadeOnboarding_
+    // (Code.gs) gera este alerta no instante do cadastro. É um problema de
+    // CONFIGURAÇÃO (falta publicar uma Oferta em Programas de Desenvolvimento
+    // ou inscrever manualmente), por isso fica no nível mais alto: sem ação,
+    // o colaborador simplesmente não tem onboarding nenhum.
+    alertasOnboardingSemOferta.forEach((alertaOnboarding) => {
+      const col = colaboradores.find((c) => c.id === alertaOnboarding.colaboradorId);
+      if (!col || col.situacao === 'Desligado') return;
+      listaAlertas.push({
+        id: `onboarding-sem-oferta-${alertaOnboarding.id}`,
+        tipo: 'onboarding_sem_oferta',
+        titulo: alertaOnboarding.titulo || `Onboarding não iniciado: ${col.nome}`,
+        descricao: alertaOnboarding.descricao,
+        colaboradorId: alertaOnboarding.colaboradorId,
+        data: alertaOnboarding.dataReferencia || undefined,
+        nivel: 'urgent',
+      });
+    });
+
     return listaAlertas.sort((a, b) => {
       const ordem = { urgent: 0, warning: 1, info: 2 };
       return ordem[a.nivel] - ordem[b.nivel];
     });
-  }, [colaboradores, dayOffs, ferias, periodosAquisitivos, setores, alertasEtapasAtrasadas]);
+  }, [colaboradores, dayOffs, ferias, periodosAquisitivos, setores, alertasEtapasAtrasadas, alertasOnboardingSemOferta]);
 
   // Férias previstos nos próximos 90 dias
   const feriasProximos90Dias = useMemo(() => {

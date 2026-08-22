@@ -22,6 +22,11 @@ interface ProgramaManagerProps {
   onSelecionarPrograma: (id: string) => void;
   onSalvar: (programa: Programa) => Promise<void>;
   somenteLeitura?: boolean;
+  // Ids de Programas ativos com elegibilidade automática que ainda não têm
+  // nenhuma Oferta "aberta" — motorElegibilidadeOnboarding_ (Code.gs) não
+  // consegue inscrever ninguém automaticamente nesses Programas. Opcional
+  // para não quebrar quem já usa este componente sem passar essa análise.
+  idsProgramasSemOfertaAberta?: Set<string>;
 }
 
 const TIPOS_PROGRAMA: { valor: TipoPrograma; label: string }[] = [
@@ -78,6 +83,7 @@ const ProgramaManager: React.FC<ProgramaManagerProps> = ({
   onSelecionarPrograma,
   onSalvar,
   somenteLeitura,
+  idsProgramasSemOfertaAberta,
 }) => {
   const [editando, setEditando] = useState<Programa | null>(null);
   const [erroSalvar, setErroSalvar] = useState<string | null>(null);
@@ -134,6 +140,7 @@ const ProgramaManager: React.FC<ProgramaManagerProps> = ({
           {programasAtivos.map((p) => {
             const area = areas.find((a) => a.id === p.areaDesenvolvimentoId);
             const selecionado = programaSelecionadoId === p.id;
+            const semOfertaAberta = idsProgramasSemOfertaAberta?.has(p.id) ?? false;
             return (
               <button
                 key={p.id}
@@ -158,6 +165,14 @@ const ProgramaManager: React.FC<ProgramaManagerProps> = ({
                       <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 bg-slate-100 rounded-full px-2 py-0.5">
                         v{p.versao}
                       </span>
+                      {semOfertaAberta && (
+                        <span
+                          className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-amber-700 bg-amber-50 rounded-full px-2 py-0.5"
+                          title="Este Programa tem elegibilidade automática, mas nenhuma Oferta aberta — novos colaboradores elegíveis não são inscritos sozinhos. Publique uma Oferta em 'Ofertas', à direita."
+                        >
+                          <AlertTriangle size={10} /> Sem Oferta aberta
+                        </span>
+                      )}
                     </div>
                     <p className="text-[11px] text-slate-400 mt-0.5">
                       {area?.nome || 'Sem área de desenvolvimento'} ·{' '}

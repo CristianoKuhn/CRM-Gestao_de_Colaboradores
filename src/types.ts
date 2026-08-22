@@ -204,7 +204,14 @@ export type TipoAlerta =
   // mas faltava aqui — o tipo real chegava do Sheets sem bater com nenhum
   // valor do union, e por isso nenhuma tela conseguia filtrar/tratar esse
   // alerta com segurança de tipos.
-  | 'etapa_desenvolvimento_atrasada';
+  | 'etapa_desenvolvimento_atrasada'
+  // Gerado por motorElegibilidadeOnboarding_ (Code.gs) quando um colaborador
+  // novo bate com um Programa de onboarding elegível (setor/critério
+  // automático), mas esse Programa não tem nenhuma Oferta com status
+  // "aberta" — então nenhuma Inscrição é criada automaticamente. Antes disso
+  // só ficava registrado em HistoricoAlteracoes (invisível na UI); agora
+  // também gera este alerta, vinculado ao colaborador recém-cadastrado.
+  | 'onboarding_sem_oferta';
 
 export type StatusAlerta = 'pendente' | 'reconhecido' | 'resolvido';
 

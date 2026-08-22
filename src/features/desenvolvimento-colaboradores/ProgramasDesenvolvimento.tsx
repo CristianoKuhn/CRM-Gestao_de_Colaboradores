@@ -39,6 +39,13 @@ const ProgramasDesenvolvimento: React.FC<ProgramasDesenvolvimentoProps> = ({ cur
   const [competencias, setCompetencias] = useState<CompetenciaBiblioteca[]>([]);
   const [materiais, setMateriais] = useState<MaterialBiblioteca[]>([]);
   const [programaSelecionadoId, setProgramaSelecionadoId] = useState<string | null>(null);
+  // Todas as Ofertas de todos os Programas (independente do selecionado) —
+  // só para calcular, na lista da esquerda, quais Programas com elegibilidade
+  // automática ainda não têm nenhuma Oferta aberta. Sem isso, um Programa de
+  // onboarding cadastrado sem Oferta publicada falha silenciosamente: o
+  // colaborador é cadastrado e nada acontece (motorElegibilidadeOnboarding_
+  // no backend só registra em HistoricoAlteracoes, invisível aqui).
+  const [todasAsOfertas, setTodasAsOfertas] = useState<Oferta[]>([]);
 
   // Somente Administrador altera a estrutura de um Programa (Regra de Negócio da
   // Especificação v2 — "Quem altera a estrutura de um Programa? Somente Administrador.").
@@ -47,16 +54,18 @@ const ProgramasDesenvolvimento: React.FC<ProgramasDesenvolvimentoProps> = ({ cur
   const carregarDados = useCallback(async () => {
     setCarregando(true);
     try {
-      const [listaProgramas, listaAreas, listaCompetencias, listaMateriais] = await Promise.all([
+      const [listaProgramas, listaAreas, listaCompetencias, listaMateriais, listaTodasAsOfertas] = await Promise.all([
         DataService.getProgramas(),
         DataService.getAreasDesenvolvimento(),
         DataService.getCompetenciasBiblioteca(),
         DataService.getMateriaisBiblioteca(),
+        DataService.getOfertas(),
       ]);
       setProgramas(listaProgramas);
       setAreas(listaAreas);
       setCompetencias(listaCompetencias);
       setMateriais(listaMateriais);
+      setTodasAsOfertas(listaTodasAsOfertas);
       setProgramaSelecionadoId((atual) => atual || listaProgramas.find((p) => p.ativo)?.id || null);
     } finally {
       setCarregando(false);
@@ -101,20 +110,40 @@ const ProgramasDesenvolvimento: React.FC<ProgramasDesenvolvimentoProps> = ({ cur
     if (programaSelecionadoId) await carregarEtapasDoPrograma(programaSelecionadoId);
   };
 
+  // Depois de qualquer mutação em Oferta, além de recarregar a lista do
+  // Programa selecionado, atualiza também `todasAsOfertas` — é o que mantém
+  // o aviso "sem Oferta aberta" na lista da esquerda em dia (ex.: publicar a
+  // primeira Oferta de um Programa deve remover o aviso imediatamente).
   const salvarOferta = async (oferta: Oferta) => {
     await DataService.saveOferta(oferta);
     if (programaSelecionadoId) await carregarEtapasDoPrograma(programaSelecionadoId);
+    setTodasAsOfertas(await DataService.getOfertas());
   };
   const encerrarOferta = async (id: string) => {
     await DataService.encerrarOferta(id);
     if (programaSelecionadoId) await carregarEtapasDoPrograma(programaSelecionadoId);
+    setTodasAsOfertas(await DataService.getOfertas());
   };
   const cancelarOferta = async (id: string) => {
     await DataService.cancelarOferta(id);
     if (programaSelecionadoId) await carregarEtapasDoPrograma(programaSelecionadoId);
+    setTodasAsOfertas(await DataService.getOfertas());
   };
 
   const programaSelecionado = programas.find((p) => p.id === programaSelecionadoId) || null;
+
+  // Programas com elegibilidade automática, ativos, mas sem nenhuma Oferta
+  // "aberta" — motorElegibilidadeOnboarding_ (Code.gs) não consegue criar
+  // Inscrição automática para eles; um colaborador novo nesse setor não
+  // recebe onboarding nenhum até alguém publicar uma Oferta.
+  const idsComOfertaAberta = new Set(
+    todasAsOfertas.filter((o) => o.status === 'aberta').map((o) => o.programaId)
+  );
+  const idsProgramasSemOfertaAberta = new Set(
+    programas
+      .filter((p) => p.ativo && p.criterioElegibilidade?.tipo === 'automatico' && !idsComOfertaAberta.has(p.id))
+      .map((p) => p.id)
+  );
 
   if (carregando) {
     return (
@@ -155,6 +184,7 @@ const ProgramasDesenvolvimento: React.FC<ProgramasDesenvolvimentoProps> = ({ cur
           onSelecionarPrograma={setProgramaSelecionadoId}
           onSalvar={salvarPrograma}
           somenteLeitura={!podeEditar}
+          idsProgramasSemOfertaAberta={idsProgramasSemOfertaAberta}
         />
         {programaSelecionado ? (
           <div className="space-y-6">

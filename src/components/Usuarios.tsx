@@ -630,7 +630,7 @@ export default function Usuarios({
                     ))}
                   </div>
                   <p className="text-[10px] text-slate-400 mt-1.5">
-                    O Dashboard principal é sempre visível. Desmarque aqui os módulos que este usuário não deve ver no menu lateral — por exemplo, "Escala Inteligente" enquanto o módulo ainda está em construção.
+                    O Dashboard principal é sempre visível. Desmarque aqui os módulos que este usuário não deve ver no menu lateral.
                   </p>
                 </div>
 

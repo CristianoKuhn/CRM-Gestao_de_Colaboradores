@@ -42,7 +42,6 @@ import SistemaReconhecimento from './components/SistemaReconhecimento';
 import MetasLideranca from './components/MetasLideranca';
 import SistemaNotificacoes from './components/SistemaNotificacoes';
 import GestaoPessoas from './components/GestaoPessoas';
-import EscalaInteligente from './features/escala-inteligente/EscalaInteligente';
 import BibliotecaDesenvolvimento from './features/desenvolvimento-colaboradores/BibliotecaDesenvolvimento';
 import ProgramasDesenvolvimento from './features/desenvolvimento-colaboradores/ProgramasDesenvolvimento';
 import DashboardIndicadoresDesenvolvimento from './features/desenvolvimento-colaboradores/DashboardIndicadoresDesenvolvimento';
@@ -769,15 +768,6 @@ export default function App() {
               reconhecimentos={reconhecimentos}
               avaliacoesExperiencia={avaliacoesExperiencia}
               currentUserId={currentUser?.id || ''}
-            />
-          )}
-
-          {activeTab === 'escala-inteligente' && currentUser && (
-            <EscalaInteligente
-              currentUser={currentUser}
-              empresaId={empresas[0]?.id || ''}
-              setores={setoresVisiveis}
-              cargos={cargos}
             />
           )}
 

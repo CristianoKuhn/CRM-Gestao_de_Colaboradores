@@ -19,7 +19,6 @@ export interface DashboardSelecionavel {
 export const DASHBOARDS_SELECIONAVEIS: DashboardSelecionavel[] = [
   { id: 'colaboradores', label: 'Colaboradores' },
   { id: 'gestao-pessoas', label: 'Gestão de Pessoas' },
-  { id: 'escala-inteligente', label: 'Escala Inteligente' },
   { id: 'usuarios', label: 'Gerenciar Usuários' },
   { id: 'tarefas', label: 'Tarefas de Liderança' },
   { id: 'documentos', label: 'Central Docs' },

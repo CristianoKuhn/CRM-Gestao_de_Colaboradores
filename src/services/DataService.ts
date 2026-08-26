@@ -2012,6 +2012,7 @@ export class GoogleScriptDataService implements IDataService {
         nome: String(u.nome || ''),
         email: String(u.email || ''),
         senha_hash: String(u.senha_hash || u.senhaHash || ''),
+        senha_provisoria: u.senha_provisoria === true || u.senha_provisoria === 'true' || u.senha_provisoria === 'TRUE',
         perfil: (u.perfil || 'Lider') as any,
         setor_id: String(u.setor_id || u.setorId || ''),
         setoresPermitidos: parseSetoresPermitidos(
@@ -2036,6 +2037,7 @@ export class GoogleScriptDataService implements IDataService {
       nome: usuario.nome,
       email: usuario.email,
       senha_hash: usuario.senha_hash || '',
+      senha_provisoria: usuario.senha_provisoria === true,
       perfil: usuario.perfil,
       setor_id: usuario.setoresPermitidos?.[0] || usuario.setor_id || '',
       setores_permitidos: JSON.stringify(usuario.setoresPermitidos || (usuario.setor_id ? [usuario.setor_id] : [])),

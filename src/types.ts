@@ -177,6 +177,12 @@ export interface Usuario {
   nome: string;
   email: string;
   senha_hash?: string;
+  // Marca que a senha atual foi definida pelo Administrador (usuário novo ou
+  // reset de senha esquecida) e ainda não foi trocada pelo próprio usuário.
+  // Enquanto true, o Login força a tela de "definir nova senha" antes de
+  // liberar o acesso ao sistema — tanto no primeiro acesso quanto após um
+  // reset administrativo.
+  senha_provisoria?: boolean;
   perfil: 'Administrador' | 'Coordenador' | 'Supervisor' | 'Lider';
   setor_id: string;
   setoresPermitidos?: string[];

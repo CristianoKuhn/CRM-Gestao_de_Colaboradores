@@ -26,6 +26,8 @@ import {
   ChevronRight,
   Sparkles,
   RefreshCw,
+  KeyRound,
+  Copy,
 } from 'lucide-react';
 
 interface UsuariosProps {
@@ -51,6 +53,13 @@ export default function Usuarios({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingUsuario, setEditingUsuario] = useState<Usuario | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+
+  // Reset de senha rápido (Administrador) — modal dedicado, separado da edição
+  // completa do cadastro, para o caso mais comum: usuário esqueceu a senha.
+  const [resetSenhaUsuario, setResetSenhaUsuario] = useState<Usuario | null>(null);
+  const [novaSenhaTemporaria, setNovaSenhaTemporaria] = useState('');
+  const [isResettingSenha, setIsResettingSenha] = useState(false);
+  const [senhaResetadaComSucesso, setSenhaResetadaComSucesso] = useState(false);
 
   // Campos do Formulário
   const [nome, setNome] = useState('');
@@ -109,11 +118,20 @@ export default function Usuarios({
 
     setIsSaving(true);
     try {
+      const senhaFoiAlteradaPeloAdmin = senhaHash.trim().length > 0 && senhaHash.trim() !== (editingUsuario?.senha_hash || '');
       const userData: Usuario = {
         id: editingUsuario ? editingUsuario.id : `usu-${Date.now()}`,
         nome: nome.trim(),
         email: email.trim().toLowerCase(),
         senha_hash: senhaHash.trim(),
+        // Usuário novo, ou senha alterada/definida pelo Administrador nesta
+        // edição: força a troca no próximo login. Se o admin editou o
+        // cadastro sem mexer na senha, preserva o valor que já existia.
+        senha_provisoria: !editingUsuario
+          ? true
+          : senhaFoiAlteradaPeloAdmin
+            ? true
+            : editingUsuario.senha_provisoria ?? false,
         perfil,
         setor_id: setoresPermitidos[0] || '',
         setoresPermitidos,
@@ -142,6 +160,49 @@ export default function Usuarios({
     if (confirm(`Tem certeza de que deseja remover o usuário "${name}"?`)) {
       await onDeleteUsuario(id);
     }
+  };
+
+  // Reset de senha (Administrador) — usado quando o usuário esqueceu a senha.
+  // Gera uma senha temporária aleatória (o admin pode editar antes de
+  // confirmar) e marca senha_provisoria: true, para que o Login force a
+  // troca no próximo acesso, exatamente como no primeiro acesso de um
+  // usuário novo.
+  const gerarSenhaAleatoria = () => {
+    const caracteres = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+    let senha = '';
+    for (let i = 0; i < 8; i++) {
+      senha += caracteres[Math.floor(Math.random() * caracteres.length)];
+    }
+    return senha;
+  };
+
+  const handleOpenResetSenhaModal = (usuario: Usuario) => {
+    setResetSenhaUsuario(usuario);
+    setNovaSenhaTemporaria(gerarSenhaAleatoria());
+    setSenhaResetadaComSucesso(false);
+  };
+
+  const handleConfirmarResetSenha = async () => {
+    if (!resetSenhaUsuario || !novaSenhaTemporaria.trim() || isResettingSenha) return;
+    setIsResettingSenha(true);
+    try {
+      await onSaveUsuario({
+        ...resetSenhaUsuario,
+        senha_hash: novaSenhaTemporaria.trim(),
+        senha_provisoria: true,
+      });
+      setSenhaResetadaComSucesso(true);
+    } catch (err) {
+      console.error('Erro ao resetar senha:', err);
+    } finally {
+      setIsResettingSenha(false);
+    }
+  };
+
+  const handleFecharResetSenhaModal = () => {
+    setResetSenhaUsuario(null);
+    setNovaSenhaTemporaria('');
+    setSenhaResetadaComSucesso(false);
   };
 
   // Filtrar usuários
@@ -391,10 +452,17 @@ export default function Usuarios({
 
                       {/* Pass / Hash code */}
                       <td className="py-4 px-6">
-                        <span className="font-mono text-[10px] text-slate-400 bg-slate-50 px-2 py-1 rounded border border-slate-100 flex items-center gap-1.5 w-fit">
-                          <Lock size={10} />
-                          {usu.senha_hash ? '••••••••' : 'Sem Senha'}
-                        </span>
+                        <div className="flex flex-col gap-1">
+                          <span className="font-mono text-[10px] text-slate-400 bg-slate-50 px-2 py-1 rounded border border-slate-100 flex items-center gap-1.5 w-fit">
+                            <Lock size={10} />
+                            {usu.senha_hash ? '••••••••' : 'Sem Senha'}
+                          </span>
+                          {usu.senha_provisoria && (
+                            <span className="text-[9px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full w-fit">
+                              Aguardando 1º acesso
+                            </span>
+                          )}
+                        </div>
                       </td>
 
                       {/* Active Status */}
@@ -418,6 +486,13 @@ export default function Usuarios({
                       {/* Actions */}
                       <td className="py-4 px-6">
                         <div className="flex items-center justify-center gap-2">
+                          <button
+                            onClick={() => handleOpenResetSenhaModal(usu)}
+                            className="p-1.5 hover:bg-amber-50 hover:text-amber-600 rounded-lg text-slate-400 cursor-pointer transition"
+                            title="Resetar senha"
+                          >
+                            <KeyRound size={13} />
+                          </button>
                           <button
                             onClick={() => handleOpenEditModal(usu)}
                             className="p-1.5 hover:bg-slate-100 hover:text-slate-900 rounded-lg text-slate-400 cursor-pointer transition"
@@ -678,6 +753,126 @@ export default function Usuarios({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Reset de Senha (Administrador) */}
+      {resetSenhaUsuario && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-100 animate-scale-up">
+            <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+              <div>
+                <h3 className="font-bold text-slate-950 text-sm uppercase tracking-wider flex items-center gap-1.5">
+                  <KeyRound size={16} className="text-amber-500" />
+                  Resetar Senha
+                </h3>
+                <p className="text-[10px] text-slate-400 mt-1">{resetSenhaUsuario.nome}</p>
+              </div>
+              <button
+                onClick={handleFecharResetSenhaModal}
+                className="text-slate-400 hover:text-slate-600 font-bold text-lg cursor-pointer"
+              >
+                &times;
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {!senhaResetadaComSucesso ? (
+                <>
+                  <p className="text-xs text-slate-500 leading-relaxed">
+                    Uma senha temporária foi gerada. Você pode editá-la antes de confirmar. O usuário será obrigado a definir uma senha própria no próximo login.
+                  </p>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">
+                      Senha Temporária
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        disabled={isResettingSenha}
+                        value={novaSenhaTemporaria}
+                        onChange={(e) => setNovaSenhaTemporaria(e.target.value)}
+                        className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 focus:bg-white focus:ring-2 focus:ring-amber-500/15 focus:border-amber-500 outline-none rounded-2xl text-xs font-mono transition disabled:opacity-50"
+                      />
+                      <button
+                        type="button"
+                        disabled={isResettingSenha}
+                        onClick={() => setNovaSenhaTemporaria(gerarSenhaAleatoria())}
+                        title="Gerar outra senha aleatória"
+                        className="p-2.5 border border-slate-200 hover:bg-slate-50 rounded-2xl text-slate-500 cursor-pointer transition disabled:opacity-50"
+                      >
+                        <RefreshCw size={14} />
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex justify-end items-center gap-2 pt-2">
+                    <button
+                      type="button"
+                      disabled={isResettingSenha}
+                      onClick={handleFecharResetSenhaModal}
+                      className="px-4 py-2 border border-slate-200 text-slate-600 bg-slate-50 hover:bg-slate-100 font-semibold rounded-xl text-xs transition cursor-pointer disabled:opacity-50"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isResettingSenha || !novaSenhaTemporaria.trim()}
+                      onClick={handleConfirmarResetSenha}
+                      className="px-5 py-2 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl text-xs transition cursor-pointer flex items-center gap-1.5 disabled:opacity-60"
+                    >
+                      {isResettingSenha ? (
+                        <>
+                          <RefreshCw size={14} className="animate-spin" />
+                          Salvando...
+                        </>
+                      ) : (
+                        'Confirmar Reset'
+                      )}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 flex items-start gap-3">
+                    <CheckCircle className="text-emerald-500 shrink-0 mt-0.5" size={18} />
+                    <div>
+                      <p className="text-xs font-bold text-emerald-800">Senha resetada com sucesso</p>
+                      <p className="text-[10px] text-emerald-700/90 mt-0.5 leading-relaxed">
+                        Repasse a senha abaixo ao usuário por um canal seguro. Ele vai precisar definir uma senha própria ao entrar.
+                      </p>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">
+                      Senha Temporária
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <span className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-mono text-slate-800">
+                        {novaSenhaTemporaria}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => navigator.clipboard?.writeText(novaSenhaTemporaria)}
+                        title="Copiar senha"
+                        className="p-2.5 border border-slate-200 hover:bg-slate-50 rounded-2xl text-slate-500 cursor-pointer transition"
+                      >
+                        <Copy size={14} />
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex justify-end pt-2">
+                    <button
+                      type="button"
+                      onClick={handleFecharResetSenhaModal}
+                      className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs transition cursor-pointer"
+                    >
+                      Concluir
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
       )}

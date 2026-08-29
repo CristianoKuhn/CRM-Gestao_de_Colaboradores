@@ -15,8 +15,6 @@ import {
   GoogleScriptConfig,
   DataSourceProvider,
   Usuario,
-  OnboardingItem,
-  OnboardingChecklist,
   AlertaInteligente,
   ConfiguracaoAlertas,
   Documento,
@@ -48,8 +46,6 @@ const KEYS = {
   SUPABASE: 'gc_supabase_config',
   GOOGLESCRIPT: 'gc_googlescript_config',
   PROVIDER: 'gc_datasource_provider',
-  ONBOARDING_ITEMS: 'gc_onboarding_items',
-  ONBOARDING_CHECKLISTS: 'gc_onboarding_checklists',
   AVALIACOES_EXPERIENCIA: 'gc_avaliacoes_experiencia',
   RESULTADOS_180: 'gc_resultados_180',
   ALERTAS: 'gc_alertas_inteligentes',
@@ -736,32 +732,6 @@ export const StorageAPI = {
 
   saveDataSourceProvider: (provider: DataSourceProvider) => {
     localStorage.setItem(KEYS.PROVIDER, provider);
-  },
-
-  // --- Onboarding ---
-  getOnboardingItems: (): OnboardingItem[] => {
-    return get(KEYS.ONBOARDING_ITEMS) || [];
-  },
-  saveOnboardingItem: (item: OnboardingItem) => {
-    const items = StorageAPI.getOnboardingItems();
-    const index = items.findIndex((i) => i.id === item.id);
-    if (index >= 0) items[index] = item;
-    else items.push(item);
-    set(KEYS.ONBOARDING_ITEMS, items);
-  },
-  deleteOnboardingItem: (id: string) => {
-    const items = StorageAPI.getOnboardingItems().filter((i) => i.id !== id);
-    set(KEYS.ONBOARDING_ITEMS, items);
-  },
-  getOnboardingChecklists: (): OnboardingChecklist[] => {
-    return get(KEYS.ONBOARDING_CHECKLISTS) || [];
-  },
-  saveOnboardingChecklist: (checklist: OnboardingChecklist) => {
-    const lists = StorageAPI.getOnboardingChecklists();
-    const index = lists.findIndex((l) => l.id === checklist.id);
-    if (index >= 0) lists[index] = checklist;
-    else lists.push(checklist);
-    set(KEYS.ONBOARDING_CHECKLISTS, lists);
   },
 
   // Avaliações de Experiência (15, 30, 60, 90 dias)

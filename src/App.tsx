@@ -210,15 +210,10 @@ export default function App() {
   };
 
   // Sincronizar ao criar colaborador.
-  // O Onboarding automático não é mais responsabilidade do frontend: desde o
-  // Sprint 1 da Reestruturação ERP, é o backend (motorElegibilidadeOnboarding_,
-  // dentro da própria action saveColaborador) quem cria a Inscrição no
-  // Programa de Onboarding do setor, numa única transação server-side —
-  // eliminando a duplicidade com o antigo OnboardingChecklist client-side.
-  // Desde o Sprint 3, o mesmo vale para as Avaliações de Experiência
-  // (15/30/60/90 dias): agendarAvaliacoesExperiencia_ já roda dentro do
-  // próprio saveColaborador, atomicamente — não precisa mais de um segundo
-  // laço de chamadas aqui.
+  // As Avaliações de Experiência (15/30/60/90 dias) são agendadas
+  // atomicamente dentro do próprio saveColaborador no backend
+  // (agendarAvaliacoesExperiencia_) — não precisa de um segundo laço de
+  // chamadas aqui.
   const handleAddColaborador = async (col: Colaborador) => {
     await DataService.saveColaborador(col);
     await loadAllData();
@@ -743,7 +738,6 @@ export default function App() {
               onChangeProvider={setActiveProvider}
               setores={setores}
               currentUser={currentUser!}
-              onIrParaProgramasDesenvolvimento={() => setActiveTab('desenvolvimento-programas')}
               empresas={empresas}
               cargos={cargos}
               lideres={lideres}

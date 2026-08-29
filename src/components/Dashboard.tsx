@@ -82,37 +82,6 @@ export default function Dashboard({
   configuracaoAlertas,
 }: DashboardProps) {
   const [avaliacaoAberta, setAvaliacaoAberta] = useState<LembreteAvaliacao | null>(null);
-  const [inscricoesOnboarding, setInscricoesOnboarding] = useState<
-    { colaborador: Colaborador; percentualConcluido: number }[]
-  >([]);
-
-  // Motor de Desenvolvimento de Colaboradores — o widget lê direto de
-  // Inscrições em Programas tipo "onboarding" (Sprint 1 da Reestruturação
-  // ERP). Sem prop-drilling desde App.tsx: o próprio widget busca o que
-  // precisa, mesmo padrão de PainelAnalyticsFormularios logo abaixo.
-  useEffect(() => {
-    let cancelado = false;
-    (async () => {
-      const [programasOnboarding, inscricoesEmAndamento] = await Promise.all([
-        DataService.getProgramas({ tipoPrograma: 'onboarding' }),
-        DataService.getInscricoes({ estadoWorkflow: 'em_andamento' }),
-      ]);
-      if (cancelado) return;
-      const idsProgramasOnboarding = new Set(programasOnboarding.map((p) => p.id));
-      const colaboradorPorId = new Map(colaboradores.map((c) => [c.id, c]));
-      const lista = inscricoesEmAndamento
-        .filter((i) => idsProgramasOnboarding.has(i.programaId))
-        .map((i) => {
-          const colaborador = colaboradorPorId.get(i.colaboradorId);
-          return colaborador ? { colaborador, percentualConcluido: i.percentualConcluido } : null;
-        })
-        .filter((item): item is { colaborador: Colaborador; percentualConcluido: number } => item !== null);
-      setInscricoesOnboarding(lista);
-    })();
-    return () => {
-      cancelado = true;
-    };
-  }, [colaboradores]);
 
   const colaboradoresAtivos = colaboradores.filter((c) => c.situacao !== 'Desligado');
   const colAcompanhamento = colaboradores.filter((c) => c.situacao === 'Em Acompanhamento');
@@ -173,11 +142,6 @@ export default function Dashboard({
   const todosOsLembretes = [...lembretes180, ...lembretesExperiencia].sort(
     (a, b) => a.diasRestantes - b.diasRestantes
   );
-
-  // ── Onboarding pendente ───────────────────────────────────────────────
-  // (calculado via useEffect acima, a partir de Inscrições reais do Motor de
-  // Desenvolvimento — ver `inscricoesOnboarding`)
-
 
   const abrirAvaliacao = (lembrete: LembreteAvaliacao) => setAvaliacaoAberta(lembrete);
 
@@ -338,7 +302,7 @@ export default function Dashboard({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 gap-6">
         {/* Colaboradores em acompanhamento */}
         <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm">
           <div className="flex items-center gap-2 mb-4">
@@ -357,30 +321,6 @@ export default function Dashboard({
                 >
                   <span className="text-xs font-bold text-slate-700">{c.nome}</span>
                   <ArrowRight size={12} className="text-amber-500" />
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Onboarding pendente */}
-        <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm">
-          <div className="flex items-center gap-2 mb-4">
-            <ClipboardCheck size={18} className="text-slate-500" />
-            <h2 className="text-sm font-bold text-slate-800">Onboarding em andamento</h2>
-          </div>
-          {inscricoesOnboarding.length === 0 ? (
-            <p className="text-xs text-slate-400">Nenhum onboarding em aberto.</p>
-          ) : (
-            <div className="flex flex-col gap-2">
-              {inscricoesOnboarding.map(({ colaborador, percentualConcluido }) => (
-                <button
-                  key={colaborador.id}
-                  onClick={() => onSelectColaborador(colaborador.id)}
-                  className="flex items-center justify-between bg-slate-50 rounded-xl px-3 py-2.5 text-left hover:bg-slate-100 transition"
-                >
-                  <span className="text-xs font-bold text-slate-700">{colaborador.nome}</span>
-                  <span className="text-[10px] font-bold text-slate-500">{percentualConcluido}% concluído</span>
                 </button>
               ))}
             </div>

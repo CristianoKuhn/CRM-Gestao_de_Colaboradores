@@ -4,305 +4,489 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Usuario, Setor, Cargo, Programa, IndicadorDesenvolvimento, Insight } from '../../types';
+import { Usuario, Programa, Oferta, Inscricao, InscricaoEtapa, Evidencia, TipoEvidencia } from '../../types';
 import { DataService } from '../../services/DataService';
-import { BarChart3, RefreshCw, AlertTriangle, TrendingUp, Users, Building2, Sparkles } from 'lucide-react';
+import {
+  GraduationCap,
+  ChevronDown,
+  ChevronUp,
+  CheckCircle2,
+  Circle,
+  Lock,
+  Plus,
+  X,
+  Save,
+  Paperclip,
+  ShieldCheck,
+  ShieldAlert,
+  AlertTriangle,
+  RefreshCw,
+  UserCheck,
+  UserX,
+} from 'lucide-react';
 
-interface DashboardIndicadoresDesenvolvimentoProps {
-  currentUser: Usuario;
-  setores: Setor[];
-  cargos: Cargo[];
+interface JornadaColaboradorPanelProps {
+  colaboradorId: string;
+  currentUser?: Usuario;
 }
 
-const ROTULOS_INDICADOR: Record<string, string> = {
-  taxa_conclusao: 'Taxa de conclusão',
-  tempo_medio_conclusao_dias: 'Tempo médio até concluir (dias)',
-  inscricoes_em_andamento: 'Inscrições em andamento',
-  etapas_atrasadas: 'Etapas atrasadas',
-  cobertura_setor: 'Cobertura do setor',
-  gap_medio_setor: 'Gap médio do setor',
-  bench_strength_cargo: 'Prontidão de sucessão (bench strength)',
-  taxa_atraso_geral: 'Taxa de atraso geral',
-  tempo_medio_onboarding_dias: 'Tempo médio de onboarding (dias)',
+const TIPOS_EVIDENCIA: { valor: TipoEvidencia; label: string }[] = [
+  { valor: 'documento', label: 'Documento' },
+  { valor: 'video', label: 'Vídeo' },
+  { valor: 'imagem', label: 'Imagem' },
+  { valor: 'observacao', label: 'Observação' },
+  { valor: 'formulario', label: 'Formulário' },
+  { valor: 'assinatura', label: 'Assinatura' },
+  { valor: 'aprovacao', label: 'Aprovação' },
+];
+
+const STATUS_ETAPA_LABEL: Record<string, { label: string; className: string }> = {
+  bloqueada: { label: 'Bloqueada', className: 'bg-slate-100 text-slate-400' },
+  disponivel: { label: 'Disponível', className: 'bg-indigo-50 text-indigo-600' },
+  em_andamento: { label: 'Em andamento', className: 'bg-amber-50 text-amber-600' },
+  concluida: { label: 'Concluída', className: 'bg-teal-50 text-teal-600' },
+  atrasada: { label: 'Atrasada', className: 'bg-rose-50 text-rose-600' },
+  encerrada_cancelamento: { label: 'Encerrada (cancelamento)', className: 'bg-slate-100 text-slate-400' },
 };
 
-const INDICADORES_PERCENTUAL = new Set([
-  'taxa_conclusao',
-  'cobertura_setor',
-  'gap_medio_setor',
-  'bench_strength_cargo',
-  'taxa_atraso_geral',
-]);
+const inputBase =
+  'w-full px-3 py-2 rounded-xl border border-slate-200 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-400';
 
-function formatarValor(tipoIndicador: string, valor: number): string {
-  if (INDICADORES_PERCENTUAL.has(tipoIndicador)) return `${valor}%`;
-  return String(valor);
-}
-
-// Motor de Desenvolvimento de Colaboradores — Dashboard de Indicadores. Todo
-// valor mostrado aqui vem do cache já recalculado no backend (Princípio 14 da
-// Especificação v2 — Indicadores são sempre derivados, nunca escritos
-// manualmente); esta tela nunca calcula nada localmente, só lê e formata.
-const DashboardIndicadoresDesenvolvimento: React.FC<DashboardIndicadoresDesenvolvimentoProps> = ({
-  currentUser,
-  setores,
-  cargos,
-}) => {
+// Motor de Desenvolvimento de Colaboradores — visão dentro do perfil (Roadmap do
+// Domínio: Inscrições e Etapas, camada de execução). Nenhuma escrita acontece
+// direto aqui: toda ação chama as funções de negócio do backend (criarInscricao,
+// concluirEtapa, anexarEvidencia...), nunca upsert cru de status (Princípio 10
+// da Especificação v2).
+const JornadaColaboradorPanel: React.FC<JornadaColaboradorPanelProps> = ({ colaboradorId, currentUser }) => {
   const [carregando, setCarregando] = useState(true);
-  const [recalculando, setRecalculando] = useState(false);
-  const [indicadores, setIndicadores] = useState<IndicadorDesenvolvimento[]>([]);
+  const [inscricoes, setInscricoes] = useState<Inscricao[]>([]);
+  const [etapasPorInscricao, setEtapasPorInscricao] = useState<Record<string, InscricaoEtapa[]>>({});
+  const [evidenciasPorEtapa, setEvidenciasPorEtapa] = useState<Record<string, Evidencia[]>>({});
   const [programas, setProgramas] = useState<Programa[]>([]);
-  const [insightsPrograma, setInsightsPrograma] = useState<Insight[]>([]);
-  const [gerandoInsights, setGerandoInsights] = useState(false);
+  const [ofertas, setOfertas] = useState<Oferta[]>([]);
+  const [inscricaoExpandidaId, setInscricaoExpandidaId] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
+  const [modalNovaInscricao, setModalNovaInscricao] = useState(false);
+  const [ofertaEscolhidaId, setOfertaEscolhidaId] = useState('');
+  const [modalEvidencia, setModalEvidencia] = useState<string | null>(null); // id da etapa
+  const [novaEvidenciaTipo, setNovaEvidenciaTipo] = useState<TipoEvidencia>('observacao');
+  const [novaEvidenciaTexto, setNovaEvidenciaTexto] = useState('');
+  const [novaEvidenciaUrl, setNovaEvidenciaUrl] = useState('');
 
-  const podeRecalcular = currentUser.perfil === 'Administrador';
+  const podeGerir = !!currentUser; // app interno de gestão — quem acessa o perfil já é staff
 
   const carregar = useCallback(async () => {
     setCarregando(true);
     try {
-      const [listaIndicadores, listaProgramas, listaInsights] = await Promise.all([
-        DataService.getIndicadoresDesenvolvimento(),
+      const [listaInscricoes, listaProgramas, listaOfertas] = await Promise.all([
+        DataService.getInscricoes({ colaboradorId }),
         DataService.getProgramas(),
-        DataService.getInsights({ entidadeTipo: 'programa', status: 'pendente' }),
+        DataService.getOfertas(),
       ]);
-      setIndicadores(listaIndicadores);
+      setInscricoes(listaInscricoes);
       setProgramas(listaProgramas);
-      setInsightsPrograma(listaInsights);
+      setOfertas(listaOfertas);
+
+      const etapasEntries = await Promise.all(
+        listaInscricoes.map(async (i) => [i.id, await DataService.getInscricaoEtapas({ inscricaoId: i.id })] as const)
+      );
+      const mapaEtapas: Record<string, InscricaoEtapa[]> = {};
+      etapasEntries.forEach(([id, etapas]) => {
+        mapaEtapas[id] = [...etapas].sort((a, b) => a.ordem - b.ordem);
+      });
+      setEtapasPorInscricao(mapaEtapas);
     } finally {
       setCarregando(false);
     }
-  }, []);
+  }, [colaboradorId]);
 
   useEffect(() => {
     carregar();
   }, [carregar]);
 
-  const recalcular = async () => {
-    setErro(null);
-    setRecalculando(true);
-    try {
-      await DataService.recalcularIndicadoresDesenvolvimentoAgora();
-      await carregar();
-    } catch (e: any) {
-      setErro(e?.message || 'Não foi possível recalcular os indicadores agora.');
-    } finally {
-      setRecalculando(false);
+  const carregarEvidenciasDaEtapa = async (etapaId: string) => {
+    const lista = await DataService.getEvidencias({ entidadeTipo: 'etapa', entidadeId: etapaId });
+    setEvidenciasPorEtapa((atual) => ({ ...atual, [etapaId]: lista }));
+  };
+
+  const toggleInscricaoExpandida = async (inscricaoId: string) => {
+    const abrindo = inscricaoExpandidaId !== inscricaoId;
+    setInscricaoExpandidaId(abrindo ? inscricaoId : null);
+    if (abrindo) {
+      const etapas = etapasPorInscricao[inscricaoId] || [];
+      await Promise.all(etapas.map((e) => carregarEvidenciasDaEtapa(e.id)));
     }
   };
 
-  const gerarInsights = async () => {
+  const concluir = async (etapaId: string) => {
     setErro(null);
-    setGerandoInsights(true);
     try {
-      await DataService.gerarInsightsDesenvolvimentoAgora();
+      await DataService.concluirEtapa(etapaId, currentUser?.id);
       await carregar();
     } catch (e: any) {
-      setErro(e?.message || 'Não foi possível gerar os insights agora.');
-    } finally {
-      setGerandoInsights(false);
+      setErro(e?.message || 'Não foi possível concluir esta etapa.');
     }
   };
 
-  const decidirInsightPrograma = async (id: string, decisao: 'aceito' | 'recusado') => {
-    await DataService.decidirInsight(id, decisao, currentUser.id);
-    await carregar();
+  const aprovar = async (etapaId: string) => {
+    setErro(null);
+    try {
+      await DataService.aprovarEtapa(etapaId, currentUser?.id);
+      await carregar();
+    } catch (e: any) {
+      setErro(e?.message || 'Não foi possível aprovar esta etapa.');
+    }
   };
 
-  const valorDe = (tipoIndicador: string, escopoTipo: string, escopoId: string): number | null => {
-    const item = indicadores.find(
-      (i) => i.tipoIndicador === tipoIndicador && i.escopoTipo === escopoTipo && (i.escopoId || '') === escopoId
-    );
-    return item ? item.valor : null;
+  const rejeitar = async (etapaId: string) => {
+    setErro(null);
+    try {
+      await DataService.rejeitarEtapa(etapaId, currentUser?.id);
+      await carregar();
+    } catch (e: any) {
+      setErro(e?.message || 'Não foi possível rejeitar esta etapa.');
+    }
   };
 
-  const indicadoresEmpresa = indicadores.filter((i) => i.escopoTipo === 'empresa');
-  const nomePrograma = (id: string) => programas.find((p) => p.id === id)?.nome || 'Programa';
+  const abrirNovaInscricao = () => {
+    setErro(null);
+    setOfertaEscolhidaId('');
+    setModalNovaInscricao(true);
+  };
+
+  const confirmarNovaInscricao = async () => {
+    if (!ofertaEscolhidaId) return;
+    setErro(null);
+    try {
+      await DataService.criarInscricao(colaboradorId, ofertaEscolhidaId, 'indicacao', currentUser?.id);
+      setModalNovaInscricao(false);
+      await carregar();
+    } catch (e: any) {
+      setErro(e?.message || 'Não foi possível criar a Inscrição.');
+    }
+  };
+
+  const salvarEvidencia = async () => {
+    if (!modalEvidencia) return;
+    const evidencia: Evidencia = {
+      id: `evidencia-${Date.now()}`,
+      entidadeTipo: 'etapa',
+      entidadeId: modalEvidencia,
+      tipo: novaEvidenciaTipo,
+      texto: novaEvidenciaTexto || undefined,
+      url: novaEvidenciaUrl || undefined,
+      anexadoPor: currentUser?.id,
+      status: 'pendente',
+    };
+    await DataService.anexarEvidencia(evidencia);
+    await carregarEvidenciasDaEtapa(modalEvidencia);
+    setModalEvidencia(null);
+    setNovaEvidenciaTexto('');
+    setNovaEvidenciaUrl('');
+  };
+
+  const validarOuRejeitar = async (evidenciaId: string, etapaId: string, aprovar: boolean) => {
+    if (aprovar) await DataService.validarEvidencia(evidenciaId, currentUser?.id);
+    else await DataService.rejeitarEvidencia(evidenciaId, currentUser?.id);
+    await carregarEvidenciasDaEtapa(etapaId);
+  };
+
+  const nomePrograma = (programaId: string) => programas.find((p) => p.id === programaId)?.nome || 'Programa';
+  const nomeOferta = (ofertaId: string) => ofertas.find((o) => o.id === ofertaId)?.nome || '';
+
+  const ofertasDisponiveisParaInscricao = ofertas.filter(
+    (o) => o.status === 'aberta' && !inscricoes.some((i) => i.ofertaId === o.id && i.estadoWorkflow !== 'cancelada')
+  );
 
   if (carregando) {
     return (
-      <div className="flex items-center justify-center py-24 text-slate-400 gap-2">
-        <RefreshCw size={18} className="animate-spin" />
-        Carregando Indicadores de Desenvolvimento...
+      <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-6 flex items-center gap-2 text-sm text-slate-400">
+        <RefreshCw size={16} className="animate-spin" /> Carregando jornada de desenvolvimento...
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-2xl bg-teal-500/10 flex items-center justify-center text-teal-600">
-            <BarChart3 size={22} />
+    <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-6">
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+        <div className="flex items-center gap-2">
+          <div className="w-9 h-9 rounded-xl bg-teal-500/10 flex items-center justify-center text-teal-600">
+            <GraduationCap size={18} />
           </div>
           <div>
-            <h2 className="font-bold text-xl text-slate-900">Indicadores de Desenvolvimento</h2>
-            <p className="text-sm text-slate-400">
-              Sempre derivados de Inscrições, Etapas e Perfil — recalculados todo dia, ou sob demanda.
-            </p>
+            <h3 className="font-bold text-slate-800">Jornada de Desenvolvimento</h3>
+            <p className="text-xs text-slate-400">Programas em que este colaborador está inscrito</p>
           </div>
         </div>
-        {podeRecalcular && (
-          <div className="flex items-center gap-2">
-            <button
-              onClick={recalcular}
-              disabled={recalculando}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-teal-700 bg-teal-50 hover:bg-teal-100 transition-colors disabled:opacity-50"
-            >
-              <RefreshCw size={14} className={recalculando ? 'animate-spin' : ''} /> Recalcular agora
-            </button>
-            <button
-              onClick={gerarInsights}
-              disabled={gerandoInsights}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 transition-colors disabled:opacity-50"
-            >
-              <Sparkles size={14} className={gerandoInsights ? 'animate-spin' : ''} /> Gerar insights agora
-            </button>
-          </div>
+        {podeGerir && (
+          <button
+            onClick={abrirNovaInscricao}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-teal-700 bg-teal-50 hover:bg-teal-100 transition-colors"
+          >
+            <Plus size={14} /> Nova inscrição
+          </button>
         )}
       </div>
 
       {erro && (
-        <div className="flex items-start gap-2 text-xs text-amber-700 bg-amber-50 rounded-xl px-3 py-2">
+        <div className="flex items-start gap-2 text-xs text-amber-700 bg-amber-50 rounded-xl px-3 py-2 mb-3">
           <AlertTriangle size={14} className="shrink-0 mt-0.5" />
           {erro}
         </div>
       )}
 
-      {insightsPrograma.length > 0 && (
-        <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-6">
-          <div className="flex items-center gap-2 mb-4">
-            <Sparkles size={18} className="text-amber-500" />
-            <h3 className="font-bold text-slate-800">Insights de Programa</h3>
-          </div>
-          <div className="space-y-2">
-            {insightsPrograma.map((insight) => (
-              <div key={insight.id} className="flex items-start gap-3 rounded-2xl border border-amber-100 bg-amber-50/40 px-4 py-3">
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm text-slate-700">{insight.texto}</p>
-                  <p className="text-[10px] text-slate-400 mt-1 uppercase tracking-wide">
-                    {nomePrograma(insight.entidadeId)} · confiança {Math.round(insight.confianca * 100)}%
-                  </p>
-                </div>
-                {podeRecalcular && (
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button
-                      onClick={() => decidirInsightPrograma(insight.id, 'aceito')}
-                      className="text-[11px] font-semibold text-teal-600 bg-teal-50 hover:bg-teal-100 rounded-lg px-2 py-1"
-                    >
-                      Aceitar
-                    </button>
-                    <button
-                      onClick={() => decidirInsightPrograma(insight.id, 'recusado')}
-                      className="text-[11px] font-semibold text-slate-500 bg-slate-100 hover:bg-slate-200 rounded-lg px-2 py-1"
-                    >
-                      Recusar
-                    </button>
+      {inscricoes.length === 0 ? (
+        <p className="text-sm text-slate-400 py-6 text-center">
+          Nenhuma Inscrição ainda. Se houver um Programa elegível configurado como automático para o setor
+          deste colaborador, a Inscrição nasce sozinha assim que houver uma Oferta aberta.
+        </p>
+      ) : (
+        <div className="space-y-3">
+          {inscricoes.map((inscricao) => {
+            const etapas = etapasPorInscricao[inscricao.id] || [];
+            const expandida = inscricaoExpandidaId === inscricao.id;
+            return (
+              <div key={inscricao.id} className="rounded-2xl border border-slate-100 overflow-hidden">
+                <button
+                  onClick={() => toggleInscricaoExpandida(inscricao.id)}
+                  className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-50/60 transition-colors"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-9 h-9 rounded-xl bg-teal-50 flex items-center justify-center text-teal-700 shrink-0 text-xs font-bold">
+                      {inscricao.percentualConcluido}%
+                    </div>
+                    <div className="min-w-0 text-left">
+                      <p className="font-semibold text-sm text-slate-800 truncate">
+                        {nomePrograma(inscricao.programaId)}{' '}
+                        <span className="text-slate-400 font-normal">· {nomeOferta(inscricao.ofertaId)}</span>
+                      </p>
+                      <p className="text-[11px] text-slate-400">
+                        {inscricao.estadoWorkflow === 'concluida'
+                          ? 'Concluída'
+                          : inscricao.estadoWorkflow === 'cancelada'
+                          ? `Cancelada${inscricao.motivoCancelamento ? ' — ' + inscricao.motivoCancelamento : ''}`
+                          : 'Em andamento'}{' '}
+                        · origem: {inscricao.origem}
+                      </p>
+                    </div>
+                  </div>
+                  {expandida ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
+                </button>
+
+                {expandida && (
+                  <div className="border-t border-slate-100 px-4 py-3 space-y-2 bg-slate-50/40">
+                    {etapas.map((etapa) => {
+                      const statusInfo = STATUS_ETAPA_LABEL[etapa.status] || STATUS_ETAPA_LABEL.bloqueada;
+                      const evidencias = evidenciasPorEtapa[etapa.id] || [];
+                      const aprovacaoPendente = etapa.estadoAprovacao === 'pendente';
+                      const aprovacaoRejeitada = etapa.estadoAprovacao === 'rejeitado';
+                      const podeConcluir =
+                        podeGerir &&
+                        (etapa.status === 'disponivel' || etapa.status === 'em_andamento') &&
+                        !aprovacaoPendente &&
+                        !aprovacaoRejeitada;
+                      return (
+                        <div key={etapa.id} className="rounded-xl border border-slate-100 bg-white px-3 py-2.5">
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <div className="flex items-center gap-2 min-w-0">
+                              {etapa.status === 'concluida' ? (
+                                <CheckCircle2 size={16} className="text-teal-500 shrink-0" />
+                              ) : etapa.status === 'bloqueada' ? (
+                                <Lock size={14} className="text-slate-300 shrink-0" />
+                              ) : (
+                                <Circle size={14} className="text-indigo-400 shrink-0" />
+                              )}
+                              <span className="text-sm font-semibold text-slate-700 truncate">
+                                {etapa.ordem}. {etapa.nome}
+                              </span>
+                              <span className={`text-[10px] font-semibold uppercase tracking-wide rounded-full px-2 py-0.5 shrink-0 ${statusInfo.className}`}>
+                                {statusInfo.label}
+                              </span>
+                              {aprovacaoPendente && (
+                                <span className="text-[10px] font-semibold uppercase tracking-wide rounded-full px-2 py-0.5 shrink-0 bg-indigo-50 text-indigo-600">
+                                  aguardando aprovação
+                                </span>
+                              )}
+                              {aprovacaoRejeitada && (
+                                <span className="text-[10px] font-semibold uppercase tracking-wide rounded-full px-2 py-0.5 shrink-0 bg-rose-50 text-rose-600">
+                                  aprovação rejeitada
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              {podeGerir && etapa.status !== 'bloqueada' && etapa.status !== 'concluida' && etapa.status !== 'encerrada_cancelamento' && (
+                                <button
+                                  onClick={() => {
+                                    setModalEvidencia(etapa.id);
+                                    setNovaEvidenciaTipo('observacao');
+                                  }}
+                                  className="flex items-center gap-1 text-[11px] font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg px-2 py-1"
+                                >
+                                  <Paperclip size={11} /> Evidência
+                                </button>
+                              )}
+                              {podeGerir && aprovacaoPendente && (
+                                <>
+                                  <button
+                                    onClick={() => aprovar(etapa.id)}
+                                    className="flex items-center gap-1 text-[11px] font-semibold text-teal-700 bg-teal-50 hover:bg-teal-100 rounded-lg px-2.5 py-1"
+                                  >
+                                    <UserCheck size={11} /> Aprovar
+                                  </button>
+                                  <button
+                                    onClick={() => rejeitar(etapa.id)}
+                                    className="flex items-center gap-1 text-[11px] font-semibold text-rose-600 bg-rose-50 hover:bg-rose-100 rounded-lg px-2.5 py-1"
+                                  >
+                                    <UserX size={11} /> Rejeitar
+                                  </button>
+                                </>
+                              )}
+                              {podeConcluir && (
+                                <button
+                                  onClick={() => concluir(etapa.id)}
+                                  className="text-[11px] font-semibold text-white bg-teal-600 hover:bg-teal-700 rounded-lg px-2.5 py-1"
+                                >
+                                  Concluir etapa
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                          {evidencias.length > 0 && (
+                            <div className="mt-2 space-y-1 pl-6">
+                              {evidencias.map((ev) => (
+                                <div key={ev.id} className="flex items-center justify-between gap-2 text-[11px] text-slate-500">
+                                  <span className="truncate">
+                                    <span className="font-semibold text-slate-600">
+                                      {TIPOS_EVIDENCIA.find((t) => t.valor === ev.tipo)?.label}
+                                    </span>
+                                    {ev.texto ? `: ${ev.texto}` : ''}
+                                    {ev.url ? ` (${ev.url})` : ''}
+                                  </span>
+                                  <span className="flex items-center gap-1.5 shrink-0">
+                                    {ev.status === 'validada' && (
+                                      <span title="Validada"><ShieldCheck size={12} className="text-teal-500" /></span>
+                                    )}
+                                    {ev.status === 'rejeitada' && (
+                                      <span title="Rejeitada"><ShieldAlert size={12} className="text-rose-500" /></span>
+                                    )}
+                                    {ev.status === 'pendente' && podeGerir && (
+                                      <>
+                                        <button
+                                          onClick={() => validarOuRejeitar(ev.id, etapa.id, true)}
+                                          className="text-teal-600 hover:underline"
+                                        >
+                                          Validar
+                                        </button>
+                                        <button
+                                          onClick={() => validarOuRejeitar(ev.id, etapa.id, false)}
+                                          className="text-rose-500 hover:underline"
+                                        >
+                                          Rejeitar
+                                        </button>
+                                      </>
+                                    )}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
-            ))}
+            );
+          })}
+        </div>
+      )}
+
+      {modalNovaInscricao && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-6 border border-slate-100">
+            <div className="flex items-center justify-between mb-4">
+              <h4 className="font-bold text-slate-800">Nova inscrição</h4>
+              <button onClick={() => setModalNovaInscricao(false)} className="text-slate-400 hover:text-slate-600">
+                <X size={18} />
+              </button>
+            </div>
+            {ofertasDisponiveisParaInscricao.length === 0 ? (
+              <p className="text-sm text-slate-400">Nenhuma Oferta aberta disponível no momento.</p>
+            ) : (
+              <div className="space-y-3">
+                <select className={inputBase} value={ofertaEscolhidaId} onChange={(e) => setOfertaEscolhidaId(e.target.value)}>
+                  <option value="">Selecione uma Oferta</option>
+                  {ofertasDisponiveisParaInscricao.map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {nomePrograma(o.programaId)} · {o.nome}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <div className="flex items-center justify-end gap-2 mt-6">
+              <button onClick={() => setModalNovaInscricao(false)} className="px-4 py-2 rounded-xl text-sm font-medium text-slate-500 hover:bg-slate-50">
+                Cancelar
+              </button>
+              <button
+                onClick={confirmarNovaInscricao}
+                disabled={!ofertaEscolhidaId}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-white bg-teal-600 hover:bg-teal-700 disabled:opacity-50"
+              >
+                <Save size={15} /> Inscrever
+              </button>
+            </div>
           </div>
         </div>
       )}
 
-      {indicadores.length === 0 ? (
-        <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-10 text-center text-sm text-slate-400">
-          Nenhum indicador calculado ainda. {podeRecalcular ? 'Clique em "Recalcular agora" para gerar o primeiro cache.' : ''}
+      {modalEvidencia && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-6 border border-slate-100">
+            <div className="flex items-center justify-between mb-4">
+              <h4 className="font-bold text-slate-800">Anexar evidência</h4>
+              <button onClick={() => setModalEvidencia(null)} className="text-slate-400 hover:text-slate-600">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="space-y-3">
+              <select className={inputBase} value={novaEvidenciaTipo} onChange={(e) => setNovaEvidenciaTipo(e.target.value as TipoEvidencia)}>
+                {TIPOS_EVIDENCIA.map((t) => (
+                  <option key={t.valor} value={t.valor}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+              <textarea
+                className={inputBase}
+                rows={2}
+                placeholder="Observação (opcional)"
+                value={novaEvidenciaTexto}
+                onChange={(e) => setNovaEvidenciaTexto(e.target.value)}
+              />
+              <input
+                className={inputBase}
+                placeholder="Link (opcional)"
+                value={novaEvidenciaUrl}
+                onChange={(e) => setNovaEvidenciaUrl(e.target.value)}
+              />
+            </div>
+            <div className="flex items-center justify-end gap-2 mt-6">
+              <button onClick={() => setModalEvidencia(null)} className="px-4 py-2 rounded-xl text-sm font-medium text-slate-500 hover:bg-slate-50">
+                Cancelar
+              </button>
+              <button
+                onClick={salvarEvidencia}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-white bg-teal-600 hover:bg-teal-700"
+              >
+                <Save size={15} /> Salvar
+              </button>
+            </div>
+          </div>
         </div>
-      ) : (
-        <>
-          {/* Empresa */}
-          <div className="grid sm:grid-cols-2 gap-4">
-            {indicadoresEmpresa.map((i) => (
-              <div key={i.id} className="bg-white rounded-3xl shadow-sm border border-slate-100 p-5">
-                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">
-                  {ROTULOS_INDICADOR[i.tipoIndicador] || i.tipoIndicador}
-                </p>
-                <p className="text-3xl font-bold text-slate-800 mt-1">{formatarValor(i.tipoIndicador, i.valor)}</p>
-              </div>
-            ))}
-          </div>
-
-          {/* Programas */}
-          <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <TrendingUp size={18} className="text-teal-500" />
-              <h3 className="font-bold text-slate-800">Por Programa</h3>
-            </div>
-            <div className="space-y-2">
-              {programas.map((programa) => {
-                const taxaConclusao = valorDe('taxa_conclusao', 'programa', programa.id);
-                const tempoMedio = valorDe('tempo_medio_conclusao_dias', 'programa', programa.id);
-                const emAndamento = valorDe('inscricoes_em_andamento', 'programa', programa.id);
-                const atrasadas = valorDe('etapas_atrasadas', 'programa', programa.id);
-                if (taxaConclusao === null && emAndamento === null) return null;
-                return (
-                  <div key={programa.id} className="flex items-center justify-between rounded-2xl border border-slate-100 px-4 py-3">
-                    <span className="font-semibold text-sm text-slate-700 truncate">{nomePrograma(programa.id)}</span>
-                    <div className="flex items-center gap-4 text-xs text-slate-500 shrink-0">
-                      <span>Conclusão: <b className="text-slate-700">{taxaConclusao ?? 0}%</b></span>
-                      <span>Tempo médio: <b className="text-slate-700">{tempoMedio ?? 0}d</b></span>
-                      <span>Em andamento: <b className="text-slate-700">{emAndamento ?? 0}</b></span>
-                      {(atrasadas ?? 0) > 0 && (
-                        <span className="text-rose-500 font-semibold">{atrasadas} atrasada(s)</span>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Setores */}
-          <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <Building2 size={18} className="text-teal-500" />
-              <h3 className="font-bold text-slate-800">Por Setor</h3>
-            </div>
-            <div className="space-y-2">
-              {setores.map((setor) => {
-                const cobertura = valorDe('cobertura_setor', 'setor', setor.id);
-                const gap = valorDe('gap_medio_setor', 'setor', setor.id);
-                if (cobertura === null) return null;
-                return (
-                  <div key={setor.id} className="flex items-center justify-between rounded-2xl border border-slate-100 px-4 py-3">
-                    <span className="font-semibold text-sm text-slate-700 truncate">{setor.nome}</span>
-                    <div className="flex items-center gap-4 text-xs text-slate-500 shrink-0">
-                      <span>Cobertura: <b className="text-slate-700">{cobertura}%</b></span>
-                      <span className={gap && gap > 0 ? 'text-amber-600 font-semibold' : ''}>
-                        Gap médio: <b>{gap ?? 0}%</b>
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Cargos */}
-          <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <Users size={18} className="text-teal-500" />
-              <h3 className="font-bold text-slate-800">Prontidão de Sucessão por Cargo</h3>
-            </div>
-            <div className="space-y-2">
-              {cargos.map((cargo) => {
-                const bench = valorDe('bench_strength_cargo', 'cargo', cargo.id);
-                if (bench === null) return null;
-                return (
-                  <div key={cargo.id} className="flex items-center justify-between rounded-2xl border border-slate-100 px-4 py-3">
-                    <span className="font-semibold text-sm text-slate-700 truncate">{cargo.nome}</span>
-                    <b className="text-sm text-slate-700 shrink-0">{bench}%</b>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </>
       )}
     </div>
   );
 };
 
-export default DashboardIndicadoresDesenvolvimento;
+export default JornadaColaboradorPanel;

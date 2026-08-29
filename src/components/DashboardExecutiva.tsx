@@ -119,12 +119,8 @@ export default function DashboardExecutiva(props: DashboardExecutivaProps) {
     temposDeCasaMeses.length > 0 ? Math.round(temposDeCasaMeses.reduce((a, b) => a + b, 0) / temposDeCasaMeses.length) : 0;
 
   // ── Desenvolvimento ───────────────────────────────────────────────────
-  const idsProgramasOnboarding = new Set(programas.filter((p) => p.tipoPrograma === 'onboarding').map((p) => p.id));
-  const onboardingsEmAndamento = indicadores
-    .filter((i) => i.tipoIndicador === 'inscricoes_em_andamento' && i.escopoTipo === 'programa' && idsProgramasOnboarding.has(i.escopoId))
-    .reduce((soma, i) => soma + i.valor, 0);
   const programasAtivos = valorIndicador('programas_ativos', 'empresa') ?? programas.filter((p) => p.ativo).length;
-  const tempoMedioOnboardingDias = valorIndicador('tempo_medio_onboarding_dias', 'empresa') ?? 0;
+  const taxaAtrasoGeral = valorIndicador('taxa_atraso_geral', 'empresa') ?? 0;
 
   // ── Competências ────────────────────────────────────────────────────
   const gapsPorSetor = indicadores.filter((i) => i.tipoIndicador === 'gap_medio_setor' && i.escopoTipo === 'setor');
@@ -220,8 +216,7 @@ export default function DashboardExecutiva(props: DashboardExecutivaProps) {
                 </div>
                 <dl className="space-y-1.5 text-xs">
                   <div className="flex justify-between"><dt className="text-slate-400">Programas ativos</dt><dd className="font-bold text-slate-700">{programasAtivos}</dd></div>
-                  <div className="flex justify-between"><dt className="text-slate-400">Onboardings em andamento</dt><dd className="font-bold text-slate-700">{onboardingsEmAndamento}</dd></div>
-                  <div className="flex justify-between"><dt className="text-slate-400">Tempo médio onboarding</dt><dd className="font-bold text-slate-700">{tempoMedioOnboardingDias}d</dd></div>
+                  <div className="flex justify-between"><dt className="text-slate-400">Etapas atrasadas</dt><dd className="font-bold text-slate-700">{taxaAtrasoGeral}%</dd></div>
                 </dl>
               </div>
 

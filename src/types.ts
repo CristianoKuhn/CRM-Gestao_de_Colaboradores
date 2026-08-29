@@ -15,9 +15,25 @@ export interface Setor {
   nome: string;
 }
 
+// ── Motor de Desenvolvimento de Colaboradores — Arquitetura de Carreira ──
+// Ver "Evolução arquitetural do Motor de Desenvolvimento de Colaboradores".
+// FamiliaCargo agrupa Cargos numa trilha de progressão (ex.: "Suporte":
+// Júnior → Pleno → Sênior). Cargo.familiaId/nivelOrdem/proximoCargoId são
+// aditivos e opcionais — todo Cargo já cadastrado continua funcionando
+// exatamente como hoje até alguém preencher esses campos manualmente.
+export interface FamiliaCargo {
+  id: string;
+  nome: string; // "Suporte", "Retenção", "Helpdesk"
+  descricao?: string;
+  ativo: boolean;
+}
+
 export interface Cargo {
   id: string;
   nome: string;
+  familiaId?: string;      // vínculo com FamiliaCargo — opcional
+  nivelOrdem?: number;     // posição na trilha (1=Júnior, 2=Pleno, 3=Sênior...)
+  proximoCargoId?: string; // sucessor natural na progressão de carreira
 }
 
 export interface Lider {
@@ -96,20 +112,6 @@ export interface TimelineRegistro {
   gerarTarefaFutura: boolean;
   tarefaId?: string;
   anexos: Anexo[];
-}
-
-export interface OnboardingItem {
-  id: string;
-  setorIds: string[]; // Alterado para múltiplos setores
-  titulo: string;
-  descricao: string;
-}
-
-export interface OnboardingChecklist {
-  id: string;
-  colaboradorId: string;
-  itemsConcluidos: string[]; // IDs dos OnboardingItem
-  dataCriacao: string;
 }
 
 // Avaliação de Período de Experiência (15, 30, 60, 90 dias)
@@ -205,19 +207,9 @@ export type TipoAlerta =
   | 'aniversario_casa'
   | 'avaliacao_180'
   // Gerado por marcarEtapasAtrasadas_ (Code.gs) — Etapa de um Programa de
-  // Desenvolvimento (onboarding, PDI, capacitação etc.) cuja data prevista já
-  // passou sem conclusão. Existia no backend desde a Sprint de Indicadores,
-  // mas faltava aqui — o tipo real chegava do Sheets sem bater com nenhum
-  // valor do union, e por isso nenhuma tela conseguia filtrar/tratar esse
-  // alerta com segurança de tipos.
-  | 'etapa_desenvolvimento_atrasada'
-  // Gerado por motorElegibilidadeOnboarding_ (Code.gs) quando um colaborador
-  // novo bate com um Programa de onboarding elegível (setor/critério
-  // automático), mas esse Programa não tem nenhuma Oferta com status
-  // "aberta" — então nenhuma Inscrição é criada automaticamente. Antes disso
-  // só ficava registrado em HistoricoAlteracoes (invisível na UI); agora
-  // também gera este alerta, vinculado ao colaborador recém-cadastrado.
-  | 'onboarding_sem_oferta';
+  // Desenvolvimento (PDI, capacitação, carreira etc.) cuja data prevista já
+  // passou sem conclusão.
+  | 'etapa_desenvolvimento_atrasada';
 
 export type StatusAlerta = 'pendente' | 'reconhecido' | 'resolvido';
 
@@ -1037,7 +1029,6 @@ export interface AreaDesenvolvimento {
 // ═══════════════════════════════════════════════════════════════════
 
 export type TipoPrograma =
-  | 'onboarding'
   | 'pdi'
   | 'lideranca'
   | 'capacitacao'

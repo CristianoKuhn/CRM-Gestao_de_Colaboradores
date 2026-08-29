@@ -237,8 +237,8 @@ const JornadaColaboradorPanel: React.FC<JornadaColaboradorPanelProps> = ({ colab
 
       {inscricoes.length === 0 ? (
         <p className="text-sm text-slate-400 py-6 text-center">
-          Nenhuma Inscrição ainda. Se o Programa de Onboarding do setor estiver configurado como automático, a
-          Inscrição nasce sozinha quando o colaborador é admitido.
+          Nenhuma Inscrição ainda. Se houver um Programa elegível configurado como automático para o setor
+          deste colaborador, a Inscrição nasce sozinha assim que houver uma Oferta aberta.
         </p>
       ) : (
         <div className="space-y-3">

@@ -21,7 +21,7 @@ import {
   ChevronRight,
   Trash2,
   CheckCircle2,
-} from 'lucide-react';Q
+} from 'lucide-react';
 
 interface SistemaNotificacoesProps {
   alertas: AlertaInteligente[];

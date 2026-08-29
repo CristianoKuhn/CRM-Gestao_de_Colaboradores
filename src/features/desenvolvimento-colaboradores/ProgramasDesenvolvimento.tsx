@@ -41,10 +41,9 @@ const ProgramasDesenvolvimento: React.FC<ProgramasDesenvolvimentoProps> = ({ cur
   const [programaSelecionadoId, setProgramaSelecionadoId] = useState<string | null>(null);
   // Todas as Ofertas de todos os Programas (independente do selecionado) —
   // só para calcular, na lista da esquerda, quais Programas com elegibilidade
-  // automática ainda não têm nenhuma Oferta aberta. Sem isso, um Programa de
-  // onboarding cadastrado sem Oferta publicada falha silenciosamente: o
-  // colaborador é cadastrado e nada acontece (motorElegibilidadeOnboarding_
-  // no backend só registra em HistoricoAlteracoes, invisível aqui).
+  // automática ainda não têm nenhuma Oferta aberta. Sem isso, um Programa
+  // cadastrado sem Oferta publicada falha silenciosamente: o colaborador
+  // elegível nunca é inscrito, e isso fica invisível na tela.
   const [todasAsOfertas, setTodasAsOfertas] = useState<Oferta[]>([]);
 
   // Somente Administrador altera a estrutura de um Programa (Regra de Negócio da
@@ -133,9 +132,9 @@ const ProgramasDesenvolvimento: React.FC<ProgramasDesenvolvimentoProps> = ({ cur
   const programaSelecionado = programas.find((p) => p.id === programaSelecionadoId) || null;
 
   // Programas com elegibilidade automática, ativos, mas sem nenhuma Oferta
-  // "aberta" — motorElegibilidadeOnboarding_ (Code.gs) não consegue criar
-  // Inscrição automática para eles; um colaborador novo nesse setor não
-  // recebe onboarding nenhum até alguém publicar uma Oferta.
+  // "aberta" — o Motor de Elegibilidade não consegue criar Inscrição
+  // automática para eles; um colaborador novo elegível nesse setor não é
+  // inscrito até alguém publicar uma Oferta.
   const idsComOfertaAberta = new Set(
     todasAsOfertas.filter((o) => o.status === 'aberta').map((o) => o.programaId)
   );
@@ -163,7 +162,7 @@ const ProgramasDesenvolvimento: React.FC<ProgramasDesenvolvimentoProps> = ({ cur
         <div>
           <h2 className="font-bold text-xl text-slate-900">Programas de Desenvolvimento</h2>
           <p className="text-sm text-slate-400">
-            Onboarding, PDI, Formação de Liderança, Capacitação, Certificação, Plano de Carreira e Universidade
+            PDI, Formação de Liderança, Capacitação, Certificação, Plano de Carreira e Universidade
             Corporativa — todos são Programas, parametrizados de formas diferentes.
           </p>
         </div>

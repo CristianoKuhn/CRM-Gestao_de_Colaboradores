@@ -23,14 +23,13 @@ interface ProgramaManagerProps {
   onSalvar: (programa: Programa) => Promise<void>;
   somenteLeitura?: boolean;
   // Ids de Programas ativos com elegibilidade automática que ainda não têm
-  // nenhuma Oferta "aberta" — motorElegibilidadeOnboarding_ (Code.gs) não
-  // consegue inscrever ninguém automaticamente nesses Programas. Opcional
-  // para não quebrar quem já usa este componente sem passar essa análise.
+  // nenhuma Oferta "aberta" — o Motor de Elegibilidade não consegue
+  // inscrever ninguém automaticamente nesses Programas. Opcional para não
+  // quebrar quem já usa este componente sem passar essa análise.
   idsProgramasSemOfertaAberta?: Set<string>;
 }
 
 const TIPOS_PROGRAMA: { valor: TipoPrograma; label: string }[] = [
-  { valor: 'onboarding', label: 'Onboarding' },
   { valor: 'pdi', label: 'PDI' },
   { valor: 'lideranca', label: 'Formação de Liderança' },
   { valor: 'capacitacao', label: 'Capacitação' },
@@ -40,7 +39,7 @@ const TIPOS_PROGRAMA: { valor: TipoPrograma; label: string }[] = [
 ];
 
 const MODOS_ESTRUTURA: { valor: ModoEstruturaPrograma; label: string; descricao: string }[] = [
-  { valor: 'sequencial', label: 'Sequencial', descricao: 'Etapas com dependência entre si (ex.: Onboarding, Formação de Liderança)' },
+  { valor: 'sequencial', label: 'Sequencial', descricao: 'Etapas com dependência entre si (ex.: Formação de Liderança)' },
   { valor: 'catalogo', label: 'Catálogo', descricao: 'Itens livres, sem ordem obrigatória (ex.: Universidade Corporativa)' },
   { valor: 'continuo', label: 'Contínuo', descricao: 'Sem data de término, revisado periodicamente (ex.: Plano de Carreira, PDI)' },
 ];
@@ -60,7 +59,7 @@ function programaVazio(): Programa {
     versao: 1,
     nome: '',
     descricao: '',
-    tipoPrograma: 'onboarding',
+    tipoPrograma: 'capacitacao',
     modoEstrutura: 'sequencial',
     criterioElegibilidade: { tipo: 'automatico' },
     ativo: true,
@@ -129,7 +128,7 @@ const ProgramaManager: React.FC<ProgramaManagerProps> = ({
       </div>
 
       <p className="text-xs text-slate-400 mb-4 max-w-lg">
-        Onboarding, PDI, Formação de Liderança, Capacitação, Certificação, Plano de Carreira e Universidade
+        PDI, Formação de Liderança, Capacitação, Certificação, Plano de Carreira e Universidade
         Corporativa são todos Programas — diferenciados só pelo Modo de Estrutura e pelo Critério de Elegibilidade.
       </p>
 
@@ -223,7 +222,7 @@ const ProgramaManager: React.FC<ProgramaManagerProps> = ({
                   className={inputBase}
                   value={editando.nome}
                   onChange={(e) => setEditando({ ...editando, nome: e.target.value })}
-                  placeholder="Ex.: Onboarding SAC"
+                  placeholder="Ex.: Trilha de Suporte Técnico"
                 />
               </div>
               <div>

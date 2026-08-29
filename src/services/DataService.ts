@@ -9,6 +9,7 @@ import {
   Tarefa,
   Setor,
   Cargo,
+  FamiliaCargo,
   Lider,
   Empresa,
   SupabaseConfig,
@@ -16,8 +17,6 @@ import {
   DataSourceProvider,
   TipoRegistro,
   Usuario,
-  OnboardingItem,
-  OnboardingChecklist,
   AvaliacaoExperiencia,
   AlertaInteligente,
   ConfiguracaoAlertas,
@@ -277,6 +276,7 @@ export interface IDataService {
   getEmpresas(): Promise<Empresa[]>;
   getSetores(): Promise<Setor[]>;
   getCargos(): Promise<Cargo[]>;
+  getFamiliasCargo(): Promise<FamiliaCargo[]>;
   getLideres(): Promise<Lider[]>;
   getColaboradores(): Promise<Colaborador[]>;
   getTimeline(): Promise<TimelineRegistro[]>;
@@ -286,6 +286,8 @@ export interface IDataService {
   saveEmpresa(empresa: Empresa): Promise<void>;
   saveSetor(setor: Setor): Promise<void>;
   saveCargo(cargo: Cargo): Promise<void>;
+  saveFamiliaCargo(familia: FamiliaCargo): Promise<void>;
+  deleteFamiliaCargo(id: string): Promise<void>;
   saveLider(lider: Lider): Promise<void>;
   saveColaborador(colaborador: Colaborador): Promise<void>;
   deleteColaborador(id: string): Promise<void>;
@@ -294,12 +296,6 @@ export interface IDataService {
   toggleTarefa(id: string): Promise<Tarefa | undefined>;
   saveUsuario(usuario: Usuario): Promise<void>;
   deleteUsuario(id: string): Promise<void>;
-
-  getOnboardingItems(): Promise<OnboardingItem[]>;
-  saveOnboardingItem(item: OnboardingItem): Promise<void>;
-  deleteOnboardingItem(id: string): Promise<void>;
-  getOnboardingChecklists(): Promise<OnboardingChecklist[]>;
-  saveOnboardingChecklist(checklist: OnboardingChecklist): Promise<void>;
 
   // Avaliações de Experiência (15, 30, 60, 90 dias)
   getAvaliacoesExperiencia(colaboradorId?: string): Promise<AvaliacaoExperiencia[]>;
@@ -411,7 +407,6 @@ export interface IDataService {
   saveItemEvento(evento: ItemEvento): Promise<void>;
   getItensComentarios(filtro?: { itemId?: string; itemTipo?: 'item_operacional' | 'inscricao_etapa' }): Promise<ItemComentario[]>;
   saveItemComentario(comentario: ItemComentario): Promise<void>;
-  migrarOnboardingParaMotorDesenvolvimento(): Promise<{ templates: unknown; checklists: unknown }>;
 
   // ── Motor de Desenvolvimento de Colaboradores — Biblioteca Corporativa ──
   // Ver "Especificação Arquitetural Definitiva v2" e "Modelagem Física
@@ -541,6 +536,9 @@ export class LocalDataService implements IDataService {
   async getCargos(): Promise<Cargo[]> {
     return StorageAPI.getCargos();
   }
+  async getFamiliasCargo(): Promise<FamiliaCargo[]> {
+    return itensLocalGetArray<FamiliaCargo>('familiasCargo');
+  }
   async getLideres(): Promise<Lider[]> {
     return StorageAPI.getLideres();
   }
@@ -566,6 +564,12 @@ export class LocalDataService implements IDataService {
   async saveCargo(cargo: Cargo): Promise<void> {
     StorageAPI.saveCargo(cargo);
   }
+  async saveFamiliaCargo(familia: FamiliaCargo): Promise<void> {
+    itensLocalSaveItem('familiasCargo', familia);
+  }
+  async deleteFamiliaCargo(id: string): Promise<void> {
+    itensLocalDeleteItem('familiasCargo', id);
+  }
   async saveLider(lider: Lider): Promise<void> {
     StorageAPI.saveLider(lider);
   }
@@ -586,21 +590,6 @@ export class LocalDataService implements IDataService {
   }
   async deleteUsuario(id: string): Promise<void> {
     StorageAPI.deleteUsuario(id);
-  }
-  async getOnboardingItems(): Promise<OnboardingItem[]> {
-    return StorageAPI.getOnboardingItems();
-  }
-  async saveOnboardingItem(item: OnboardingItem): Promise<void> {
-    StorageAPI.saveOnboardingItem(item);
-  }
-  async deleteOnboardingItem(id: string): Promise<void> {
-    StorageAPI.deleteOnboardingItem(id);
-  }
-  async getOnboardingChecklists(): Promise<OnboardingChecklist[]> {
-    return StorageAPI.getOnboardingChecklists();
-  }
-  async saveOnboardingChecklist(checklist: OnboardingChecklist): Promise<void> {
-    StorageAPI.saveOnboardingChecklist(checklist);
   }
   async toggleTarefa(id: string): Promise<Tarefa | undefined> {
     return StorageAPI.toggleTarefa(id);
@@ -882,11 +871,6 @@ export class LocalDataService implements IDataService {
   }
   async saveItemComentario(comentario: ItemComentario): Promise<void> {
     itensLocalSaveItem('itensComentarios', { ...comentario, data: comentario.data || new Date().toISOString().slice(0, 10) });
-  }
-  // Migração não se aplica ao modo demo (não há sistema legado local) —
-  // retorna zerado para a tela não quebrar caso alguém clique no modo demo.
-  async migrarOnboardingParaMotorDesenvolvimento(): Promise<{ templates: unknown; checklists: unknown }> {
-    return { templates: { programasCriados: 0 }, checklists: { migradas: 0 } };
   }
 
   // ── Motor de Desenvolvimento de Colaboradores — Biblioteca Corporativa ──
@@ -1555,10 +1539,27 @@ export class GoogleScriptDataService implements IDataService {
       return raw.map(c => ({
         id: String(c.id || ''),
         nome: String(c.nome || ''),
+        familiaId: c.familia_id ? String(c.familia_id) : undefined,
+        nivelOrdem: c.nivel_ordem !== '' && c.nivel_ordem != null ? Number(c.nivel_ordem) : undefined,
+        proximoCargoId: c.proximo_cargo_id ? String(c.proximo_cargo_id) : undefined,
       }));
     } catch (e) {
       console.warn('GoogleScript getCargos falhou, usando LocalStorage fallback:', e);
       return this.localFallback.getCargos();
+    }
+  }
+  async getFamiliasCargo(): Promise<FamiliaCargo[]> {
+    try {
+      const raw = await this.request<any[]>('getFamiliasCargo');
+      return raw.map(f => ({
+        id: String(f.id || ''),
+        nome: String(f.nome || ''),
+        descricao: String(f.descricao || ''),
+        ativo: f.ativo === true || f.ativo === 'true',
+      }));
+    } catch (e) {
+      console.warn('GoogleScript getFamiliasCargo falhou, usando LocalStorage fallback:', e);
+      return this.localFallback.getFamiliasCargo();
     }
   }
 
@@ -1776,14 +1777,39 @@ export class GoogleScriptDataService implements IDataService {
 
   async saveCargo(cargo: Cargo): Promise<void> {
     await this.localFallback.saveCargo(cargo);
+    const body = {
+      id: cargo.id,
+      nome: cargo.nome,
+      familia_id: cargo.familiaId || '',
+      nivel_ordem: cargo.nivelOrdem ?? '',
+      proximo_cargo_id: cargo.proximoCargoId || '',
+    };
     try {
-      await this.request('saveCargo', { data: cargo });
+      await this.request('saveCargo', { data: body });
     } catch (e) {
       try {
-        await this.request('salvarCargo', { data: cargo });
+        await this.request('salvarCargo', { data: body });
       } catch (e2) {
         console.warn('Erro ao sincronizar cargo com GoogleScript (usando fallback local):', e2);
       }
+    }
+  }
+
+  async saveFamiliaCargo(familia: FamiliaCargo): Promise<void> {
+    await this.localFallback.saveFamiliaCargo(familia);
+    try {
+      await this.request('saveFamiliaCargo', { data: familia });
+    } catch (e) {
+      console.warn('Erro ao salvar família de cargo no GoogleScript:', e);
+    }
+  }
+  async deleteFamiliaCargo(id: string): Promise<void> {
+    await this.localFallback.deleteFamiliaCargo(id);
+    try {
+      await this.request('deleteFamiliaCargo', { id });
+    } catch (e) {
+      console.warn('Erro ao excluir família de cargo no GoogleScript:', e);
+      throw e;
     }
   }
 
@@ -2072,63 +2098,6 @@ export class GoogleScriptDataService implements IDataService {
         }
       }
     }
-  }
-
-  async getOnboardingItems(): Promise<OnboardingItem[]> {
-    try {
-      const raw = await this.request<any[]>('getOnboardingItems');
-      return raw.map(i => ({
-        id: String(i.id || ''),
-        setorIds: typeof i.setor_ids === 'string' ? JSON.parse(i.setor_ids) : (i.setorIds || [i.setorId || i.setor_id]),
-        titulo: String(i.titulo || ''),
-        descricao: String(i.descricao || ''),
-      }));
-    } catch (e) {
-      return this.localFallback.getOnboardingItems();
-    }
-  }
-  async saveOnboardingItem(item: OnboardingItem): Promise<void> {
-    await this.localFallback.saveOnboardingItem(item);
-    try {
-    const body = {
-      id: item.id,
-      setor_ids: JSON.stringify(item.setorIds),
-      titulo: item.titulo,
-      descricao: item.descricao,
-    };
-      await this.request('saveOnboardingItem', { data: body });
-    } catch (e) {}
-  }
-  async deleteOnboardingItem(id: string): Promise<void> {
-    await this.localFallback.deleteOnboardingItem(id);
-    try {
-      await this.request('deleteOnboardingItem', { id });
-    } catch (e) {}
-  }
-  async getOnboardingChecklists(): Promise<OnboardingChecklist[]> {
-    try {
-      const raw = await this.request<any[]>('getOnboardingChecklists');
-      return raw.map(c => ({
-        id: String(c.id || ''),
-        colaboradorId: String(c.colaborador_id || c.colaboradorId || ''),
-        itemsConcluidos: typeof c.items_concluidos === 'string' ? JSON.parse(c.items_concluidos) : (c.items_concluidos || []),
-        dataCriacao: String(c.data_criacao || c.dataCriacao || ''),
-      }));
-    } catch (e) {
-      return this.localFallback.getOnboardingChecklists();
-    }
-  }
-  async saveOnboardingChecklist(checklist: OnboardingChecklist): Promise<void> {
-    await this.localFallback.saveOnboardingChecklist(checklist);
-    try {
-      const body = {
-        id: checklist.id,
-        colaborador_id: checklist.colaboradorId,
-        items_concluidos: JSON.stringify(checklist.itemsConcluidos),
-        data_criacao: checklist.dataCriacao,
-      };
-      await this.request('saveOnboardingChecklist', { data: body });
-    } catch (e) {}
   }
 
   // Avaliações de Experiência — achado da auditoria do Sprint 3: esta
@@ -3292,17 +3261,6 @@ export class GoogleScriptDataService implements IDataService {
       throw e;
     }
   }
-  // Sprint 1 da Reestruturação ERP — dispara as migrações de Onboarding
-  // legado (aditivas, idempotentes). O erro precisa chegar até quem chamou:
-  // é uma ação administrativa deliberada, não um autosave silencioso.
-  async migrarOnboardingParaMotorDesenvolvimento(): Promise<{ templates: unknown; checklists: unknown }> {
-    try {
-      return await this.request<{ templates: unknown; checklists: unknown }>('migrarOnboardingParaMotorDesenvolvimento');
-    } catch (e) {
-      console.warn('Erro ao migrar Onboarding legado no GoogleScript:', e);
-      throw e;
-    }
-  }
 
   // ── Motor de Desenvolvimento de Colaboradores — Biblioteca Corporativa ──
   // Ver "Especificação Arquitetural Definitiva v2" e "Modelagem Física
@@ -4143,6 +4101,9 @@ class DynamicDataService implements IDataService {
   async getCargos(): Promise<Cargo[]> {
     return this.getService().getCargos();
   }
+  async getFamiliasCargo(): Promise<FamiliaCargo[]> {
+    return this.getService().getFamiliasCargo();
+  }
   async getLideres(): Promise<Lider[]> {
     return this.getService().getLideres();
   }
@@ -4167,6 +4128,12 @@ class DynamicDataService implements IDataService {
   }
   async saveCargo(cargo: Cargo): Promise<void> {
     await this.getService().saveCargo(cargo);
+  }
+  async saveFamiliaCargo(familia: FamiliaCargo): Promise<void> {
+    await this.getService().saveFamiliaCargo(familia);
+  }
+  async deleteFamiliaCargo(id: string): Promise<void> {
+    await this.getService().deleteFamiliaCargo(id);
   }
   async saveLider(lider: Lider): Promise<void> {
     await this.getService().saveLider(lider);
@@ -4198,21 +4165,6 @@ class DynamicDataService implements IDataService {
     colaboradorNome: string
   ): Promise<string> {
     return this.getService().uploadFile(file, folderName, colaboradorNome);
-  }
-  async getOnboardingItems(): Promise<OnboardingItem[]> {
-    return this.getService().getOnboardingItems();
-  }
-  async saveOnboardingItem(item: OnboardingItem): Promise<void> {
-    await this.getService().saveOnboardingItem(item);
-  }
-  async deleteOnboardingItem(id: string): Promise<void> {
-    await this.getService().deleteOnboardingItem(id);
-  }
-  async getOnboardingChecklists(): Promise<OnboardingChecklist[]> {
-    return this.getService().getOnboardingChecklists();
-  }
-  async saveOnboardingChecklist(checklist: OnboardingChecklist): Promise<void> {
-    await this.getService().saveOnboardingChecklist(checklist);
   }
 
   // Avaliações de Experiência
@@ -4461,9 +4413,6 @@ class DynamicDataService implements IDataService {
   }
   async saveItemComentario(comentario: ItemComentario): Promise<void> {
     await this.getService().saveItemComentario(comentario);
-  }
-  async migrarOnboardingParaMotorDesenvolvimento(): Promise<{ templates: unknown; checklists: unknown }> {
-    return this.getService().migrarOnboardingParaMotorDesenvolvimento();
   }
 
   // ── Motor de Desenvolvimento de Colaboradores — Biblioteca Corporativa ──

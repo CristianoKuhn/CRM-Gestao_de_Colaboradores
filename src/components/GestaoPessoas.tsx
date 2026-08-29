@@ -61,7 +61,7 @@ type SubTab = 'dashboard' | 'calendario' | 'ferias' | 'dayoff' | 'folgas' | 'con
 
 interface AlertaGestaoPessoas {
   id: string;
-  tipo: 'ferias_90_dias' | 'ferias_vencendo' | 'dayoff_pendente' | 'aniversario' | 'aniversario_empresa' | 'folga_pendente' | 'conflito_setor' | 'etapa_desenvolvimento_atrasada' | 'onboarding_sem_oferta';
+  tipo: 'ferias_90_dias' | 'ferias_vencendo' | 'dayoff_pendente' | 'aniversario' | 'aniversario_empresa' | 'folga_pendente' | 'conflito_setor' | 'etapa_desenvolvimento_atrasada';
   titulo: string;
   descricao: string;
   colaboradorId?: string;
@@ -415,21 +415,14 @@ export default function GestaoPessoas({
   const [showSugestaoDistribuicao, setShowSugestaoDistribuicao] = useState(false);
 
   // Motor de Desenvolvimento de Colaboradores — Gestão de Pessoas era a
-  // última tela "cega" para Programas/Inscrições/Etapas (onboarding, PDI,
-  // capacitação etc.): o colaborador podia estar com uma Etapa atrasada e
+  // última tela "cega" para Programas/Inscrições/Etapas (PDI, capacitação,
+  // carreira etc.): o colaborador podia estar com uma Etapa atrasada e
   // isso nunca aparecia no calendário nem nos Alertas Inteligentes daqui,
   // mesmo o backend já calculando tudo isso todo dia (marcarEtapasAtrasadas_,
-  // dentro de gerarAlertasAutomaticos). Mesmo padrão de auto-fetch já usado
-  // no widget "Onboarding em andamento" do Dashboard.tsx — sem prop-drilling
-  // desde App.tsx.
+  // dentro de gerarAlertasAutomaticos). Sem prop-drilling desde App.tsx.
   const [inscricoesDesenvolvimento, setInscricoesDesenvolvimento] = useState<Inscricao[]>([]);
   const [etapasDesenvolvimento, setEtapasDesenvolvimento] = useState<InscricaoEtapa[]>([]);
   const [alertasEtapasAtrasadas, setAlertasEtapasAtrasadas] = useState<AlertaInteligente[]>([]);
-  // Colaborador novo sem Inscrição automática porque o Programa elegível não
-  // tinha Oferta aberta (motorElegibilidadeOnboarding_, Code.gs) — separado de
-  // alertasEtapasAtrasadas porque é um problema de CONFIGURAÇÃO (falta
-  // publicar uma Oferta), não de execução atrasada.
-  const [alertasOnboardingSemOferta, setAlertasOnboardingSemOferta] = useState<AlertaInteligente[]>([]);
   
   // Filtros
   const [filtroAno, setFiltroAno] = useState(ANO_ATUAL);
@@ -490,7 +483,7 @@ export default function GestaoPessoas({
       DataService.getConfiguracaoGestaoPessoas(),
       DataService.getConfiguracaoFerias(),
       // Motor de Desenvolvimento de Colaboradores — Inscrições em andamento
-      // (onboarding, PDI, capacitação...) e suas Etapas, para alimentar o
+      // (PDI, capacitação, carreira...) e suas Etapas, para alimentar o
       // calendário e os Alertas Inteligentes desta tela.
       DataService.getInscricoes({ estadoWorkflow: 'em_andamento' }),
       DataService.getInscricaoEtapas(),
@@ -506,9 +499,6 @@ export default function GestaoPessoas({
     setEtapasDesenvolvimento(etapasData);
     setAlertasEtapasAtrasadas(
       alertasData.filter((a) => a.tipo === 'etapa_desenvolvimento_atrasada' && a.status !== 'resolvido')
-    );
-    setAlertasOnboardingSemOferta(
-      alertasData.filter((a) => a.tipo === 'onboarding_sem_oferta' && a.status !== 'resolvido')
     );
   };
 
@@ -649,7 +639,7 @@ export default function GestaoPessoas({
       }
     });
     
-    // Etapas de Desenvolvimento atrasadas (onboarding, PDI, capacitação...) —
+    // Etapas de Desenvolvimento atrasadas (PDI, capacitação, carreira...) —
     // o alerta já vem pronto do backend (marcarEtapasAtrasadas_, dentro do
     // job diário gerarAlertasAutomaticos), com título/descrição formatados;
     // aqui só projetamos para o mesmo formato usado nesta tela, para entrar
@@ -668,31 +658,11 @@ export default function GestaoPessoas({
       });
     });
 
-    // Colaborador novo sem Inscrição automática de onboarding, porque o
-    // Programa elegível não tem nenhuma Oferta aberta — motorElegibilidadeOnboarding_
-    // (Code.gs) gera este alerta no instante do cadastro. É um problema de
-    // CONFIGURAÇÃO (falta publicar uma Oferta em Programas de Desenvolvimento
-    // ou inscrever manualmente), por isso fica no nível mais alto: sem ação,
-    // o colaborador simplesmente não tem onboarding nenhum.
-    alertasOnboardingSemOferta.forEach((alertaOnboarding) => {
-      const col = colaboradores.find((c) => c.id === alertaOnboarding.colaboradorId);
-      if (!col || col.situacao === 'Desligado') return;
-      listaAlertas.push({
-        id: `onboarding-sem-oferta-${alertaOnboarding.id}`,
-        tipo: 'onboarding_sem_oferta',
-        titulo: alertaOnboarding.titulo || `Onboarding não iniciado: ${col.nome}`,
-        descricao: alertaOnboarding.descricao,
-        colaboradorId: alertaOnboarding.colaboradorId,
-        data: alertaOnboarding.dataReferencia || undefined,
-        nivel: 'urgent',
-      });
-    });
-
     return listaAlertas.sort((a, b) => {
       const ordem = { urgent: 0, warning: 1, info: 2 };
       return ordem[a.nivel] - ordem[b.nivel];
     });
-  }, [colaboradores, dayOffs, ferias, periodosAquisitivos, setores, alertasEtapasAtrasadas, alertasOnboardingSemOferta]);
+  }, [colaboradores, dayOffs, ferias, periodosAquisitivos, setores, alertasEtapasAtrasadas]);
 
   // Férias previstos nos próximos 90 dias
   const feriasProximos90Dias = useMemo(() => {
@@ -859,7 +829,7 @@ export default function GestaoPessoas({
       }
     });
     
-    // Etapas de Desenvolvimento (onboarding, PDI, capacitação...) em aberto —
+    // Etapas de Desenvolvimento (PDI, capacitação, carreira...) em aberto —
     // Motor de Desenvolvimento de Colaboradores. Só entram Etapas já
     // liberadas/em curso/atrasadas (nunca "bloqueada", que ainda depende de
     // outra Etapa concluir) e com data prevista definida.
@@ -1378,7 +1348,7 @@ export default function GestaoPessoas({
               <option value="aniversario">Aniversários</option>
               <option value="aniversario_empresa">Aniv. Empresa</option>
               <option value="avaliacao">Avaliações</option>
-              <option value="etapa_desenvolvimento">Desenvolvimento (Onboarding/PDI)</option>
+              <option value="etapa_desenvolvimento">Desenvolvimento (PDI/Carreira)</option>
             </select>
             
             {(filtroMes !== null || filtroSetor || filtroTipoEvento) && (

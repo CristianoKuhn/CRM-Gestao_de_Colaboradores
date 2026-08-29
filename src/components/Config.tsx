@@ -27,7 +27,6 @@ import {
   AlertCircle,
   PlusCircle,
   Trash2,
-  ClipboardList,
   Building2,
   Users,
   Briefcase,
@@ -51,10 +50,6 @@ interface ConfigProps {
   onChangeProvider: (provider: DataSourceProvider) => void;
   setores: Setor[];
   currentUser: Usuario;
-  // Sprint 1 da Reestruturação ERP: Onboarding deixou de ser configurado
-  // aqui — vira um Programa como qualquer outro, em "Programas de
-  // Desenvolvimento". Este handler é só o atalho de navegação.
-  onIrParaProgramasDesenvolvimento?: () => void;
   // Novos props para o Dashboard Admin
   empresas?: Empresa[];
   cargos?: Cargo[];
@@ -78,7 +73,6 @@ export default function Config({
   onChangeProvider,
   setores,
   currentUser,
-  onIrParaProgramasDesenvolvimento,
   empresas = [],
   cargos = [],
   lideres = [],
@@ -92,12 +86,6 @@ export default function Config({
   onUpdateLider,
 }: ConfigProps) {
   const [webAppUrl, setWebAppUrl] = useState(googleConfig.webAppUrl || '');
-  const [migrandoOnboarding, setMigrandoOnboarding] = useState(false);
-  const [resultadoMigracaoOnboarding, setResultadoMigracaoOnboarding] = useState<string | null>(null);
-
-  const canManageOnboarding = currentUser.perfil === 'Administrador' || 
-                             currentUser.perfil === 'Coordenador' || 
-                             currentUser.perfil === 'Supervisor';
 
   // Perfil que pode ver o Dashboard Admin
   const canViewAdminDashboard = currentUser.perfil === 'Administrador' || 
@@ -243,28 +231,6 @@ export default function Config({
   // Obter colaboradores por líder
   const getColaboradoresByLider = (liderId: string) => {
     return colaboradores.filter(c => c.liderId === liderId);
-  };
-
-  // Sprint 1 da Reestruturação ERP — dispara, uma vez, a migração aditiva do
-  // Onboarding legado (OnboardingItems/OnboardingChecklists) para o Motor de
-  // Desenvolvimento (Programa/Oferta/Inscrição/Etapa). Idempotente: pode ser
-  // clicado mais de uma vez sem duplicar nada.
-  const handleMigrarOnboarding = async () => {
-    setMigrandoOnboarding(true);
-    setResultadoMigracaoOnboarding(null);
-    try {
-      const resultado = await DataService.migrarOnboardingParaMotorDesenvolvimento();
-      const templates = resultado.templates as { setoresComItens?: number; programasCriados?: number; programasJaExistentes?: number };
-      const checklists = resultado.checklists as { migradas?: number; jaMigradasAntes?: number; semProgramaNoSetor?: number };
-      setResultadoMigracaoOnboarding(
-        `${templates.programasCriados ?? 0} programa(s) criado(s) (${templates.programasJaExistentes ?? 0} já existiam) · ` +
-        `${checklists.migradas ?? 0} checklist(s) migrado(s) para Inscrição (${checklists.jaMigradasAntes ?? 0} já migrados antes).`
-      );
-    } catch (e: any) {
-      setResultadoMigracaoOnboarding(e?.message || 'Não foi possível concluir a migração agora.');
-    } finally {
-      setMigrandoOnboarding(false);
-    }
   };
 
   return (
@@ -734,54 +700,6 @@ export default function Config({
                   ))}
                 </div>
               </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Sprint 1 da Reestruturação ERP — Onboarding unificado no Motor de Desenvolvimento */}
-      {canManageOnboarding && (
-        <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-5">
-          <div className="flex items-center gap-2 border-b border-slate-50 pb-3">
-            <ClipboardList size={18} className="text-teal-600" />
-            <h2 className="font-extrabold text-slate-900 text-sm uppercase tracking-wider">Onboarding</h2>
-          </div>
-
-          <p className="text-xs text-slate-500 leading-relaxed max-w-2xl">
-            O Onboarding não é mais configurado aqui — ele passou a ser um Programa como qualquer outro
-            (Formação de Liderança, Capacitação, PDI...), todos usando o mesmo motor. Configure as Etapas,
-            os itens de checklist e o critério de elegibilidade por setor em{' '}
-            <span className="font-bold text-teal-700">Programas de Desenvolvimento</span>.
-          </p>
-
-          {onIrParaProgramasDesenvolvimento && (
-            <button
-              type="button"
-              onClick={onIrParaProgramasDesenvolvimento}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-white bg-teal-600 hover:bg-teal-500 transition-colors"
-            >
-              <ClipboardList size={14} />
-              Ir para Programas de Desenvolvimento
-            </button>
-          )}
-
-          <div className="border-t border-slate-50 pt-5">
-            <h3 className="text-xs font-bold text-slate-700 uppercase mb-2">Migração do Onboarding legado</h3>
-            <p className="text-[11px] text-slate-400 leading-relaxed mb-3 max-w-2xl">
-              Migra os itens e checklists do sistema antigo para Programas/Inscrições reais — aditivo e
-              idempotente (pode clicar mais de uma vez sem duplicar nada; nenhum dado antigo é apagado).
-              Rode uma vez após validar a nova tela de Programas de Desenvolvimento.
-            </p>
-            <button
-              type="button"
-              onClick={handleMigrarOnboarding}
-              disabled={migrandoOnboarding}
-              className="px-4 py-2 rounded-xl text-xs font-bold text-teal-700 bg-teal-50 hover:bg-teal-100 transition-colors disabled:opacity-50"
-            >
-              {migrandoOnboarding ? 'Migrando...' : 'Migrar Onboarding legado agora'}
-            </button>
-            {resultadoMigracaoOnboarding && (
-              <p className="text-[11px] text-slate-500 mt-2">{resultadoMigracaoOnboarding}</p>
             )}
           </div>
         </div>

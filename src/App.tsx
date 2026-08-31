@@ -637,6 +637,8 @@ export default function App() {
                 onBack={() => setSelectedColaboradorId(null)}
                 onUpdateColaborador={handleUpdateColaborador}
                 onAddTimelineRegistro={handleAddTimelineRegistro}
+                onAddDocumento={handleAddDocumento}
+                onDeleteDocumento={handleDeleteDocumento}
               />
             ) : (
               <Colaboradores

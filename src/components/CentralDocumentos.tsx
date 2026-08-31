@@ -10,6 +10,7 @@ import {
   Colaborador,
 } from '../types';
 import { DataService } from '../services/DataService';
+import AnexoPreviewModal, { ArquivoParaPreview } from './AnexoPreviewModal';
 import {
   FileText,
   Upload,
@@ -29,6 +30,7 @@ import {
   RefreshCw,
   Search,
   Filter,
+  Eye,
 } from 'lucide-react';
 
 interface CentralDocumentosProps {
@@ -69,6 +71,7 @@ export default function CentralDocumentos({
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCategoria, setFilterCategoria] = useState<string>('todas');
   const [showUploadModal, setShowUploadModal] = useState(false);
+  const [preview, setPreview] = useState<ArquivoParaPreview | null>(null);
   const [uploadData, setUploadData] = useState({
     nome: '',
     categoria: 'outro' as CategoriaDocumento,
@@ -240,14 +243,21 @@ export default function CentralDocumentos({
                   </div>
                 </div>
                 <div className="flex items-center gap-2 mt-3 pt-3 border-t border-slate-200">
+                  <button
+                    onClick={() => setPreview({ nome: doc.nome, url: doc.url, tipo: doc.tipoArquivo })}
+                    className="flex-1 flex items-center justify-center gap-1 px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-50 transition cursor-pointer"
+                  >
+                    <Eye size={14} />
+                    Visualizar
+                  </button>
                   <a
                     href={doc.url}
+                    download
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex-1 flex items-center justify-center gap-1 px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-50 transition"
+                    className="flex items-center justify-center gap-1 px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-50 transition"
                   >
                     <Download size={14} />
-                    Baixar
                   </a>
                   <button
                     onClick={() => handleDelete(doc)}

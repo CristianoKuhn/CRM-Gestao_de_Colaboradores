@@ -22,6 +22,10 @@ import {
 interface PerfilCompetenciasPanelProps {
   colaboradorId: string;
   currentUser?: Usuario;
+  // Quando um Insight de gap de competência é aceito (ver InsightsPanel), a
+  // competência correspondente fica destacada por alguns segundos, para que
+  // "aceitar" tenha um efeito visível de verdade.
+  highlightCompetenciaId?: string;
 }
 
 const inputBase =
@@ -38,7 +42,11 @@ const STATUS_OBJETIVO_LABEL: Record<string, { label: string; className: string }
 // Root) dentro do perfil do colaborador. Nenhuma escrita direta de nível
 // acontece aqui: toda avaliação chama a ação de negócio avaliarCompetencia
 // (Princípio 2 da Especificação v2 — nada escreve no Perfil fora de evento).
-const PerfilCompetenciasPanel: React.FC<PerfilCompetenciasPanelProps> = ({ colaboradorId, currentUser }) => {
+const PerfilCompetenciasPanel: React.FC<PerfilCompetenciasPanelProps> = ({
+  colaboradorId,
+  currentUser,
+  highlightCompetenciaId,
+}) => {
   const [carregando, setCarregando] = useState(true);
   const [perfil, setPerfil] = useState<PerfilConsolidado | null>(null);
   const [competenciasBiblioteca, setCompetenciasBiblioteca] = useState<CompetenciaBiblioteca[]>([]);
@@ -177,8 +185,12 @@ const PerfilCompetenciasPanel: React.FC<PerfilCompetenciasPanelProps> = ({ colab
             {perfil.competencias.map((c) => (
               <div
                 key={c.competenciaId}
-                className={`flex items-center justify-between rounded-2xl border px-4 py-2.5 ${
-                  c.gap ? 'border-amber-200 bg-amber-50/40' : 'border-slate-100'
+                className={`flex items-center justify-between rounded-2xl border px-4 py-2.5 transition-all ${
+                  c.competenciaId === highlightCompetenciaId
+                    ? 'border-teal-400 bg-teal-50/60 ring-2 ring-teal-300'
+                    : c.gap
+                    ? 'border-amber-200 bg-amber-50/40'
+                    : 'border-slate-100'
                 }`}
               >
                 <div className="min-w-0">

@@ -18,6 +18,7 @@ import {
   Anexo,
   SituacaoColaborador,
   Documento,
+  CategoriaDocumento,
   Reconhecimento,
   ConfiguracaoReconhecimento,
   Tarefa,
@@ -26,6 +27,8 @@ import {
 } from '../types';
 import LinhaDoTempoInteligente from './LinhaDoTempoInteligente';
 import HistoricoInstancias from '../features/formularios/components/HistoricoInstancias';
+import CentralDocumentos from './CentralDocumentos';
+import AnexoPreviewModal, { ArquivoParaPreview } from './AnexoPreviewModal';
 import JornadaColaboradorPanel from '../features/desenvolvimento-colaboradores/JornadaColaboradorPanel';
 import PerfilCompetenciasPanel from '../features/desenvolvimento-colaboradores/PerfilCompetenciasPanel';
 import InsightsPanel from '../features/desenvolvimento-colaboradores/InsightsPanel';
@@ -51,7 +54,6 @@ import {
   CheckCircle,
   PlusCircle,
   Clock,
-  ExternalLink,
   MapPin,
   ClipboardList,
   RefreshCw,
@@ -61,7 +63,39 @@ import {
   PartyPopper,
   CheckCircle2,
   TrendingUp,
+  Eye,
 } from 'lucide-react';
+
+// Mapeia o Tipo de Registro da timeline para uma Categoria de Documento já
+// existente na Central de Documentos — assim, todo anexo enviado num
+// registro (ex.: PDI, Advertência) também vira um Documento pesquisável e
+// visualizável na Central de Documentos deste colaborador, em vez de ficar
+// visível só dentro daquele card específico da timeline.
+function categoriaDocumentoParaTipoRegistro(tipo: TipoRegistro): CategoriaDocumento {
+  switch (tipo) {
+    case 'Plano de Desenvolvimento Individual (PDI)':
+      return 'avaliacao';
+    case 'Advertência':
+    case 'Suspensão':
+      return 'advertencia';
+    case 'Feedback Positivo':
+    case 'Feedback Corretivo':
+    case 'Conversa Individual (1:1)':
+    case 'Observação Geral':
+    case 'Acompanhamento':
+      return 'feedback_pdf';
+    default:
+      return 'outro';
+  }
+}
+
+// O backend devolve a URL do Drive já no formato
+// "https://lh3.googleusercontent.com/d/<ID>" — extraímos o ID aqui para
+// poder montar o link de pré-visualização embutida (iframe) do Drive.
+function extrairDriveFileIdDaUrl(url: string): string | undefined {
+  const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+  return match ? match[1] : undefined;
+}
 
 interface ColaboradorProfileProps {
   colaborador: Colaborador;
@@ -78,6 +112,8 @@ interface ColaboradorProfileProps {
   onBack: () => void;
   onUpdateColaborador: (col: Colaborador) => Promise<Colaborador>;
   onAddTimelineRegistro: (reg: TimelineRegistro) => void;
+  onAddDocumento: (doc: Documento) => void;
+  onDeleteDocumento: (id: string) => void;
 }
 
 export default function ColaboradorProfile({
@@ -95,11 +131,36 @@ export default function ColaboradorProfile({
   onBack,
   onUpdateColaborador,
   onAddTimelineRegistro,
+  onAddDocumento,
+  onDeleteDocumento,
 }: ColaboradorProfileProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [isUploadingAnexo, setIsUploadingAnexo] = useState(false);
+
+  // Referências para "levar até" a seção certa quando um Insight é aceito
+  // (ver InsightsPanel) — evita que aceitar/recusar um Insight seja uma ação
+  // sem efeito visível para quem está usando o sistema.
+  const perfilCompetenciasRef = useRef<HTMLDivElement>(null);
+  const jornadaRef = useRef<HTMLDivElement>(null);
+  const [highlightCompetenciaId, setHighlightCompetenciaId] = useState<string | undefined>(undefined);
+
+  // Preview de anexos/documentos sem sair da plataforma (imagem inline ou
+  // PDF/documento embutido via Drive) — usado tanto pelos anexos da timeline
+  // quanto pela Central de Documentos deste colaborador, logo abaixo.
+  const [anexoEmPreview, setAnexoEmPreview] = useState<ArquivoParaPreview | null>(null);
+
+  const handleFocarCompetencia = (competenciaId?: string) => {
+    if (!competenciaId) return;
+    setHighlightCompetenciaId(competenciaId);
+    perfilCompetenciasRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    window.setTimeout(() => setHighlightCompetenciaId(undefined), 4000);
+  };
+
+  const handleFocarJornada = () => {
+    jornadaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
   
   // Estado local para foto (sincronizado após upload)
   const [localFotoUrl, setLocalFotoUrl] = useState(colaborador.fotoUrl);
@@ -316,12 +377,32 @@ export default function ColaboradorProfile({
             tipoFormatado = 'excel';
           }
 
+          const anexoId = `anx-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
           novosAnexos.push({
-            id: `anx-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+            id: anexoId,
             nome: file.name,
             tipo: tipoFormatado,
             url: fileUrl,
             tamanho: sizeFriendly,
+            driveFileId: extrairDriveFileIdDaUrl(fileUrl),
+          });
+
+          // Todo anexo enviado aqui também vira um Documento na Central de
+          // Documentos deste colaborador — assim ele nunca fica "perdido"
+          // dentro de um único registro da timeline; passa a existir também
+          // numa lista central, pesquisável e com pré-visualização.
+          onAddDocumento({
+            id: `doc-${anexoId}`,
+            colaboradorId: colaborador.id,
+            nome: file.name,
+            categoria: categoriaDocumentoParaTipoRegistro(regTipo),
+            tipoArquivo: file.type,
+            url: fileUrl,
+            driveFileId: extrairDriveFileIdDaUrl(fileUrl),
+            tamanho: sizeFriendly,
+            uploadedPor: currentUser?.id || '',
+            dataUpload: new Date().toISOString().split('T')[0],
+            descricao: `Anexado ao registro "${regTipo}"`,
           });
         } catch (uploadError) {
           console.error(`Erro ao fazer upload de ${file.name}:`, uploadError);
@@ -556,9 +637,22 @@ export default function ColaboradorProfile({
 
         {/* RIGHT COLUMN: Interactive Timeline & Registry Creation */}
         <div className="lg:col-span-8 space-y-6">
-          <InsightsPanel colaboradorId={colaborador.id} currentUser={currentUser} />
-          <JornadaColaboradorPanel colaboradorId={colaborador.id} currentUser={currentUser} />
-          <PerfilCompetenciasPanel colaboradorId={colaborador.id} currentUser={currentUser} />
+          <InsightsPanel
+            colaboradorId={colaborador.id}
+            currentUser={currentUser}
+            onFocarCompetencia={handleFocarCompetencia}
+            onFocarJornada={handleFocarJornada}
+          />
+          <div ref={jornadaRef}>
+            <JornadaColaboradorPanel colaboradorId={colaborador.id} currentUser={currentUser} />
+          </div>
+          <div ref={perfilCompetenciasRef}>
+            <PerfilCompetenciasPanel
+              colaboradorId={colaborador.id}
+              currentUser={currentUser}
+              highlightCompetenciaId={highlightCompetenciaId}
+            />
+          </div>
 
           {/* Timeline Action Bar */}
           <div className="bg-white border border-slate-100 p-4 rounded-2xl shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -807,13 +901,24 @@ export default function ColaboradorProfile({
                               <p className="text-[10px] text-slate-400">{anx.tamanho}</p>
                             </div>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => removeAnexo(anx.id)}
-                            className="text-slate-400 hover:text-slate-600 cursor-pointer font-bold shrink-0 p-1"
-                          >
-                            <X size={14} />
-                          </button>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => setAnexoEmPreview({ nome: anx.nome, url: anx.url, tipo: anx.tipo })}
+                              className="text-slate-400 hover:text-teal-600 cursor-pointer p-1"
+                              title="Visualizar"
+                            >
+                              <Eye size={14} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => removeAnexo(anx.id)}
+                              className="text-slate-400 hover:text-slate-600 cursor-pointer font-bold p-1"
+                              title="Remover"
+                            >
+                              <X size={14} />
+                            </button>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -1059,6 +1164,19 @@ export default function ColaboradorProfile({
             colaboradorId={colaborador.id}
           />
 
+          {/* DOCUMENTOS & ANEXOS: local único e central para tudo que foi anexado
+              a este colaborador (fotos, PDFs, planilhas...), seja pela Central de
+              Documentos ou por um anexo solto num registro da timeline (PDI,
+              Advertência etc.) — evita que um arquivo enviado "suma" dentro de
+              um card específico da timeline. */}
+          <CentralDocumentos
+            colaborador={colaborador}
+            documentos={documentos.filter((d) => d.colaboradorId === colaborador.id)}
+            onAddDocumento={onAddDocumento}
+            onDeleteDocumento={onDeleteDocumento}
+            currentUserId={currentUser?.id || ''}
+          />
+
           {/* CHRONOLOGICAL TIMELINE STREAM */}
           <div className="space-y-4">
             <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2 pl-1.5">
@@ -1135,18 +1253,17 @@ export default function ColaboradorProfile({
                             <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider mb-1.5">Anexos Vinculados (Storage)</p>
                             <div className="flex flex-wrap gap-2">
                               {reg.anexos.map((anx) => (
-                                <a
+                                <button
                                   key={anx.id}
-                                  href={anx.url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="inline-flex items-center gap-2 bg-slate-50 hover:bg-slate-100 border border-slate-100 px-3 py-1.5 rounded-xl text-xs text-slate-700 font-semibold transition"
+                                  type="button"
+                                  onClick={() => setAnexoEmPreview({ nome: anx.nome, url: anx.url, tipo: anx.tipo })}
+                                  className="inline-flex items-center gap-2 bg-slate-50 hover:bg-slate-100 border border-slate-100 px-3 py-1.5 rounded-xl text-xs text-slate-700 font-semibold transition cursor-pointer"
                                 >
                                   <FileText size={12} className="text-slate-400 shrink-0" />
                                   <span className="truncate max-w-[150px]">{anx.nome}</span>
                                   <span className="text-[9px] text-slate-400 shrink-0">{anx.tamanho}</span>
-                                  <ExternalLink size={10} className="text-slate-400 shrink-0" />
-                                </a>
+                                  <Eye size={10} className="text-slate-400 shrink-0" />
+                                </button>
                               ))}
                             </div>
                           </div>
@@ -1191,6 +1308,10 @@ export default function ColaboradorProfile({
           </div>
         </div>
       </div>
+
+      {anexoEmPreview && (
+        <AnexoPreviewModal arquivo={anexoEmPreview} onClose={() => setAnexoEmPreview(null)} />
+      )}
     </div>
   );
 }

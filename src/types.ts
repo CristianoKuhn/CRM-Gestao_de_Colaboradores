@@ -96,6 +96,7 @@ export interface Anexo {
   tipo: string; // 'imagem' | 'pdf' | 'documento' | 'audio' | 'video'
   url: string;
   tamanho: string;
+  driveFileId?: string; // ID do arquivo no Drive — usado para pré-visualização embutida
 }
 
 export interface TimelineRegistro {

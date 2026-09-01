@@ -282,6 +282,37 @@ export default function App() {
     loadAllData();
   };
 
+  const handleDeleteTarefa = async (id: string) => {
+    await DataService.deleteTarefa(id);
+    loadAllData();
+  };
+
+  // Conclusão de Tarefa com relato obrigatório no histórico do colaborador
+  // (em vez de a Tarefa ser só um "check" sem rastro): ao marcar uma Tarefa
+  // pendente como concluída, o usuário é levado até o Colaborador vinculado,
+  // onde precisa descrever o que foi feito — esse relato vira um Registro
+  // normal na timeline dele, e só então a Tarefa é marcada como concluída.
+  const [tarefaEmConclusao, setTarefaEmConclusao] = useState<Tarefa | null>(null);
+
+  const handleIniciarConclusaoTarefa = (tarefa: Tarefa) => {
+    setTarefaEmConclusao(tarefa);
+    setSelectedColaboradorId(tarefa.colaboradorId);
+    setActiveTab('colaboradores');
+  };
+
+  const handleCancelarConclusaoTarefa = () => {
+    setTarefaEmConclusao(null);
+  };
+
+  const handleConcluirTarefaComRelato = async (tarefaId: string, novoRegistroId: string) => {
+    const tarefa = tarefas.find((t) => t.id === tarefaId);
+    if (tarefa) {
+      await DataService.saveTarefa({ ...tarefa, concluida: true, registroId: novoRegistroId });
+    }
+    setTarefaEmConclusao(null);
+    loadAllData();
+  };
+
   // Tratar inserção na Timeline + auto-geração de tarefas de acompanhamento
   const handleAddTimelineRegistro = async (reg: TimelineRegistro) => {
     // 1. Salvar o registro no histórico oficial
@@ -639,6 +670,13 @@ export default function App() {
                 onAddTimelineRegistro={handleAddTimelineRegistro}
                 onAddDocumento={handleAddDocumento}
                 onDeleteDocumento={handleDeleteDocumento}
+                tarefaParaConcluir={
+                  tarefaEmConclusao && tarefaEmConclusao.colaboradorId === colaboradorSelecionado.id
+                    ? tarefaEmConclusao
+                    : null
+                }
+                onConcluirTarefa={handleConcluirTarefaComRelato}
+                onCancelarConclusaoTarefa={handleCancelarConclusaoTarefa}
               />
             ) : (
               <Colaboradores
@@ -669,6 +707,8 @@ export default function App() {
               cargos={cargos}
               onToggleTarefa={handleToggleTarefa}
               onAddTarefa={handleAddTarefa}
+              onDeleteTarefa={handleDeleteTarefa}
+              onIniciarConclusaoTarefa={handleIniciarConclusaoTarefa}
             />
           )}
 

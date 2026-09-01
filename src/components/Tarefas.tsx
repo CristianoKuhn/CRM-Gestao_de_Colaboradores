@@ -10,11 +10,9 @@ import {
   Square,
   Search,
   Calendar,
-  AlertCircle,
-  CheckCircle,
   Plus,
-  Users2,
   Trash2,
+  Pencil,
 } from 'lucide-react';
 
 interface TarefasProps {
@@ -24,6 +22,12 @@ interface TarefasProps {
   cargos: Cargo[];
   onToggleTarefa: (id: string) => void;
   onAddTarefa: (tarefa: Tarefa) => void;
+  onDeleteTarefa: (id: string) => void;
+  // Em vez de marcar "concluída" na hora, uma Tarefa pendente leva o usuário
+  // até o Colaborador vinculado para registrar o que foi feito (ver
+  // ColaboradorProfile → tarefaParaConcluir). Só depois desse relato salvo é
+  // que a Tarefa realmente vira concluída.
+  onIniciarConclusaoTarefa: (tarefa: Tarefa) => void;
 }
 
 export default function Tarefas({
@@ -33,14 +37,18 @@ export default function Tarefas({
   cargos,
   onToggleTarefa,
   onAddTarefa,
+  onDeleteTarefa,
+  onIniciarConclusaoTarefa,
 }: TarefasProps) {
   const HOJE = new Date();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<'Todas' | 'Pendentes' | 'Concluídas' | 'Atrasadas'>('Todas');
 
-  // Nova Tarefa Form
+  // Form de Nova Tarefa / Edição de Tarefa (o mesmo formulário serve para os
+  // dois casos — "editingTarefaId" preenchido indica que estamos editando).
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [editingTarefaId, setEditingTarefaId] = useState<string | null>(null);
   const [taskTitulo, setTaskTitulo] = useState('');
   const [taskDescricao, setTaskDescricao] = useState('');
   const [taskVencimento, setTaskVencimento] = useState(() => {
@@ -51,6 +59,45 @@ export default function Tarefas({
   const [taskColaboradorId, setTaskColaboradorId] = useState(colaboradores[0]?.id || '');
   const [taskLiderId, setTaskLiderId] = useState(lideres[0]?.id || '');
   const [taskOrigem, setTaskOrigem] = useState<TipoRegistro>('Acompanhamento');
+
+  const resetForm = () => {
+    setEditingTarefaId(null);
+    setTaskTitulo('');
+    setTaskDescricao('');
+    const amanha = new Date();
+    amanha.setDate(amanha.getDate() + 2);
+    setTaskVencimento(amanha.toISOString().split('T')[0]);
+    setTaskColaboradorId(colaboradores[0]?.id || '');
+    setTaskLiderId(lideres[0]?.id || '');
+    setTaskOrigem('Acompanhamento');
+  };
+
+  const handleAbrirNovaTarefa = () => {
+    if (isFormOpen && !editingTarefaId) {
+      setIsFormOpen(false);
+      return;
+    }
+    resetForm();
+    setIsFormOpen(true);
+  };
+
+  const handleAbrirEdicaoTarefa = (task: Tarefa) => {
+    setEditingTarefaId(task.id);
+    setTaskTitulo(task.titulo);
+    setTaskDescricao(task.descricao);
+    setTaskVencimento(task.vencimento);
+    setTaskColaboradorId(task.colaboradorId);
+    setTaskLiderId(task.responsavelId);
+    setTaskOrigem(task.tipoOrigem);
+    setIsFormOpen(true);
+  };
+
+  const handleExcluirTarefa = (task: Tarefa) => {
+    const confirmado = window.confirm(
+      `Excluir a tarefa "${task.titulo}"? Esta ação não pode ser desfeita.`
+    );
+    if (confirmado) onDeleteTarefa(task.id);
+  };
 
   // Filtragem inteligente das tarefas
   const tarefasFiltradas = tarefas.filter((task) => {
@@ -72,30 +119,25 @@ export default function Tarefas({
     return matchesSearch && matchesStatus;
   });
 
-  const handleCreateTask = (e: React.FormEvent) => {
+  const handleSubmitTarefa = (e: React.FormEvent) => {
     e.preventDefault();
     if (!taskTitulo || !taskColaboradorId) return;
 
-    const novaTarefa: Tarefa = {
-      id: `tar-${Date.now()}`,
+    const tarefaSalva: Tarefa = {
+      id: editingTarefaId || `tar-${Date.now()}`,
       colaboradorId: taskColaboradorId,
       titulo: taskTitulo,
       descricao: taskDescricao,
       vencimento: taskVencimento,
-      concluida: false,
+      concluida: editingTarefaId ? tarefas.find((t) => t.id === editingTarefaId)?.concluida || false : false,
       tipoOrigem: taskOrigem,
+      registroId: editingTarefaId ? tarefas.find((t) => t.id === editingTarefaId)?.registroId : undefined,
       responsavelId: taskLiderId,
     };
 
-    onAddTarefa(novaTarefa);
+    onAddTarefa(tarefaSalva);
     setIsFormOpen(false);
-
-    // Reset Form
-    setTaskTitulo('');
-    setTaskDescricao('');
-    const amanha = new Date();
-    amanha.setDate(amanha.getDate() + 2);
-    setTaskVencimento(amanha.toISOString().split('T')[0]);
+    resetForm();
   };
 
   return (
@@ -111,7 +153,7 @@ export default function Tarefas({
 
         <button
           id="btn-abrir-form-tarefa"
-          onClick={() => setIsFormOpen(!isFormOpen)}
+          onClick={handleAbrirNovaTarefa}
           className="flex items-center gap-1.5 px-4 py-2.5 bg-teal-500 text-slate-950 font-bold rounded-xl text-sm hover:bg-teal-400 cursor-pointer shadow-md shadow-teal-500/10 transition"
         >
           <Plus size={16} />
@@ -119,20 +161,25 @@ export default function Tarefas({
         </button>
       </div>
 
-      {/* NOVO REGISTRO TAREFA FORM */}
+      {/* FORM: NOVA TAREFA OU EDIÇÃO DE TAREFA */}
       {isFormOpen && (
         <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-md animate-slide-down max-w-2xl mx-auto">
           <div className="flex justify-between items-center border-b border-slate-100 pb-3 mb-4">
-            <h3 className="text-md font-bold text-slate-950">Adicionar Tarefa de Liderança</h3>
+            <h3 className="text-md font-bold text-slate-950">
+              {editingTarefaId ? 'Editar Tarefa de Liderança' : 'Adicionar Tarefa de Liderança'}
+            </h3>
             <button
-              onClick={() => setIsFormOpen(false)}
+              onClick={() => {
+                setIsFormOpen(false);
+                resetForm();
+              }}
               className="text-slate-400 hover:text-slate-600 font-bold cursor-pointer"
             >
               &times;
             </button>
           </div>
 
-          <form onSubmit={handleCreateTask} className="space-y-4">
+          <form onSubmit={handleSubmitTarefa} className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Título da Tarefa</label>
@@ -220,7 +267,10 @@ export default function Tarefas({
             <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
               <button
                 type="button"
-                onClick={() => setIsFormOpen(false)}
+                onClick={() => {
+                  setIsFormOpen(false);
+                  resetForm();
+                }}
                 className="px-4 py-2 border border-slate-200 text-slate-600 bg-slate-50 rounded-xl text-xs font-semibold hover:bg-slate-100 cursor-pointer transition"
               >
                 Cancelar
@@ -229,7 +279,7 @@ export default function Tarefas({
                 type="submit"
                 className="px-5 py-2 bg-teal-500 text-slate-950 font-bold rounded-xl text-xs hover:bg-teal-400 cursor-pointer transition"
               >
-                Criar Tarefa
+                {editingTarefaId ? 'Salvar Alterações' : 'Criar Tarefa'}
               </button>
             </div>
           </form>
@@ -281,12 +331,13 @@ export default function Tarefas({
                 <th className="p-4">Responsável (Líder)</th>
                 <th className="p-4">Prazo Limite</th>
                 <th className="p-4">Origem</th>
+                <th className="p-4 text-right pr-6">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-slate-700 text-sm">
               {tarefasFiltradas.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="text-center py-12 text-slate-400">
+                  <td colSpan={7} className="text-center py-12 text-slate-400">
                     <CheckSquare className="mx-auto mb-2 text-slate-300" size={36} />
                     <p className="font-semibold text-slate-500">Nenhuma tarefa encontrada</p>
                     <p className="text-xs mt-1">Nenhuma ação de liderança correspondente aos filtros.</p>
@@ -306,11 +357,15 @@ export default function Tarefas({
                         task.concluida ? 'opacity-65' : ''
                       }`}
                     >
-                      {/* Checkbox */}
+                      {/* Checkbox — pendente → concluir exige relato no Colaborador;
+                          concluída → clicar apenas reabre a tarefa (desfazer) */}
                       <td className="p-4 pl-6">
                         <button
                           id={`btn-toggle-task-${task.id}`}
-                          onClick={() => onToggleTarefa(task.id)}
+                          onClick={() =>
+                            task.concluida ? onToggleTarefa(task.id) : onIniciarConclusaoTarefa(task)
+                          }
+                          title={task.concluida ? 'Reabrir tarefa' : 'Concluir tarefa (com relato no colaborador)'}
                           className="text-slate-400 hover:text-teal-600 transition cursor-pointer"
                         >
                           {task.concluida ? (
@@ -387,6 +442,26 @@ export default function Tarefas({
                         <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide bg-slate-100 border border-slate-200 text-slate-600 rounded">
                           {task.tipoOrigem}
                         </span>
+                      </td>
+
+                      {/* Ações: Editar / Excluir */}
+                      <td className="p-4 pr-6">
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            onClick={() => handleAbrirEdicaoTarefa(task)}
+                            title="Editar tarefa"
+                            className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg cursor-pointer transition"
+                          >
+                            <Pencil size={15} />
+                          </button>
+                          <button
+                            onClick={() => handleExcluirTarefa(task)}
+                            title="Excluir tarefa"
+                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer transition"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );

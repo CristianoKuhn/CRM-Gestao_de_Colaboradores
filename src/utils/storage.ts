@@ -722,6 +722,11 @@ export const StorageAPI = {
     return undefined;
   },
 
+  deleteTarefa: (id: string) => {
+    const list = StorageAPI.getTarefas();
+    set(KEYS.TAREFAS, list.filter(t => t.id !== id));
+  },
+
   saveSupabaseConfig: (config: SupabaseConfig) => {
     localStorage.setItem(KEYS.SUPABASE, JSON.stringify(config));
   },

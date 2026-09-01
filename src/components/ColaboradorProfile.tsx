@@ -114,6 +114,13 @@ interface ColaboradorProfileProps {
   onAddTimelineRegistro: (reg: TimelineRegistro) => void;
   onAddDocumento: (doc: Documento) => void;
   onDeleteDocumento: (id: string) => void;
+  // Conclusão de Tarefa com relato obrigatório (ver Tarefas.tsx): quando
+  // preenchido, o formulário de novo registro abre automaticamente pré-
+  // preenchido com os dados da Tarefa, e ao salvar o relato tanto cria o
+  // Registro quanto marca a Tarefa como concluída.
+  tarefaParaConcluir?: Tarefa | null;
+  onConcluirTarefa?: (tarefaId: string, novoRegistroId: string) => void;
+  onCancelarConclusaoTarefa?: () => void;
 }
 
 export default function ColaboradorProfile({
@@ -133,6 +140,9 @@ export default function ColaboradorProfile({
   onAddTimelineRegistro,
   onAddDocumento,
   onDeleteDocumento,
+  tarefaParaConcluir,
+  onConcluirTarefa,
+  onCancelarConclusaoTarefa,
 }: ColaboradorProfileProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
@@ -161,6 +171,25 @@ export default function ColaboradorProfile({
   const handleFocarJornada = () => {
     jornadaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
+
+  // Conclusão de Tarefa com relato obrigatório: quando chegamos aqui vindos
+  // de "Tarefas de Liderança" com uma tarefa para concluir, abre o formulário
+  // de novo registro já pré-preenchido com os dados da Tarefa — só falta o
+  // usuário descrever o que foi feito.
+  const formRegistroRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (tarefaParaConcluir && tarefaParaConcluir.colaboradorId === colaborador.id) {
+      setIsFormOpen(true);
+      setRegTipo(tarefaParaConcluir.tipoOrigem);
+      setRegTitulo(`Conclusão: ${tarefaParaConcluir.titulo}`);
+      setRegDescricao('');
+      setRegLiderId(tarefaParaConcluir.responsavelId);
+      setRegStatus('Concluído');
+      setRegPrazo('');
+      formRegistroRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tarefaParaConcluir?.id, colaborador.id]);
   
   // Estado local para foto (sincronizado após upload)
   const [localFotoUrl, setLocalFotoUrl] = useState(colaborador.fotoUrl);
@@ -442,6 +471,8 @@ export default function ColaboradorProfile({
     e.preventDefault();
     if (!regTitulo || !regDescricao) return;
 
+    const concluindoTarefa = tarefaParaConcluir && tarefaParaConcluir.colaboradorId === colaborador.id;
+
     const novoReg: TimelineRegistro = {
       id: `reg-${Date.now()}`,
       colaboradorId: colaborador.id,
@@ -454,10 +485,18 @@ export default function ColaboradorProfile({
       status: regStatus,
       prazoAcompanhamento: regPrazo || undefined,
       gerarTarefaFutura: regGerarTarefa,
+      tarefaId: concluindoTarefa ? tarefaParaConcluir!.id : undefined,
       anexos: regAnexos,
     };
 
     onAddTimelineRegistro(novoReg);
+
+    // Se este registro é o relato de conclusão de uma Tarefa (ver
+    // Tarefas.tsx), a Tarefa só vira "concluída" agora — depois que o relato
+    // já está salvo no histórico do colaborador.
+    if (concluindoTarefa) {
+      onConcluirTarefa?.(tarefaParaConcluir!.id, novoReg.id);
+    }
 
     // Reset Form
     setIsFormOpen(false);
@@ -699,14 +738,50 @@ export default function ColaboradorProfile({
 
           {/* INLINE COLLAPSIBLE FORM: ADD TIMELINE ENTRY */}
           {isFormOpen && (
-            <div className="bg-white border border-teal-100 rounded-3xl p-6 shadow-md animate-slide-down space-y-4">
+            <div
+              ref={formRegistroRef}
+              className={`bg-white rounded-3xl p-6 shadow-md animate-slide-down space-y-4 border ${
+                tarefaParaConcluir && tarefaParaConcluir.colaboradorId === colaborador.id
+                  ? 'border-teal-300 ring-2 ring-teal-100'
+                  : 'border-teal-100'
+              }`}
+            >
+              {tarefaParaConcluir && tarefaParaConcluir.colaboradorId === colaborador.id && (
+                <div className="flex items-start gap-3 bg-teal-50 border border-teal-200 rounded-2xl px-4 py-3">
+                  <CheckCircle2 size={18} className="text-teal-600 shrink-0 mt-0.5" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-bold text-teal-800">
+                      Concluindo a tarefa "{tarefaParaConcluir.titulo}"
+                    </p>
+                    <p className="text-xs text-teal-700 mt-0.5">
+                      Descreva abaixo o que foi feito e salve — isso vira um registro no histórico deste colaborador e encerra a tarefa.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsFormOpen(false);
+                      onCancelarConclusaoTarefa?.();
+                    }}
+                    className="text-xs font-semibold text-teal-700 bg-white border border-teal-200 rounded-lg px-2.5 py-1 hover:bg-teal-100 shrink-0 cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              )}
+
               <div className="flex justify-between items-center border-b border-slate-100 pb-3">
                 <div>
                   <h3 className="font-extrabold text-slate-900">Adicionar Histórico à Timeline</h3>
                   <p className="text-xs text-slate-400 mt-0.5">Este registro formará a timeline cronológica oficial do colaborador.</p>
                 </div>
                 <button
-                  onClick={() => setIsFormOpen(false)}
+                  onClick={() => {
+                    setIsFormOpen(false);
+                    if (tarefaParaConcluir && tarefaParaConcluir.colaboradorId === colaborador.id) {
+                      onCancelarConclusaoTarefa?.();
+                    }
+                  }}
                   className="text-slate-400 hover:text-slate-600 font-bold cursor-pointer"
                 >
                   Fechar &times;

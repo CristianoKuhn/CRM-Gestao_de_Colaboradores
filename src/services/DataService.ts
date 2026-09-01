@@ -294,6 +294,7 @@ export interface IDataService {
   saveTimelineRegistro(registro: TimelineRegistro): Promise<void>;
   saveTarefa(tarefa: Tarefa): Promise<void>;
   toggleTarefa(id: string): Promise<Tarefa | undefined>;
+  deleteTarefa(id: string): Promise<void>;
   saveUsuario(usuario: Usuario): Promise<void>;
   deleteUsuario(id: string): Promise<void>;
 
@@ -593,6 +594,9 @@ export class LocalDataService implements IDataService {
   }
   async toggleTarefa(id: string): Promise<Tarefa | undefined> {
     return StorageAPI.toggleTarefa(id);
+  }
+  async deleteTarefa(id: string): Promise<void> {
+    StorageAPI.deleteTarefa(id);
   }
 
   // Avaliações de Experiência
@@ -2009,6 +2013,20 @@ export class GoogleScriptDataService implements IDataService {
     } catch (e) {
       console.warn('GoogleScript toggleTarefa falhou, usando local:', e);
       return resLocal;
+    }
+  }
+
+  // Uma Tarefa vira, por baixo dos panos, um ItemOperacional (tipo_item =
+  // "tarefa") — mesmo id nos dois lados (ver arquitetura do backend, "Motor
+  // de Itens Operacionais"). Por isso excluir uma Tarefa é, na prática,
+  // excluir o ItemOperacional correspondente; nenhuma action nova precisou
+  // ser criada no Apps Script.
+  async deleteTarefa(id: string): Promise<void> {
+    await this.localFallback.deleteTarefa(id);
+    try {
+      await this.request('deleteItemOperacional', { id });
+    } catch (e) {
+      console.warn('Erro ao excluir tarefa no GoogleScript:', e);
     }
   }
 
@@ -4152,6 +4170,9 @@ class DynamicDataService implements IDataService {
   }
   async toggleTarefa(id: string): Promise<Tarefa | undefined> {
     return this.getService().toggleTarefa(id);
+  }
+  async deleteTarefa(id: string): Promise<void> {
+    await this.getService().deleteTarefa(id);
   }
   async saveUsuario(usuario: Usuario): Promise<void> {
     await this.getService().saveUsuario(usuario);

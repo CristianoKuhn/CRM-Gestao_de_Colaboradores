@@ -45,6 +45,8 @@ import GestaoPessoas from './components/GestaoPessoas';
 import BibliotecaDesenvolvimento from './features/desenvolvimento-colaboradores/BibliotecaDesenvolvimento';
 import ProgramasDesenvolvimento from './features/desenvolvimento-colaboradores/ProgramasDesenvolvimento';
 import DashboardIndicadoresDesenvolvimento from './features/desenvolvimento-colaboradores/DashboardIndicadoresDesenvolvimento';
+import LisaWidget, { ResultadoNavegacaoLisa } from './components/lisa/LisaWidget';
+import { LisaAcaoNavegar } from './services/LisaService';
 import { Users2, X, PlusCircle } from 'lucide-react';
 
 export default function App() {
@@ -311,6 +313,33 @@ export default function App() {
     }
     setTarefaEmConclusao(null);
     loadAllData();
+  };
+
+  // Assistente Lisa — resolve pedidos de navegação (ver LisaWidget /
+  // api/lisa.ts) usando a lista de colaboradores já carregada em memória, sem
+  // precisar mandar nomes de colaboradores para a IA.
+  const normalizarNome = (s: string) =>
+    s
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim();
+
+  const handleLisaNavegarPara = (acao: LisaAcaoNavegar): ResultadoNavegacaoLisa => {
+    if (acao.tela === 'colaboradores' && acao.colaboradorNome) {
+      const alvo = normalizarNome(acao.colaboradorNome);
+      const encontrados = colaboradoresVisiveis.filter((c) => normalizarNome(c.nome).includes(alvo));
+      if (encontrados.length === 0) return { ok: false, motivo: 'nao_encontrado' };
+      if (encontrados.length > 1) {
+        return { ok: false, motivo: 'ambiguo', candidatos: encontrados.map((c) => c.nome) };
+      }
+      setSelectedColaboradorId(encontrados[0].id);
+      setActiveTab('colaboradores');
+      return { ok: true };
+    }
+    setActiveTab(acao.tela);
+    if (acao.tela !== 'colaboradores') setSelectedColaboradorId(null);
+    return { ok: true };
   };
 
   // Tratar inserção na Timeline + auto-geração de tarefas de acompanhamento
@@ -875,6 +904,8 @@ export default function App() {
           </div>
         </div>
       )}
+
+      <LisaWidget onNavegarPara={handleLisaNavegarPara} />
     </div>
   );
 }

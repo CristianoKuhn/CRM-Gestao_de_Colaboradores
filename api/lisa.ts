@@ -9,7 +9,7 @@
 // e pode pedir para o app NAVEGAR até uma tela ou até o perfil de um
 // colaborador. Ela nunca cria, edita ou apaga nada sozinha — quem decide e
 // clica em salvar continua sendo sempre uma pessoa.
-import { GoogleGenAI, Type, FunctionDeclaration, Content } from '@google/genai';
+import { GoogleGenAI, Type, FunctionDeclaration, Content, ThinkingLevel } from '@google/genai';
 
 // Preciso ficar em sincronia manualmente com os ids de aba do Sidebar
 // (src/components/Sidebar.tsx) — não há como importar o frontend aqui.
@@ -79,6 +79,8 @@ EXEMPLO DE COMO AGIR:
 Gestor: "como eu crio um PDI para a Fulana?"
 Você: explica que um PDI é criado dentro do perfil da colaboradora, clicando em "Adicionar Histórico à Timeline" e escolhendo o tipo "Plano de Desenvolvimento Individual (PDI)" — e chama navegarPara(tela="colaboradores", colaboradorNome="Fulana") para já levar o gestor até lá.
 
+IMPORTANTE: sempre que chamar a função navegarPara, escreva TAMBÉM uma frase curta de acompanhamento (ex.: "Vou te levar até o perfil dela — é lá que..."). Nunca chame a função em silêncio, sem nenhum texto.
+
 Seja sempre breve (2 a 4 frases) — o gestor está trabalhando, não lendo um manual.
 `.trim();
 
@@ -125,11 +127,17 @@ export default async function handler(req: any, res: any) {
     ];
 
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.6-flash',
       contents,
       config: {
         systemInstruction: SYSTEM_INSTRUCTION,
         tools: [{ functionDeclarations: [navegarParaDeclaration] }],
+        // A família Gemini 3 vem com "thinking" (raciocínio interno) ligado
+        // por padrão em nível "medium", o que custa tempo e tokens extras a
+        // cada resposta. Para um chat rápido com uma única ferramenta simples
+        // (navegar), "low" já é suficiente e reduz bastante a latência —
+        // sem isso, cada mensagem "pensa" mais do que precisa antes de responder.
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
       },
     });
 

@@ -89,20 +89,22 @@ const LisaWidget: React.FC<LisaWidgetProps> = ({ onNavegarPara }) => {
     setMensagens((prev) => [...prev, { id: `${role}-${Date.now()}-${Math.random()}`, role, texto }]);
   };
 
-  const executarAcoes = (acoes: LisaAcaoNavegar[]) => {
+  const executarAcoes = (acoes: LisaAcaoNavegar[]): boolean => {
+    let algumaComSucesso = false;
     acoes.forEach((acao) => {
       const resultado = onNavegarPara(acao);
-      if (!resultado.ok) {
-        if (resultado.motivo === 'nao_encontrado') {
-          adicionarMensagem('model', `Não encontrei ninguém chamado "${acao.colaboradorNome}" na lista de colaboradores visível para você.`);
-        } else if (resultado.motivo === 'ambiguo') {
-          adicionarMensagem(
-            'model',
-            `Encontrei mais de uma pessoa com esse nome: ${resultado.candidatos.join(', ')}. Pode me dizer o nome completo?`
-          );
-        }
+      if (resultado.ok) {
+        algumaComSucesso = true;
+      } else if (resultado.motivo === 'nao_encontrado') {
+        adicionarMensagem('model', `Não encontrei ninguém chamado "${acao.colaboradorNome}" na lista de colaboradores visível para você.`);
+      } else if (resultado.motivo === 'ambiguo') {
+        adicionarMensagem(
+          'model',
+          `Encontrei mais de uma pessoa com esse nome: ${resultado.candidatos.join(', ')}. Pode me dizer o nome completo?`
+        );
       }
     });
+    return algumaComSucesso;
   };
 
   const enviarMensagem = async () => {
@@ -118,9 +120,11 @@ const LisaWidget: React.FC<LisaWidgetProps> = ({ onNavegarPara }) => {
       const historico: LisaMensagem[] = mensagens.map((m) => ({ role: m.role, texto: m.texto }));
       const resposta = await perguntarParaLisa(texto, historico);
       if (resposta.texto) adicionarMensagem('model', resposta.texto);
-      executarAcoes(resposta.acoes);
-      if (!resposta.texto && resposta.acoes.length === 0) {
-        adicionarMensagem('model', 'Certo!');
+      const navegou = executarAcoes(resposta.acoes);
+      if (!resposta.texto) {
+        // Rede de segurança: se a IA chamou a ferramenta sem escrever nada
+        // junto (acontece às vezes), o gestor ainda vê uma confirmação.
+        adicionarMensagem('model', navegou ? 'Pronto, te levei até lá! ✅' : 'Certo!');
       }
     } catch (e: any) {
       setErro(e?.message || 'Não consegui falar com a Lisa agora.');

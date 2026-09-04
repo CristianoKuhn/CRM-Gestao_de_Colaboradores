@@ -45,42 +45,70 @@ import GestaoPessoas from './components/GestaoPessoas';
 import BibliotecaDesenvolvimento from './features/desenvolvimento-colaboradores/BibliotecaDesenvolvimento';
 import ProgramasDesenvolvimento from './features/desenvolvimento-colaboradores/ProgramasDesenvolvimento';
 import DashboardIndicadoresDesenvolvimento from './features/desenvolvimento-colaboradores/DashboardIndicadoresDesenvolvimento';
-import LisaWidget, { ResultadoNavegacaoLisa } from './components/lisa/LisaWidget';
+import LisaWidget, { ResultadoNavegacaoLisa, ResumoDiarioLisa } from './components/lisa/LisaWidget';
 import { LisaAcaoNavegar } from './services/LisaService';
 import { Users2, X, PlusCircle } from 'lucide-react';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<Usuario | null>(null);
 
+  const VINTE_QUATRO_HORAS_MS = 24 * 60 * 60 * 1000;
+
   // Inicializa o LocalStorage com os dados padrões (seed) se não existirem
   useEffect(() => {
     initializeStorage();
     loadAllData();
-    // Restaurar sessão de login
+    // Restaurar sessão de login — mas força um novo login se já se passaram
+    // 24h desde o último (prática básica de expiração de sessão).
     const savedUser = localStorage.getItem('gc_logged_in_user');
-    if (savedUser) {
+    const loginTimestamp = Number(localStorage.getItem('gc_login_timestamp') || 0);
+    const sessaoExpirada = !loginTimestamp || Date.now() - loginTimestamp > VINTE_QUATRO_HORAS_MS;
+
+    if (savedUser && !sessaoExpirada) {
       try {
         setCurrentUser(JSON.parse(savedUser));
       } catch (e) {
         console.error('Erro ao restaurar sessão de login:', e);
       }
+    } else if (savedUser && sessaoExpirada) {
+      localStorage.removeItem('gc_logged_in_user');
+      localStorage.removeItem('gc_login_timestamp');
     }
+  }, []);
+
+  // Verifica periodicamente (a cada 5 min) se a sessão expirou enquanto a aba
+  // ficou aberta — sem isso, quem deixa o app aberto o dia inteiro só seria
+  // deslogado no próximo F5.
+  useEffect(() => {
+    const intervalo = setInterval(() => {
+      const loginTimestamp = Number(localStorage.getItem('gc_login_timestamp') || 0);
+      if (loginTimestamp && Date.now() - loginTimestamp > VINTE_QUATRO_HORAS_MS) {
+        handleLogout();
+      }
+    }, 5 * 60 * 1000);
+    return () => clearInterval(intervalo);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleLoginSuccess = (user: Usuario) => {
     setCurrentUser(user);
     localStorage.setItem('gc_logged_in_user', JSON.stringify(user));
+    localStorage.setItem('gc_login_timestamp', String(Date.now()));
   };
 
   const handleLogout = () => {
     setCurrentUser(null);
     localStorage.removeItem('gc_logged_in_user');
+    localStorage.removeItem('gc_login_timestamp');
     setActiveTab('dashboard');
   };
 
   // Estados globais da aplicação
   const [activeTab, setActiveTab] = useState<string>('dashboard');
   const [colaboradores, setColaboradores] = useState<Colaborador[]>([]);
+  // Sinaliza quando o primeiro carregamento de dados termina — usado pela
+  // Lisa para não montar o resumo diário com listas vazias antes da hora.
+  const [dadosCarregados, setDadosCarregados] = useState(false);
   const [timeline, setTimeline] = useState<TimelineRegistro[]>([]);
   const [tarefas, setTarefas] = useState<Tarefa[]>([]);
   const [setores, setSetores] = useState<Setor[]>([]);
@@ -201,6 +229,8 @@ export default function App() {
       setActiveProvider(StorageAPI.getDataSourceProvider());
     } catch (error) {
       console.error('Erro ao carregar dados do DataService:', error);
+    } finally {
+      setDadosCarregados(true);
     }
   };
 
@@ -604,6 +634,61 @@ export default function App() {
   // Contadores dinâmicos para barra lateral
   const tarefasPendentesCount = tarefasVisiveis.filter((t) => !t.concluida).length;
 
+  // Resumo diário da Lisa (boas-vindas inteligentes ao entrar no sistema) —
+  // tudo calculado aqui, a partir de dados reais já carregados, para a IA só
+  // ter que dar um "tom" de voz aos números, nunca inventá-los.
+  const diaAteISODigest = (dataStr: string): number => {
+    const alvo = new Date(dataStr);
+    alvo.setHours(0, 0, 0, 0);
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+    return Math.round((alvo.getTime() - hoje.getTime()) / (1000 * 60 * 60 * 24));
+  };
+
+  const tarefasPendentesDigest = tarefasVisiveis.filter((t) => !t.concluida);
+  const tarefasAVencerDigest = tarefasPendentesDigest
+    .map((t) => ({ titulo: t.titulo, dias: diaAteISODigest(t.vencimento) }))
+    .filter((t) => t.dias >= 0 && t.dias <= 3)
+    .sort((a, b) => a.dias - b.dias)
+    .slice(0, 6);
+  const tarefasAtrasadasDigest = tarefasPendentesDigest.filter((t) => diaAteISODigest(t.vencimento) < 0).length;
+
+  const avaliacoes180ProximasDigest = alertasVisiveis
+    .filter((a) => a.tipo === 'avaliacao_180' && a.status !== 'resolvido')
+    .map((a) => colaboradoresVisiveis.find((c) => c.id === a.colaboradorId)?.nome)
+    .filter((n): n is string => !!n);
+
+  const hojeDigest = new Date();
+  const diaDoMesDigest = hojeDigest.getDate();
+  const diasNoMesDigest = new Date(hojeDigest.getFullYear(), hojeDigest.getMonth() + 1, 0).getDate();
+  const anoMesDigest = `${hojeDigest.getFullYear()}-${String(hojeDigest.getMonth() + 1).padStart(2, '0')}`;
+
+  const contagemContatosMesDigest: Record<string, number> = {};
+  timelineVisivel.forEach((reg) => {
+    if (reg.data?.startsWith(anoMesDigest)) {
+      contagemContatosMesDigest[reg.colaboradorId] = (contagemContatosMesDigest[reg.colaboradorId] || 0) + 1;
+    }
+  });
+  // Só aponta quem está "abaixo da meta" (2 contatos/mês) na reta final do
+  // mês (a partir do dia 20) — antes disso ainda é cedo demais para
+  // significar alguma coisa, e só geraria alarme falso.
+  const colaboradoresAbaixoDaMetaDigest =
+    diaDoMesDigest > 20
+      ? colaboradoresVisiveis
+          .filter((c) => c.situacao !== 'Desligado')
+          .filter((c) => (contagemContatosMesDigest[c.id] || 0) < 2)
+          .map((c) => c.nome)
+      : [];
+
+  const resumoDiarioLisa: ResumoDiarioLisa = {
+    tarefasAtrasadas: tarefasAtrasadasDigest,
+    tarefasAVencer: tarefasAVencerDigest,
+    avaliacoes180Proximas: avaliacoes180ProximasDigest,
+    colaboradoresAbaixoDaMeta: colaboradoresAbaixoDaMetaDigest,
+    diaDoMes: diaDoMesDigest,
+    diasNoMes: diasNoMesDigest,
+  };
+
   if (currentUser === null) {
     return <Login onLoginSuccess={handleLoginSuccess} />;
   }
@@ -905,7 +990,12 @@ export default function App() {
         </div>
       )}
 
-      <LisaWidget onNavegarPara={handleLisaNavegarPara} />
+      <LisaWidget
+        onNavegarPara={handleLisaNavegarPara}
+        resumoDiario={dadosCarregados ? resumoDiarioLisa : undefined}
+        usuarioId={currentUser?.id}
+        nomeUsuario={currentUser?.nome}
+      />
     </div>
   );
 }

@@ -15,8 +15,24 @@ export type ResultadoNavegacaoLisa =
   | { ok: false; motivo: 'nao_encontrado' }
   | { ok: false; motivo: 'ambiguo'; candidatos: string[] };
 
+// Dados reais (nunca inventados pela IA) para o resumo diário — calculados
+// pelo App.tsx a partir do que já está carregado em memória.
+export interface ResumoDiarioLisa {
+  tarefasAtrasadas: number;
+  tarefasAVencer: { titulo: string; dias: number }[];
+  avaliacoes180Proximas: string[];
+  colaboradoresAbaixoDaMeta: string[];
+  diaDoMes: number;
+  diasNoMes: number;
+}
+
 interface LisaWidgetProps {
   onNavegarPara: (acao: LisaAcaoNavegar) => ResultadoNavegacaoLisa;
+  // Quando presente (dados já carregados), a Lisa monta e mostra automaticamente
+  // — no máximo uma vez por dia — um resumo de boas-vindas com esses dados.
+  resumoDiario?: ResumoDiarioLisa;
+  usuarioId?: string;
+  nomeUsuario?: string;
 }
 
 interface MensagemExibida extends LisaMensagem {
@@ -24,6 +40,46 @@ interface MensagemExibida extends LisaMensagem {
 }
 
 const POSICAO_STORAGE_KEY = 'lisa_widget_posicao';
+
+function chaveResumoMostradoHoje(usuarioId: string): string {
+  const hoje = new Date();
+  const dataISO = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
+  return `lisa_resumo_mostrado_${usuarioId}_${dataISO}`;
+}
+
+// Versão determinística do resumo — é o que sempre aparece se, por qualquer
+// motivo, a chamada à IA falhar (chave ausente, limite de uso, etc.). O
+// resumo diário é considerado importante o bastante para nunca depender só
+// da IA estar no ar.
+function montarResumoBase(resumo: ResumoDiarioLisa, nomeUsuario?: string): string {
+  const linhas: string[] = [];
+  const primeiroNome = nomeUsuario ? nomeUsuario.split(' ')[0] : undefined;
+  linhas.push(primeiroNome ? `Bom te ver de novo, ${primeiroNome}! Aqui está o seu resumo de hoje:` : 'Bom te ver de novo! Aqui está o seu resumo de hoje:');
+
+  if (resumo.tarefasAtrasadas > 0) {
+    linhas.push(`⚠️ Você tem ${resumo.tarefasAtrasadas} tarefa(s) atrasada(s).`);
+  }
+  if (resumo.tarefasAVencer.length > 0) {
+    const lista = resumo.tarefasAVencer
+      .map((t) => `"${t.titulo}" (${t.dias === 0 ? 'vence hoje' : `em ${t.dias} dia(s)`})`)
+      .join(', ');
+    linhas.push(`📌 Vencendo nos próximos 3 dias: ${lista}.`);
+  } else if (resumo.tarefasAtrasadas === 0) {
+    linhas.push('✅ Nenhuma tarefa atrasada ou vencendo nos próximos 3 dias.');
+  }
+
+  if (resumo.avaliacoes180Proximas.length > 0) {
+    linhas.push(`📋 Avaliação 180° próxima para: ${resumo.avaliacoes180Proximas.join(', ')}.`);
+  }
+
+  if (resumo.colaboradoresAbaixoDaMeta.length > 0) {
+    linhas.push(
+      `💬 Faltando ${resumo.diasNoMes - resumo.diaDoMes} dia(s) para o fim do mês, ainda não bateram a meta de 2 contatos: ${resumo.colaboradoresAbaixoDaMeta.join(', ')}.`
+    );
+  }
+
+  return linhas.join('\n');
+}
 
 // Avatar em SVG, estilizado e abstrato de propósito — não representa uma
 // pessoa real, só um rosto simpático e reconhecível como "a assistente".
@@ -42,7 +98,7 @@ const RostoLisa: React.FC<{ size?: number }> = ({ size = 30 }) => (
   </svg>
 );
 
-const LisaWidget: React.FC<LisaWidgetProps> = ({ onNavegarPara }) => {
+const LisaWidget: React.FC<LisaWidgetProps> = ({ onNavegarPara, resumoDiario, usuarioId, nomeUsuario }) => {
   const [aberto, setAberto] = useState(false);
   const [mensagens, setMensagens] = useState<MensagemExibida[]>([
     {
@@ -58,6 +114,7 @@ const LisaWidget: React.FC<LisaWidgetProps> = ({ onNavegarPara }) => {
   const fimDaListaRef = useRef<HTMLDivElement>(null);
   const posX = useMotionValue(0);
   const posY = useMotionValue(0);
+
 
   // Lembra onde o gestor deixou o avatar da última vez.
   useEffect(() => {
@@ -76,6 +133,38 @@ const LisaWidget: React.FC<LisaWidgetProps> = ({ onNavegarPara }) => {
   useEffect(() => {
     fimDaListaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [mensagens, carregando]);
+
+  // Boas-vindas inteligentes: assim que os dados terminam de carregar, se
+  // ainda não mostramos o resumo hoje para este usuário, monta e envia.
+  const jaTentouResumoRef = useRef(false);
+  useEffect(() => {
+    if (!resumoDiario || !usuarioId || jaTentouResumoRef.current) return;
+    const chave = chaveResumoMostradoHoje(usuarioId);
+    if (localStorage.getItem(chave)) return;
+    jaTentouResumoRef.current = true;
+
+    const textoBase = montarResumoBase(resumoDiario, nomeUsuario);
+
+    (async () => {
+      let textoFinal = textoBase;
+      try {
+        const prompt = `(Mensagem automática de entrada no sistema — não foi o gestor quem escreveu isso.) Reescreva os dados abaixo como uma saudação de boas-vindas curta e calorosa, no máximo 5 frases (pode usar quebras de linha/lista), em português do Brasil. Não invente nenhum número ou nome além dos que aparecem aqui. Não chame nenhuma função desta vez, apenas responda em texto.\n\n${textoBase}`;
+        const resposta = await perguntarParaLisa(prompt, []);
+        if (resposta.texto) textoFinal = resposta.texto;
+      } catch {
+        // Sem IA disponível agora? Sem problema — o resumo determinístico já
+        // é suficiente e sempre confiável.
+      }
+      setMensagens([{ id: 'resumo-diario', role: 'model', texto: textoFinal }]);
+      setAberto(true);
+      try {
+        localStorage.setItem(chave, '1');
+      } catch {
+        // Se não conseguir gravar, o pior caso é mostrar de novo na próxima
+        // vez — não é grave.
+      }
+    })();
+  }, [resumoDiario, usuarioId, nomeUsuario]);
 
   const salvarPosicao = () => {
     try {

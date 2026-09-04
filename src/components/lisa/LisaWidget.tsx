@@ -78,7 +78,39 @@ function montarResumoBase(resumo: ResumoDiarioLisa, nomeUsuario?: string): strin
     );
   }
 
+  linhas.push('Se precisar de algo, é só me chamar! 😊');
+
   return linhas.join('\n');
+}
+
+// Formatação leve do texto da Lisa — suporta **negrito** e itens de lista
+// começando com "- ", sem precisar de uma lib de markdown inteira. Constrói
+// nós React diretamente (nunca dangerouslySetInnerHTML), então é seguro
+// mesmo com texto vindo da IA.
+function renderizarNegrito(segmento: string, prefixoChave: string): React.ReactNode[] {
+  const partes = segmento.split(/(\*\*[^*]+\*\*)/g).filter((p) => p.length > 0);
+  return partes.map((parte, i) =>
+    parte.startsWith('**') && parte.endsWith('**') && parte.length > 4 ? (
+      <strong key={`${prefixoChave}-b-${i}`}>{parte.slice(2, -2)}</strong>
+    ) : (
+      <React.Fragment key={`${prefixoChave}-t-${i}`}>{parte}</React.Fragment>
+    )
+  );
+}
+
+function renderizarTextoLisa(texto: string): React.ReactNode {
+  const linhas = texto.split('\n');
+  return linhas.map((linha, idx) => {
+    const linhaSemEspacos = linha.trimStart();
+    const ehItemLista = linhaSemEspacos.startsWith('- ') || linhaSemEspacos.startsWith('• ');
+    const conteudo = ehItemLista ? linhaSemEspacos.replace(/^[-•]\s+/, '') : linha;
+    return (
+      <div key={idx} className={ehItemLista ? 'pl-3.5 relative' : undefined}>
+        {ehItemLista && <span className="absolute left-0">•</span>}
+        {renderizarNegrito(conteudo, `l${idx}`)}
+      </div>
+    );
+  });
 }
 
 // Avatar em SVG, estilizado e abstrato de propósito — não representa uma
@@ -135,7 +167,10 @@ const LisaWidget: React.FC<LisaWidgetProps> = ({ onNavegarPara, resumoDiario, us
   }, [mensagens, carregando]);
 
   // Boas-vindas inteligentes: assim que os dados terminam de carregar, se
-  // ainda não mostramos o resumo hoje para este usuário, monta e envia.
+  // ainda não mostramos o resumo hoje para este usuário, monta e mostra.
+  // Deliberadamente SEM passar pela IA aqui — um resumo com nomes de tarefas
+  // e contagens reais não pode correr o risco de a IA "completar" ou
+  // reformular um número/nome errado. A IA fica só para a conversa livre.
   const jaTentouResumoRef = useRef(false);
   useEffect(() => {
     if (!resumoDiario || !usuarioId || jaTentouResumoRef.current) return;
@@ -143,27 +178,15 @@ const LisaWidget: React.FC<LisaWidgetProps> = ({ onNavegarPara, resumoDiario, us
     if (localStorage.getItem(chave)) return;
     jaTentouResumoRef.current = true;
 
-    const textoBase = montarResumoBase(resumoDiario, nomeUsuario);
-
-    (async () => {
-      let textoFinal = textoBase;
-      try {
-        const prompt = `(Mensagem automática de entrada no sistema — não foi o gestor quem escreveu isso.) Reescreva os dados abaixo como uma saudação de boas-vindas curta e calorosa, no máximo 5 frases (pode usar quebras de linha/lista), em português do Brasil. Não invente nenhum número ou nome além dos que aparecem aqui. Não chame nenhuma função desta vez, apenas responda em texto.\n\n${textoBase}`;
-        const resposta = await perguntarParaLisa(prompt, []);
-        if (resposta.texto) textoFinal = resposta.texto;
-      } catch {
-        // Sem IA disponível agora? Sem problema — o resumo determinístico já
-        // é suficiente e sempre confiável.
-      }
-      setMensagens([{ id: 'resumo-diario', role: 'model', texto: textoFinal }]);
-      setAberto(true);
-      try {
-        localStorage.setItem(chave, '1');
-      } catch {
-        // Se não conseguir gravar, o pior caso é mostrar de novo na próxima
-        // vez — não é grave.
-      }
-    })();
+    const textoFinal = montarResumoBase(resumoDiario, nomeUsuario);
+    setMensagens([{ id: 'resumo-diario', role: 'model', texto: textoFinal }]);
+    setAberto(true);
+    try {
+      localStorage.setItem(chave, '1');
+    } catch {
+      // Se não conseguir gravar, o pior caso é mostrar de novo na próxima
+      // vez — não é grave.
+    }
   }, [resumoDiario, usuarioId, nomeUsuario]);
 
   const salvarPosicao = () => {
@@ -284,7 +307,7 @@ const LisaWidget: React.FC<LisaWidgetProps> = ({ onNavegarPara, resumoDiario, us
                       : 'bg-white border border-slate-100 text-slate-700 rounded-bl-md shadow-sm'
                   }`}
                 >
-                  {m.texto}
+                  {renderizarTextoLisa(m.texto)}
                 </div>
               </div>
             ))}

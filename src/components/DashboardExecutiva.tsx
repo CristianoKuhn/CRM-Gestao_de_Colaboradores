@@ -16,8 +16,10 @@ import {
   Setor,
   Programa,
   IndicadorDesenvolvimento,
+  Ferias,
 } from '../types';
 import { DataService } from '../services/DataService';
+import { calcularLembretes180, calcularLembretesExperiencia } from '../utils/lembretesAvaliacao';
 import Dashboard from './Dashboard';
 import Analytics from './Analytics';
 import {
@@ -29,6 +31,11 @@ import {
   AlertTriangle,
   BarChart3,
   Gauge,
+  ClipboardCheck,
+  UserX,
+  Plane,
+  ArrowRight,
+  ChevronDown,
 } from 'lucide-react';
 
 interface DashboardExecutivaProps {
@@ -71,6 +78,8 @@ export default function DashboardExecutiva(props: DashboardExecutivaProps) {
   const [programas, setProgramas] = useState<Programa[]>([]);
   const [indicadores, setIndicadores] = useState<IndicadorDesenvolvimento[]>([]);
   const [colaboradoresComGapCritico, setColaboradoresComGapCritico] = useState(0);
+  const [ferias, setFerias] = useState<Ferias[]>([]);
+  const [mostrarTodosSemInteracao, setMostrarTodosSemInteracao] = useState(false);
 
   const carregarDadosDesenvolvimento = useCallback(async () => {
     setCarregando(true);
@@ -93,6 +102,13 @@ export default function DashboardExecutiva(props: DashboardExecutivaProps) {
   useEffect(() => {
     carregarDadosDesenvolvimento();
   }, [carregarDadosDesenvolvimento]);
+
+  // Férias ainda não é levantada em App.tsx (só GestaoPessoas/PlanejadorFerias
+  // buscam a própria cópia hoje) — segue o mesmo padrão aqui, buscando
+  // diretamente, em vez de encadear uma mudança maior no App.tsx só por isso.
+  useEffect(() => {
+    DataService.getFerias().then(setFerias);
+  }, []);
 
   const valorIndicador = (tipo: string, escopoTipo: string, escopoId = ''): number | null => {
     const item = indicadores.find((i) => i.tipoIndicador === tipo && i.escopoTipo === escopoTipo && (i.escopoId || '') === escopoId);
@@ -148,6 +164,43 @@ export default function DashboardExecutiva(props: DashboardExecutivaProps) {
   const topAlertas = Object.entries(alertasPorTipo)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 4);
+
+  // ── Radar de negligência: sem interação há mais de 3 meses ────────────
+  // Independente do alerta "sem_interacao" (esse é de curto prazo, ~14 dias,
+  // e serve para outro fim). Aqui é uma checagem de longo prazo, direto da
+  // timeline: quem nunca teve registro nenhum entra com prioridade máxima.
+  const hojeZerado = new Date();
+  hojeZerado.setHours(0, 0, 0, 0);
+  const colaboradoresSemInteracao = colaboradoresAtivos
+    .map((c) => {
+      const datasValidas = timeline
+        .filter((r) => r.colaboradorId === c.id)
+        .map((r) => new Date(r.data))
+        .filter((d) => !isNaN(d.getTime()));
+      const ultimaData = datasValidas.length > 0 ? new Date(Math.max(...datasValidas.map((d) => d.getTime()))) : null;
+      const diasSemContato = ultimaData
+        ? Math.round((hojeZerado.getTime() - ultimaData.getTime()) / (1000 * 60 * 60 * 24))
+        : Infinity;
+      return { colaborador: c, diasSemContato };
+    })
+    .filter((item) => item.diasSemContato > 90)
+    .sort((a, b) => b.diasSemContato - a.diasSemContato);
+
+  // ── Avaliações urgentes (180° em até 7 dias ou já atrasada + Experiência
+  // dentro da janela configurada) — versão enxuta da lista completa que
+  // continua disponível na aba "Dashboard Operacional".
+  const avaliacoesUrgentes = [
+    ...calcularLembretes180(colaboradores, props.configuracaoAlertas, hoje).filter((l) => l.diasRestantes <= 7),
+    ...calcularLembretesExperiencia(colaboradores, props.avaliacoesExperiencia, props.configuracaoAlertas, hoje),
+  ].sort((a, b) => a.diasRestantes - b.diasRestantes);
+
+  // ── Férias em gozo ou começando nos próximos 30 dias ──────────────────
+  const feriasProximas = ferias
+    .filter((f) => f.status === 'planejada' || f.status === 'em_gozo')
+    .map((f) => ({ ferias: f, inicio: new Date(f.dataInicio), fim: new Date(f.dataFim), colaborador: colaboradores.find((c) => c.id === f.colaboradorId) }))
+    .filter((item): item is typeof item & { colaborador: Colaborador } => !!item.colaborador && !isNaN(item.inicio.getTime()) && item.fim >= hojeZerado)
+    .filter((item) => Math.round((item.inicio.getTime() - hojeZerado.getTime()) / (1000 * 60 * 60 * 24)) <= 30)
+    .sort((a, b) => a.inicio.getTime() - b.inicio.getTime());
 
   const abas: { id: AbaExecutiva; label: string; icon: React.ElementType }[] = [
     { id: 'visao-geral', label: 'Visão Geral', icon: LayoutDashboard },
@@ -266,6 +319,127 @@ export default function DashboardExecutiva(props: DashboardExecutivaProps) {
                 <p className="text-[10px] text-slate-400 mt-2 pt-2 border-t border-slate-50">
                   {alertasPendentes.length} pendente(s) no total
                 </p>
+              </div>
+            </div>
+          )}
+
+          {/* Painéis de ação — quem precisa de atenção AGORA, não só um número */}
+          {!carregando && (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              {/* Avaliações urgentes */}
+              <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-5">
+                <div className="flex items-center gap-2 mb-3">
+                  <ClipboardCheck size={16} className="text-rose-500" />
+                  <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wide">Avaliações a organizar</h3>
+                </div>
+                {avaliacoesUrgentes.length === 0 ? (
+                  <p className="text-xs text-slate-400">Nada urgente — em dia. 🎉</p>
+                ) : (
+                  <div className="flex flex-col gap-1.5">
+                    {avaliacoesUrgentes.slice(0, 6).map((l) => (
+                      <button
+                        key={`${l.colaborador.id}-${l.milestone}`}
+                        onClick={() => props.onSelectColaborador(l.colaborador.id)}
+                        className="flex items-center justify-between gap-2 bg-slate-50 hover:bg-slate-100 rounded-xl px-3 py-2 text-left transition cursor-pointer"
+                      >
+                        <span className="min-w-0">
+                          <span className="text-xs font-bold text-slate-700 truncate block">{l.colaborador.nome}</span>
+                          <span className="text-[10px] text-slate-400">{l.label}</span>
+                        </span>
+                        <span
+                          className={`shrink-0 text-[10px] font-bold px-2 py-1 rounded-full ${
+                            l.diasRestantes < 0 ? 'bg-rose-50 text-rose-600' : 'bg-amber-50 text-amber-600'
+                          }`}
+                        >
+                          {l.diasRestantes < 0 ? `Atrasada ${Math.abs(l.diasRestantes)}d` : l.diasRestantes === 0 ? 'Hoje' : `${l.diasRestantes}d`}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {avaliacoesUrgentes.length > 0 && (
+                  <button
+                    onClick={() => setAba('operacional')}
+                    className="text-[11px] font-bold text-teal-600 hover:text-teal-700 flex items-center gap-1 mt-3 pt-2 border-t border-slate-50"
+                  >
+                    Ver lista completa <ArrowRight size={11} />
+                  </button>
+                )}
+              </div>
+
+              {/* Sem interação há 3+ meses */}
+              <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-5">
+                <div className="flex items-center gap-2 mb-3">
+                  <UserX size={16} className="text-amber-500" />
+                  <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wide">Sem interação há 3+ meses</h3>
+                </div>
+                {colaboradoresSemInteracao.length === 0 ? (
+                  <p className="text-xs text-slate-400">Todo mundo com contato recente. 🎉</p>
+                ) : (
+                  <div className="flex flex-col gap-1.5">
+                    {(mostrarTodosSemInteracao ? colaboradoresSemInteracao : colaboradoresSemInteracao.slice(0, 3)).map(
+                      (item) => (
+                        <button
+                          key={item.colaborador.id}
+                          onClick={() => props.onSelectColaborador(item.colaborador.id)}
+                          className="flex items-center justify-between gap-2 bg-slate-50 hover:bg-slate-100 rounded-xl px-3 py-2 text-left transition cursor-pointer"
+                        >
+                          <span className="text-xs font-bold text-slate-700 truncate">{item.colaborador.nome}</span>
+                          <span className="shrink-0 text-[10px] font-bold px-2 py-1 rounded-full bg-amber-50 text-amber-600">
+                            {item.diasSemContato === Infinity ? 'Nunca' : `${item.diasSemContato}d`}
+                          </span>
+                        </button>
+                      )
+                    )}
+                  </div>
+                )}
+                {colaboradoresSemInteracao.length > 3 && (
+                  <button
+                    onClick={() => setMostrarTodosSemInteracao((v) => !v)}
+                    className="text-[11px] font-bold text-teal-600 hover:text-teal-700 flex items-center gap-1 mt-3 pt-2 border-t border-slate-50"
+                  >
+                    {mostrarTodosSemInteracao ? 'Ver só os 3 primeiros' : `Ver todos (${colaboradoresSemInteracao.length})`}
+                    <ChevronDown size={12} className={mostrarTodosSemInteracao ? 'rotate-180 transition' : 'transition'} />
+                  </button>
+                )}
+              </div>
+
+              {/* Férias */}
+              <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-5">
+                <div className="flex items-center gap-2 mb-3">
+                  <Plane size={16} className="text-indigo-500" />
+                  <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wide">Férias</h3>
+                </div>
+                {feriasProximas.length === 0 ? (
+                  <p className="text-xs text-slate-400">Ninguém de férias nos próximos 30 dias.</p>
+                ) : (
+                  <div className="flex flex-col gap-1.5">
+                    {feriasProximas.slice(0, 6).map((item) => {
+                      const emGozo = item.ferias.status === 'em_gozo' || item.inicio <= hojeZerado;
+                      return (
+                        <button
+                          key={item.ferias.id}
+                          onClick={() => props.onSelectColaborador(item.colaborador.id)}
+                          className="flex items-center justify-between gap-2 bg-slate-50 hover:bg-slate-100 rounded-xl px-3 py-2 text-left transition cursor-pointer"
+                        >
+                          <span className="min-w-0">
+                            <span className="text-xs font-bold text-slate-700 truncate block">{item.colaborador.nome}</span>
+                            <span className="text-[10px] text-slate-400">
+                              {item.inicio.toLocaleDateString('pt-BR')} – {item.fim.toLocaleDateString('pt-BR')}
+                            </span>
+                          </span>
+                          <span
+                            className={`shrink-0 text-[10px] font-bold px-2 py-1 rounded-full ${
+                              emGozo ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-100 text-slate-500'
+                            }`}
+                          >
+                            {emGozo ? 'Em gozo' : 'Planejada'}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
           )}

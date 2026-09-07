@@ -121,6 +121,44 @@ export function exportarPDF(html: string, nomeArquivo: string) {
   }
 }
 
+// HTML enxuto para exportar o RESUMO por tópicos (gerado pela IA), em vez do
+// histórico cru completo — ver "Atualizar Resumo" em LinhaDoTempoInteligente.
+export function gerarHTMLParaResumo(resumoTexto: string, nomeColaborador: string, atualizadoEm: string): string {
+  const paragrafos = resumoTexto
+    .split('\n')
+    .filter((linha) => linha.trim().length > 0)
+    .map((linha) => `<p>${escapeHTML(linha)}</p>`)
+    .join('\n');
+
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="UTF-8">
+      <title>Resumo - ${nomeColaborador}</title>
+      <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Arial, sans-serif; padding: 40px; color: #1e293b; }
+        .header { text-align: center; margin-bottom: 30px; border-bottom: 3px solid #0d9488; padding-bottom: 20px; }
+        .header h1 { color: #0d9488; font-size: 24px; margin-bottom: 5px; }
+        .header p { color: #64748b; font-size: 12px; }
+        .conteudo p { margin-bottom: 14px; line-height: 1.7; font-size: 14px; color: #334155; }
+        @media print { body { padding: 20px; } }
+      </style>
+    </head>
+    <body>
+      <div class="header">
+        <h1>Resumo — ${nomeColaborador}</h1>
+        <p>Gerado por IA a partir do histórico completo · Última atualização: ${formatDate(atualizadoEm)}</p>
+      </div>
+      <div class="conteudo">
+        ${paragrafos}
+      </div>
+    </body>
+    </html>
+  `;
+}
+
 export function exportarCSV(csv: string, nomeArquivo: string) {
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);

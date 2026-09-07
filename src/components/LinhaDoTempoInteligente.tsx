@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   ItemLinhaTempo,
   TimelineRegistro,
@@ -11,6 +11,7 @@ import {
   Reconhecimento,
   Tarefa,
   ConfiguracaoReconhecimento,
+  ResumoLinhaTempo,
 } from '../types';
 import {
   construirLinhaTempo,
@@ -18,7 +19,10 @@ import {
   exportarCSV,
   gerarCSV,
   gerarHTMLParaPDF,
+  gerarHTMLParaResumo,
 } from '../utils/exportUtils';
+import { DataService } from '../services/DataService';
+import { atualizarResumoTimeline } from '../services/ResumoTimelineService';
 import {
   Clock,
   FileText,
@@ -29,6 +33,8 @@ import {
   Filter,
   Search,
   ChevronDown,
+  Sparkles,
+  RefreshCw,
 } from 'lucide-react';
 
 interface LinhaDoTempoInteligenteProps {
@@ -39,6 +45,7 @@ interface LinhaDoTempoInteligenteProps {
   configReconhecimento: ConfiguracaoReconhecimento;
   colaboradorNome: string;
   colaboradorId?: string;
+  currentUserId?: string;
 }
 
 const ICONES_TIPO: Record<string, string> = {
@@ -67,10 +74,17 @@ export default function LinhaDoTempoInteligente({
   configReconhecimento,
   colaboradorNome,
   colaboradorId,
+  currentUserId,
 }: LinhaDoTempoInteligenteProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterTipo, setFilterTipo] = useState<string>('todos');
   const [showExportMenu, setShowExportMenu] = useState(false);
+
+  // ── Resumo Inteligente (IA, incremental) ──────────────────────────────
+  const [resumo, setResumo] = useState<ResumoLinhaTempo | undefined>(undefined);
+  const [carregandoResumo, setCarregandoResumo] = useState(false);
+  const [atualizandoResumo, setAtualizandoResumo] = useState(false);
+  const [mensagemResumo, setMensagemResumo] = useState<string | null>(null);
 
   // Filtrar registros por colaborador se ID for fornecido
   const registrosFiltrados = useMemo(() => {
@@ -103,6 +117,72 @@ export default function LinhaDoTempoInteligente({
       configReconhecimento
     );
   }, [registrosFiltrados, documentosFiltrados, reconhecimentosFiltrados, tarefasFiltradas, configReconhecimento]);
+
+  // Carrega o resumo já salvo (se existir) assim que soubermos de qual
+  // colaborador se trata — nunca dispara sozinho uma chamada de IA, só lê o
+  // que já está gravado.
+  useEffect(() => {
+    if (!colaboradorId) return;
+    setCarregandoResumo(true);
+    DataService.getResumoLinhaTempo(colaboradorId)
+      .then(setResumo)
+      .finally(() => setCarregandoResumo(false));
+  }, [colaboradorId]);
+
+  // Eventos ainda não incorporados ao resumo salvo — SEMPRE contra a linha do
+  // tempo completa (nunca a filtrada por busca/tipo), já que o resumo
+  // representa o histórico real, não a visão momentânea da tela.
+  const eventosNovosPendentes = useMemo(() => {
+    const ultimaData = resumo?.ultimaDataProcessada ? new Date(resumo.ultimaDataProcessada).getTime() : 0;
+    return linhaTempo.filter((item) => new Date(item.data).getTime() > ultimaData);
+  }, [linhaTempo, resumo]);
+
+  const handleAtualizarResumo = async () => {
+    if (!colaboradorId) return;
+    setMensagemResumo(null);
+    if (eventosNovosPendentes.length === 0) {
+      setMensagemResumo(resumo ? 'O resumo já está em dia — nada novo desde a última atualização.' : 'Ainda não há nenhum evento para resumir.');
+      return;
+    }
+    setAtualizandoResumo(true);
+    try {
+      const novoTexto = await atualizarResumoTimeline(
+        colaboradorNome,
+        resumo?.resumoTexto || '',
+        eventosNovosPendentes.map((item) => ({
+          data: item.data,
+          tipo: item.tipo,
+          titulo: item.titulo,
+          descricao: item.descricao,
+        }))
+      );
+      const maiorData = linhaTempo.reduce(
+        (max, item) => (new Date(item.data).getTime() > new Date(max).getTime() ? item.data : max),
+        resumo?.ultimaDataProcessada || linhaTempo[0]?.data || new Date().toISOString()
+      );
+      const resumoAtualizado: ResumoLinhaTempo = {
+        colaboradorId,
+        resumoTexto: novoTexto,
+        ultimaDataProcessada: maiorData,
+        totalEventosProcessados: linhaTempo.length,
+        atualizadoEm: new Date().toISOString(),
+        atualizadoPor: currentUserId || '',
+      };
+      await DataService.saveResumoLinhaTempo(resumoAtualizado);
+      setResumo(resumoAtualizado);
+    } catch (e: any) {
+      setMensagemResumo(e?.message || 'Não consegui atualizar o resumo agora. Tente novamente em instantes.');
+    } finally {
+      setAtualizandoResumo(false);
+    }
+  };
+
+  const handleExportResumo = () => {
+    if (!resumo) return;
+    const html = gerarHTMLParaResumo(resumo.resumoTexto, colaboradorNome, resumo.atualizadoEm);
+    exportarPDF(html, `resumo-${colaboradorNome.replace(/\s+/g, '-').toLowerCase()}`);
+    setShowExportMenu(false);
+  };
 
   // Filtrar por busca e tipo
   const linhaTempoFiltrada = useMemo(() => {
@@ -190,10 +270,59 @@ export default function LinhaDoTempoInteligente({
                 <FileSpreadsheet size={16} className="text-emerald-500" />
                 <span className="text-sm font-semibold text-slate-700">Exportar Excel</span>
               </button>
+              <button
+                onClick={handleExportResumo}
+                disabled={!resumo}
+                title={resumo ? undefined : 'Gere o Resumo Inteligente primeiro'}
+                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition cursor-pointer text-left border-t border-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Sparkles size={16} className="text-indigo-500" />
+                <span className="text-sm font-semibold text-slate-700">Exportar Resumo (IA)</span>
+              </button>
             </div>
           )}
         </div>
       </div>
+
+      {/* Resumo Inteligente — só atualiza com clique explícito (nunca automático,
+          para nunca gastar tokens de IA sem o usuário pedir), e sempre de forma
+          incremental (só os eventos novos desde a última atualização). */}
+      {colaboradorId && (
+        <div className="bg-indigo-50/50 border border-indigo-100 rounded-2xl p-4 mb-6">
+          <div className="flex items-start justify-between gap-3 mb-2">
+            <div className="flex items-center gap-2">
+              <Sparkles size={15} className="text-indigo-500 shrink-0" />
+              <h4 className="text-sm font-bold text-slate-800">Resumo Inteligente</h4>
+            </div>
+            <button
+              onClick={handleAtualizarResumo}
+              disabled={atualizandoResumo || carregandoResumo}
+              className="shrink-0 flex items-center gap-1.5 text-xs font-bold text-indigo-700 bg-white border border-indigo-200 hover:bg-indigo-100 rounded-lg px-3 py-1.5 transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <RefreshCw size={12} className={atualizandoResumo ? 'animate-spin' : ''} />
+              {atualizandoResumo ? 'Atualizando...' : 'Atualizar Resumo'}
+            </button>
+          </div>
+
+          {carregandoResumo ? (
+            <p className="text-xs text-slate-400">Carregando...</p>
+          ) : resumo ? (
+            <>
+              <p className="text-sm text-slate-700 whitespace-pre-line leading-relaxed">{resumo.resumoTexto}</p>
+              <p className="text-[10px] text-slate-400 mt-2">
+                Atualizado em {new Date(resumo.atualizadoEm).toLocaleString('pt-BR')}
+                {eventosNovosPendentes.length > 0 && ` · ${eventosNovosPendentes.length} evento(s) novo(s) ainda não incorporado(s)`}
+              </p>
+            </>
+          ) : (
+            <p className="text-xs text-slate-500">
+              Ainda não há um resumo gerado. Clique em "Atualizar Resumo" para gerar o primeiro, a partir do histórico completo — só será reprocessado do zero desta vez; as próximas atualizações incorporam só o que for novo.
+            </p>
+          )}
+
+          {mensagemResumo && <p className="text-xs text-indigo-700 mt-2">{mensagemResumo}</p>}
+        </div>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-5 gap-2 mb-6">

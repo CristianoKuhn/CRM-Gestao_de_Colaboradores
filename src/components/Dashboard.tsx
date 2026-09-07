@@ -25,6 +25,7 @@ import {
 import ModalFormularioAvaliacao from './ModalFormularioAvaliacao';
 import PainelAnalyticsFormularios from '../features/formularios/components/PainelAnalyticsFormularios';
 import { getAcoesLembreteAvaliacao, calcularStatusPrazoLembrete } from '../features/formularios/engine/acoesDisponiveis';
+import { LembreteAvaliacao, calcularLembretes180, calcularLembretesExperiencia } from '../utils/lembretesAvaliacao';
 
 // ═══════════════════════════════════════════════════════════════════
 // Dashboard — reconstruído (o arquivo estava sobrescrito com a
@@ -53,20 +54,7 @@ interface DashboardProps {
   configuracaoAlertas: ConfiguracaoAlertas;
 }
 
-interface LembreteAvaliacao {
-  colaborador: Colaborador;
-  milestone: string; // '15' | '30' | '60' | '90' | '180'
-  templateFamiliaId: string;
-  label: string;
-  dataLimite?: string;
-  diasRestantes: number;
-}
-
 const HOJE = new Date();
-
-function diffEmDias(data: Date): number {
-  return Math.ceil((data.getTime() - HOJE.getTime()) / (1000 * 60 * 60 * 24));
-}
 
 export default function Dashboard({
   colaboradores,
@@ -88,56 +76,10 @@ export default function Dashboard({
   const tarefasPendentes = tarefas.filter((t) => !t.concluida);
   const tarefasAtrasadas = tarefasPendentes.filter((t) => new Date(t.vencimento) < HOJE);
 
-  // ── Lembretes de Avaliação de Experiência (15/30/60/90 dias) ────────────
-  // Fonte de verdade: as entidades AvaliacaoExperiencia já pré-geradas na
-  // criação do colaborador (ver App.handleAddColaborador). Mostra pendentes
-  // dentro da janela configurada, e SEMPRE as atrasadas (nunca escondidas).
-  const lembretesExperiencia: LembreteAvaliacao[] = avaliacoesExperiencia
-    .filter((a) => a.status === 'pendente')
-    .map((a): LembreteAvaliacao | null => {
-      const colaborador = colaboradores.find((c) => c.id === a.colaboradorId);
-      if (!colaborador || colaborador.situacao === 'Desligado') return null;
-      const diasRestantes = diffEmDias(new Date(a.dataVencimento));
-      if (diasRestantes > (configuracaoAlertas?.diasAntecedenciaAvaliacao180 ?? 30)) return null;
-      return {
-        colaborador,
-        milestone: String(a.dias),
-        templateFamiliaId: 'avaliacao-experiencia',
-        label: `Avaliação de ${a.dias} dias`,
-        dataLimite: a.dataVencimento,
-        diasRestantes,
-      };
-    })
-    .filter((l): l is LembreteAvaliacao => l !== null)
-    .sort((a, b) => a.diasRestantes - b.diasRestantes);
-
-  // ── Lembretes de Avaliação 180° ──────────────────────────────────────────
-  // Não existe entidade pré-gerada equivalente: a data-alvo é calculada a
-  // partir de dataAdmissao + prazoAvaliacao180 (meses, padrão 6), mesmo
-  // cálculo usado por gerarAlertasAutomaticos() no backend (Code.gs).
-  const lembretes180: LembreteAvaliacao[] = colaboradoresAtivos
-    .filter((c) => c.realizarExperiencia !== false)
-    .map((c): LembreteAvaliacao | null => {
-      if (!c.dataAdmissao) return null;
-      if ((c.avaliacoesCompletas || []).includes('180')) return null;
-      const dataAdmissao = new Date(c.dataAdmissao);
-      if (isNaN(dataAdmissao.getTime())) return null;
-      const prazoMeses = c.prazoAvaliacao180 ?? 6;
-      const dataAlvo = new Date(dataAdmissao);
-      dataAlvo.setMonth(dataAlvo.getMonth() + prazoMeses);
-      const diasRestantes = diffEmDias(dataAlvo);
-      if (diasRestantes > (configuracaoAlertas?.diasAntecedenciaAvaliacao180 ?? 30)) return null;
-      return {
-        colaborador: c,
-        milestone: '180',
-        templateFamiliaId: 'avaliacao-180',
-        label: 'Avaliação 180°',
-        dataLimite: dataAlvo.toISOString(),
-        diasRestantes,
-      };
-    })
-    .filter((l): l is LembreteAvaliacao => l !== null)
-    .sort((a, b) => a.diasRestantes - b.diasRestantes);
+  // ── Lembretes de Avaliação de Experiência e 180° (lógica compartilhada
+  // com a Visão Geral — ver src/utils/lembretesAvaliacao.ts) ──────────────
+  const lembretesExperiencia = calcularLembretesExperiencia(colaboradores, avaliacoesExperiencia, configuracaoAlertas, HOJE);
+  const lembretes180 = calcularLembretes180(colaboradores, configuracaoAlertas, HOJE);
 
   const todosOsLembretes = [...lembretes180, ...lembretesExperiencia].sort(
     (a, b) => a.diasRestantes - b.diasRestantes

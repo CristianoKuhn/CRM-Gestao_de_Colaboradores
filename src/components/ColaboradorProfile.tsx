@@ -1237,6 +1237,7 @@ export default function ColaboradorProfile({
             configReconhecimento={configReconhecimento}
             colaboradorNome={colaborador.nome}
             colaboradorId={colaborador.id}
+            currentUserId={currentUser?.id}
           />
 
           {/* DOCUMENTOS & ANEXOS: local único e central para tudo que foi anexado

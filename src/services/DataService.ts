@@ -21,6 +21,7 @@ import {
   AlertaInteligente,
   ConfiguracaoAlertas,
   Documento,
+  ResumoLinhaTempo,
   TipoReconhecimento,
   Reconhecimento,
   ConfiguracaoReconhecimento,
@@ -320,6 +321,10 @@ export interface IDataService {
   getDocumentos(): Promise<Documento[]>;
   saveDocumento(doc: Documento): Promise<void>;
   deleteDocumento(id: string): Promise<void>;
+
+  // Resumo da Linha do Tempo (IA, incremental) — ver ResumoLinhaTempo em types.ts
+  getResumoLinhaTempo(colaboradorId: string): Promise<ResumoLinhaTempo | undefined>;
+  saveResumoLinhaTempo(resumo: ResumoLinhaTempo): Promise<void>;
 
   // P4: Reconhecimento
   getConfiguracaoReconhecimento(): Promise<ConfiguracaoReconhecimento>;
@@ -650,6 +655,12 @@ export class LocalDataService implements IDataService {
   }
   async deleteDocumento(id: string): Promise<void> {
     StorageAPI.deleteDocumento(id);
+  }
+  async getResumoLinhaTempo(colaboradorId: string): Promise<ResumoLinhaTempo | undefined> {
+    return StorageAPI.getResumoLinhaTempo(colaboradorId);
+  }
+  async saveResumoLinhaTempo(resumo: ResumoLinhaTempo): Promise<void> {
+    StorageAPI.saveResumoLinhaTempo(resumo);
   }
 
   // P4: Reconhecimento
@@ -2338,6 +2349,46 @@ export class GoogleScriptDataService implements IDataService {
       await this.request('deleteDocumento', { id });
     } catch (e) {
       console.warn('Erro ao excluir documento no GoogleScript:', e);
+    }
+  }
+
+  // Resumo da Linha do Tempo (IA, incremental) — a chamada à IA em si
+  // acontece no frontend (api/resumo-timeline.ts); aqui só persiste o
+  // resultado. id da linha na planilha = colaborador_id (1 resumo por pessoa).
+  async getResumoLinhaTempo(colaboradorId: string): Promise<ResumoLinhaTempo | undefined> {
+    const resLocal = await this.localFallback.getResumoLinhaTempo(colaboradorId);
+    try {
+      const raw = await this.request<any>('getResumoLinhaTempo', { colaboradorId });
+      if (!raw) return resLocal;
+      return {
+        colaboradorId: raw.colaborador_id || raw.colaboradorId,
+        resumoTexto: raw.resumo_texto || raw.resumoTexto || '',
+        ultimaDataProcessada: raw.ultima_data_processada || raw.ultimaDataProcessada || '',
+        totalEventosProcessados: Number(raw.total_eventos_processados ?? raw.totalEventosProcessados ?? 0),
+        atualizadoEm: raw.atualizado_em || raw.atualizadoEm || '',
+        atualizadoPor: raw.atualizado_por || raw.atualizadoPor || '',
+      };
+    } catch (e) {
+      console.warn('Erro ao buscar resumo da linha do tempo no GoogleScript:', e);
+      return resLocal;
+    }
+  }
+  async saveResumoLinhaTempo(resumo: ResumoLinhaTempo): Promise<void> {
+    await this.localFallback.saveResumoLinhaTempo(resumo);
+    try {
+      await this.request('saveResumoLinhaTempo', {
+        data: {
+          id: resumo.colaboradorId,
+          colaborador_id: resumo.colaboradorId,
+          resumo_texto: resumo.resumoTexto,
+          ultima_data_processada: resumo.ultimaDataProcessada,
+          total_eventos_processados: resumo.totalEventosProcessados,
+          atualizado_em: resumo.atualizadoEm,
+          atualizado_por: resumo.atualizadoPor,
+        },
+      });
+    } catch (e) {
+      console.warn('Erro ao salvar resumo da linha do tempo no GoogleScript:', e);
     }
   }
 
@@ -4239,6 +4290,12 @@ class DynamicDataService implements IDataService {
   }
   async deleteDocumento(id: string): Promise<void> {
     await this.getService().deleteDocumento(id);
+  }
+  async getResumoLinhaTempo(colaboradorId: string): Promise<ResumoLinhaTempo | undefined> {
+    return this.getService().getResumoLinhaTempo(colaboradorId);
+  }
+  async saveResumoLinhaTempo(resumo: ResumoLinhaTempo): Promise<void> {
+    await this.getService().saveResumoLinhaTempo(resumo);
   }
 
   // P4: Reconhecimento

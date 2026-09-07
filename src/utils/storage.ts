@@ -31,6 +31,7 @@ import {
   ConfiguracaoGestaoPessoas,
   AlertaFerias,
   ConfiguracaoFerias,
+  ResumoLinhaTempo,
 } from '../types';
 
 // Chaves para o LocalStorage
@@ -52,6 +53,7 @@ const KEYS = {
   CONFIG_ALERTAS: 'gc_config_alertas',
   // P3: Documentos
   DOCUMENTOS: 'gc_documentos',
+  RESUMOS_LINHA_TEMPO: 'gc_resumos_linha_tempo',
   // P4: Reconhecimento
   CONFIG_RECONHECIMENTO: 'gc_config_reconhecimento',
   RECONHECIMENTOS: 'gc_reconhecimentos',
@@ -862,6 +864,22 @@ export const StorageAPI = {
   deleteDocumento: (id: string) => {
     const docs = StorageAPI.getDocumentos().filter(d => d.id !== id);
     set(KEYS.DOCUMENTOS, docs);
+  },
+
+  // ========== RESUMO DA LINHA DO TEMPO (IA, incremental) ==========
+  getResumoLinhaTempo: (colaboradorId: string): ResumoLinhaTempo | undefined => {
+    return get<ResumoLinhaTempo>(KEYS.RESUMOS_LINHA_TEMPO).find(r => r.colaboradorId === colaboradorId);
+  },
+
+  saveResumoLinhaTempo: (resumo: ResumoLinhaTempo) => {
+    const lista = get<ResumoLinhaTempo>(KEYS.RESUMOS_LINHA_TEMPO);
+    const index = lista.findIndex(r => r.colaboradorId === resumo.colaboradorId);
+    if (index >= 0) {
+      lista[index] = resumo;
+    } else {
+      lista.push(resumo);
+    }
+    set(KEYS.RESUMOS_LINHA_TEMPO, lista);
   },
 
   // ========== P4: RECONHECIMENTO ==========

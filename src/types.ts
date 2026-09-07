@@ -262,6 +262,20 @@ export interface Documento {
   descricao?: string;
 }
 
+// Resumo por tópicos da Linha do Tempo de um colaborador — gerado sob
+// demanda (nunca automaticamente) e atualizado de forma incremental: só os
+// registros mais novos que ultimaDataProcessada são enviados à IA a cada
+// atualização, nunca o histórico inteiro de novo (ver "Atualizar Resumo" em
+// LinhaDoTempoInteligente.tsx e api/resumo-timeline.ts).
+export interface ResumoLinhaTempo {
+  colaboradorId: string; // também é o id da linha (1 resumo por colaborador)
+  resumoTexto: string;
+  ultimaDataProcessada: string; // data (ISO) do registro mais recente já incorporado
+  totalEventosProcessados: number;
+  atualizadoEm: string;
+  atualizadoPor: string;
+}
+
 // ========== P4: SISTEMA DE RECONHECIMENTO ==========
 export interface TipoReconhecimento {
   id: string;

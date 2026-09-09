@@ -51,52 +51,77 @@ import { Users2, X, PlusCircle } from 'lucide-react';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<Usuario | null>(null);
+  // Enquanto a sessão restaurada do navegador ainda não foi revalidada contra
+  // o backend, não renderizamos nem a tela de login nem o app — evita um
+  // "flash" da UI de administrador para um usuário cujo token já expirou.
+  const [validandoSessao, setValidandoSessao] = useState(true);
 
   const VINTE_QUATRO_HORAS_MS = 24 * 60 * 60 * 1000;
 
-  // Inicializa o LocalStorage com os dados padrões (seed) se não existirem
+  // ── Security Audit (Fase 1, V03/V13) ──────────────────────────────────
+  // O `currentUser` guardado aqui (e espelhado em `gc_logged_in_user`) serve
+  // SÓ para renderizar a UI (nome, foto, o que mostrar no menu). Ele NUNCA é
+  // a fonte de autorização: quem decide se uma ação é permitida é sempre o
+  // backend, a partir do token opaco (`gc_session_token`), nunca a partir
+  // deste objeto — mesmo que alguém edite `gc_logged_in_user` no DevTools
+  // para se autodeclarar Administrador, o backend continua recusando as
+  // ações administrativas porque valida o token, não o perfil informado.
   useEffect(() => {
     initializeStorage();
     loadAllData();
-    // Restaurar sessão de login — mas força um novo login se já se passaram
-    // 24h desde o último (prática básica de expiração de sessão).
-    const savedUser = localStorage.getItem('gc_logged_in_user');
-    const loginTimestamp = Number(localStorage.getItem('gc_login_timestamp') || 0);
-    const sessaoExpirada = !loginTimestamp || Date.now() - loginTimestamp > VINTE_QUATRO_HORAS_MS;
 
-    if (savedUser && !sessaoExpirada) {
-      try {
-        setCurrentUser(JSON.parse(savedUser));
-      } catch (e) {
-        console.error('Erro ao restaurar sessão de login:', e);
+    (async () => {
+      const temToken = DataService.temSessaoAtiva();
+      if (!temToken) {
+        setCurrentUser(null);
+        setValidandoSessao(false);
+        return;
       }
-    } else if (savedUser && sessaoExpirada) {
-      localStorage.removeItem('gc_logged_in_user');
-      localStorage.removeItem('gc_login_timestamp');
-    }
+      try {
+        // Revalida a sessão no servidor a cada carregamento do app — nunca
+        // confia cegamente no que estiver em cache local.
+        const usuarioValidado = await DataService.validarSessao();
+        if (usuarioValidado) {
+          setCurrentUser(usuarioValidado);
+          localStorage.setItem('gc_logged_in_user', JSON.stringify(usuarioValidado));
+        } else {
+          handleLogout();
+        }
+      } catch (e) {
+        console.error('Erro ao validar sessão existente:', e);
+        handleLogout();
+      } finally {
+        setValidandoSessao(false);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Verifica periodicamente (a cada 5 min) se a sessão expirou enquanto a aba
   // ficou aberta — sem isso, quem deixa o app aberto o dia inteiro só seria
-  // deslogado no próximo F5.
+  // deslogado no próximo F5. A expiração de verdade é sempre a do backend
+  // (Sessoes.expira_em); isto aqui só antecipa o logout local quando o
+  // servidor já rejeitar o token (ex.: 401/"sessão inválida").
   useEffect(() => {
-    const intervalo = setInterval(() => {
-      const loginTimestamp = Number(localStorage.getItem('gc_login_timestamp') || 0);
-      if (loginTimestamp && Date.now() - loginTimestamp > VINTE_QUATRO_HORAS_MS) {
-        handleLogout();
-      }
+    const intervalo = setInterval(async () => {
+      if (!DataService.temSessaoAtiva()) return;
+      const aindaValida = await DataService.validarSessao().catch(() => null);
+      if (!aindaValida) handleLogout();
     }, 5 * 60 * 1000);
     return () => clearInterval(intervalo);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleLoginSuccess = (user: Usuario) => {
+    // O token de sessão em si já foi armazenado por DataService.login() —
+    // aqui só guardamos uma cópia sanitizada (sem senha) para render de UI.
     setCurrentUser(user);
     localStorage.setItem('gc_logged_in_user', JSON.stringify(user));
     localStorage.setItem('gc_login_timestamp', String(Date.now()));
   };
 
   const handleLogout = () => {
+    DataService.logout().catch((e) => console.warn('Falha ao encerrar sessão no servidor:', e));
     setCurrentUser(null);
     localStorage.removeItem('gc_logged_in_user');
     localStorage.removeItem('gc_login_timestamp');
@@ -546,7 +571,22 @@ export default function App() {
   };
 
   // Reset Geral para demonstração
+  // ── Security Audit (Fase 1, V04) ──────────────────────────────────────
+  // Esta ação apaga permanentemente Empresas, Setores, Cargos, Usuários,
+  // Colaboradores, Registros e Tarefas. A trava de verdade é no backend
+  // (exige perfil Administrador + `confirmar: true`), mas exigimos a
+  // confirmação explícita aqui também — defesa em profundidade contra
+  // clique acidental, nunca um substituto da checagem do servidor.
   const handleResetDemoData = async () => {
+    if (currentUser?.perfil !== 'Administrador') {
+      window.alert('Apenas um Administrador pode executar o reset de dados.');
+      return;
+    }
+    const confirmado = window.confirm(
+      'Isto vai APAGAR PERMANENTEMENTE Empresas, Setores, Cargos, Usuários, Colaboradores, Registros e Tarefas. Esta ação não pode ser desfeita. Deseja continuar?'
+    );
+    if (!confirmado) return;
+
     await DataService.resetData();
     setSelectedColaboradorId(null);
     setActiveTab('dashboard');
@@ -688,6 +728,14 @@ export default function App() {
     diaDoMes: diaDoMesDigest,
     diasNoMes: diasNoMesDigest,
   };
+
+  if (validandoSessao) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+        <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Verificando sessão...</span>
+      </div>
+    );
+  }
 
   if (currentUser === null) {
     return <Login onLoginSuccess={handleLoginSuccess} />;
@@ -835,10 +883,17 @@ export default function App() {
             />
           )}
 
-          {activeTab === 'usuarios' && (
+          {/* Security Audit (Fase 1, V07): tela administrativa — nunca depende
+              só de `dashboardsHabilitados`/da Sidebar já esconder o item de
+              menu. Mesmo que `activeTab` seja forçado por outro caminho, a
+              tela só renderiza para quem é Administrador de verdade (e o
+              backend, por sua vez, também recusa saveUsuario/deleteUsuario/
+              getUsuarios para quem não for). */}
+          {activeTab === 'usuarios' && currentUser.perfil === 'Administrador' && (
             <Usuarios
               usuarios={usuarios}
               setores={setores}
+              currentUser={currentUser}
               onSaveUsuario={handleSaveUsuario}
               onDeleteUsuario={handleDeleteUsuario}
             />
@@ -884,7 +939,14 @@ export default function App() {
             />
           )}
 
-          {activeTab === 'config' && (
+          {/* Security Audit (Fase 1, V07): mesma trava de defesa em profundidade
+              do item "usuarios" acima — esta tela contém o botão de Reset de
+              Dados (V04) e a gestão de Empresas/Setores/Cargos, então também
+              passa a exigir Administrador. Se alguma equipe não-admin
+              legitimamente precisava só da parte de Empresas/Setores/Cargos
+              (sem o Reset), isso é uma decisão de produto a revisar — hoje a
+              tela mistura os dois no mesmo componente. */}
+          {activeTab === 'config' && currentUser.perfil === 'Administrador' && (
             <Config
               config={supabaseConfig}
               onSaveConfig={setSupabaseConfig}

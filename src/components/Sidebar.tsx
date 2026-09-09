@@ -56,7 +56,7 @@ export default function Sidebar({
     { id: 'desenvolvimento-programas', label: 'Programas de Desenvolvimento', icon: ClipboardList },
     { id: 'desenvolvimento-indicadores', label: 'Indicadores de Desenvolvimento', icon: BarChart3Dev },
     { id: 'config', label: 'Configurações Gerais', icon: Settings },
-  ].filter((item) => dashboardVisivelParaUsuario(item.id, currentUser?.dashboardsHabilitados));
+  ].filter((item) => dashboardVisivelParaUsuario(item.id, currentUser?.dashboardsHabilitados, currentUser?.perfil));
 
   return (
     <aside id="sidebar-container" className="w-64 bg-slate-900 text-slate-100 flex flex-col border-r border-slate-800 shrink-0 h-screen sticky top-0">

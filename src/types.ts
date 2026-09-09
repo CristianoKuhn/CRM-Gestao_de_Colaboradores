@@ -179,7 +179,18 @@ export interface Usuario {
   id: string;
   nome: string;
   email: string;
+  // Security Audit (Fase 1, V01/V10): o backend NUNCA mais devolve o valor
+  // de senha em `getUsuarios`/`getSessaoAtual` — este campo só é preenchido
+  // (localmente, em memória) no exato instante em que o próprio usuário
+  // está definindo/alterando a própria senha (fluxo de `Usuarios.tsx`
+  // enviando um `saveUsuario`), nunca ao LER dados de usuários. Para exibir
+  // "este usuário já tem senha?" na UI, use `temSenhaDefinida` (booleano,
+  // não revela o valor).
   senha_hash?: string;
+  // Booleano calculado pelo backend (nunca o valor real da senha) — indica
+  // só se o usuário já tem alguma senha definida, para a tela de gestão de
+  // usuários mostrar "Sem Senha" vs. "••••••••" sem precisar do segredo.
+  temSenhaDefinida?: boolean;
   // Marca que a senha atual foi definida pelo Administrador (usuário novo ou
   // reset de senha esquecida) e ainda não foi trocada pelo próprio usuário.
   // Enquanto true, o Login força a tela de "definir nova senha" antes de

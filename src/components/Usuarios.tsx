@@ -33,6 +33,12 @@ import {
 interface UsuariosProps {
   usuarios: Usuario[];
   setores: Setor[];
+  // Security Audit (Fase 1, V08): o componente antes não recebia quem
+  // estava logado, então nem uma trava de UI mínima era possível. A
+  // autorização de verdade continua sendo do backend (só Administrador
+  // consegue chamar saveUsuario/deleteUsuario/getUsuarios) — isto aqui é
+  // só defesa em profundidade / UX.
+  currentUser: Usuario;
   onSaveUsuario: (usuario: Usuario) => Promise<void>;
   onDeleteUsuario: (id: string) => Promise<void>;
 }
@@ -40,6 +46,7 @@ interface UsuariosProps {
 export default function Usuarios({
   usuarios,
   setores,
+  currentUser,
   onSaveUsuario,
   onDeleteUsuario,
 }: UsuariosProps) {
@@ -455,7 +462,7 @@ export default function Usuarios({
                         <div className="flex flex-col gap-1">
                           <span className="font-mono text-[10px] text-slate-400 bg-slate-50 px-2 py-1 rounded border border-slate-100 flex items-center gap-1.5 w-fit">
                             <Lock size={10} />
-                            {usu.senha_hash ? '••••••••' : 'Sem Senha'}
+                            {usu.temSenhaDefinida ? '••••••••' : 'Sem Senha'}
                           </span>
                           {usu.senha_provisoria && (
                             <span className="text-[9px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full w-fit">

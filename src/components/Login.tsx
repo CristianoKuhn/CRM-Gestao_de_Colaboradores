@@ -21,13 +21,21 @@ export default function Login({ onLoginSuccess }: LoginProps) {
 
   // Etapa 2: troca obrigatória de senha (primeiro acesso OU depois de um
   // reset feito pelo Administrador). `matchedUser` guarda o usuário já
-  // autenticado com a senha provisória, aguardando definir a senha própria.
+  // autenticado (sessão já criada no servidor) com a senha provisória,
+  // aguardando definir a senha própria.
   const [matchedUser, setMatchedUser] = useState<Usuario | null>(null);
   const [novaSenha, setNovaSenha] = useState('');
   const [confirmarNovaSenha, setConfirmarNovaSenha] = useState('');
   const [showNovaSenha, setShowNovaSenha] = useState(false);
   const [isSavingNovaSenha, setIsSavingNovaSenha] = useState(false);
 
+  // ── Security Audit (Fase 1, V01/V02/V03) ──────────────────────────────
+  // Antes, o login baixava a lista COMPLETA de usuários (com senha) e
+  // comparava no navegador — qualquer chamada a `getUsuarios` expunha a
+  // senha de todo mundo, autenticado ou não. Agora a autenticação é uma
+  // action dedicada no backend (`login`): o servidor valida a senha, cria a
+  // sessão e devolve só um token opaco + os dados sanitizados do usuário
+  // (nunca a senha). O front nunca mais vê `senha_hash` de ninguém.
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) {
@@ -39,56 +47,24 @@ export default function Login({ onLoginSuccess }: LoginProps) {
     setError(null);
 
     try {
-      const usuarios = await DataService.getUsuarios();
-      
-      const found = usuarios.find(
-        (u) => u.email.toLowerCase() === email.trim().toLowerCase()
-      );
+      const resultado = await DataService.login(email.trim(), password);
 
-      if (!found) {
-        setError('E-mail não cadastrado no sistema.');
+      if (resultado.precisaTrocarSenha) {
+        // Sessão já existe no servidor (necessária para a próxima chamada de
+        // `definirNovaSenha`), mas o acesso ao restante do app só é liberado
+        // depois que a nova senha for definida.
+        setMatchedUser(resultado.usuario);
         setIsLoading(false);
         return;
       }
 
-      if (!found.ativo) {
-        setError('Este usuário está inativo. Entre em contato com o administrador.');
-        setIsLoading(false);
-        return;
-      }
-
-      // Validação de senha: se o usuário tiver senha, valida. Se não tiver, aceita qualquer uma ou '123456'
-      const correctPassword = found.senha_hash || '123456';
-      
-      if (password !== correctPassword) {
-        setError('Senha incorreta. Tente novamente.');
-        setIsLoading(false);
-        return;
-      }
-
-      // Primeiro acesso (nunca teve senha própria) OU senha provisória
-      // (definida pelo Administrador — cadastro novo ou reset de senha
-      // esquecida): força a troca antes de liberar o sistema, em vez de
-      // completar o login normalmente.
-      const precisaDefinirNovaSenha = found.senha_provisoria === true || !found.senha_hash;
-      if (precisaDefinirNovaSenha) {
-        setMatchedUser(found);
-        setIsLoading(false);
-        return;
-      }
-
-      // Atualiza o último login no banco/local
-      const updatedUser: Usuario = {
-        ...found,
-        ultimo_login: new Date().toLocaleString('pt-BR'),
-      };
-      await DataService.saveUsuario(updatedUser);
-
-      // Sucesso!
-      onLoginSuccess(updatedUser);
+      onLoginSuccess(resultado.usuario);
     } catch (err: any) {
       console.error(err);
-      setError(err.message || 'Ocorreu um erro ao tentar realizar o login.');
+      // Mensagem genérica de propósito: o backend não distingue mais
+      // "e-mail não existe" de "senha incorreta" nem "usuário inativo" na
+      // resposta, para não ajudar alguém a enumerar e-mails cadastrados.
+      setError(err.message || 'E-mail ou senha inválidos.');
     } finally {
       setIsLoading(false);
     }
@@ -110,14 +86,11 @@ export default function Login({ onLoginSuccess }: LoginProps) {
     setIsSavingNovaSenha(true);
     setError(null);
     try {
-      const updatedUser: Usuario = {
-        ...matchedUser,
-        senha_hash: novaSenha.trim(),
-        senha_provisoria: false,
-        ultimo_login: new Date().toLocaleString('pt-BR'),
-      };
-      await DataService.saveUsuario(updatedUser);
-      onLoginSuccess(updatedUser);
+      // A senha nova é validada e gravada (com hash) inteiramente no
+      // servidor — o front só envia o texto digitado uma vez, pelo canal já
+      // autenticado da sessão recém-criada no login.
+      const usuarioAtualizado = await DataService.definirNovaSenha(novaSenha.trim());
+      onLoginSuccess(usuarioAtualizado);
     } catch (err: any) {
       console.error(err);
       setError(err.message || 'Ocorreu um erro ao salvar a nova senha.');

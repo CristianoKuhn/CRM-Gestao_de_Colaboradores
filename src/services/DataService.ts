@@ -273,7 +273,76 @@ function itensLocalDeleteItem(key: string, id: string): void {
   );
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// SECURITY AUDIT (Fase 1) — Sessão de autenticação
+// ═══════════════════════════════════════════════════════════════════════
+// Único lugar do frontend que guarda o token de sessão emitido pelo
+// backend após um `login` bem-sucedido. Deliberadamente guardamos SÓ um
+// token opaco aqui — nunca perfil, nunca senha, nunca qualquer dado que
+// carregue significado de autorização. Todo o resto do app (inclusive
+// `currentUser` em App.tsx) é só uma cópia de UI, sanitizada pelo backend;
+// a decisão de "isso é permitido?" é sempre revalidada no servidor a partir
+// deste token, nunca a partir do que estiver em memória/localStorage aqui.
+const SESSION_TOKEN_KEY = 'gc_session_token';
+
+function obterTokenSessao(): string {
+  try {
+    return localStorage.getItem(SESSION_TOKEN_KEY) || '';
+  } catch {
+    return '';
+  }
+}
+
+function definirTokenSessao(token: string): void {
+  try {
+    if (token) localStorage.setItem(SESSION_TOKEN_KEY, token);
+    else localStorage.removeItem(SESSION_TOKEN_KEY);
+  } catch {
+    // Ambiente sem localStorage (SSR/teste) — sessão só dura em memória.
+  }
+}
+
+// Mapeia o objeto de usuário devolvido pelas actions de autenticação
+// (`login`/`definirNovaSenha`/`getSessaoAtual`) — todas já vêm sanitizadas
+// do backend (sem senha_hash/senha_provisoria/senha_salt), mas passam pelo
+// mesmo tratamento defensivo de tipos que `getUsuarios()` usa, para os dois
+// caminhos nunca divergirem silenciosamente.
+function mapearUsuarioSanitizado(u: any): Usuario {
+  return {
+    id: String(u?.id || ''),
+    nome: String(u?.nome || ''),
+    email: String(u?.email || ''),
+    senha_hash: '', // nunca preenchido a partir de uma leitura — só na própria troca de senha
+    temSenhaDefinida: u?.temSenhaDefinida === true || u?.temSenhaDefinida === 'true',
+    senha_provisoria: u?.senha_provisoria === true || u?.senha_provisoria === 'true',
+    perfil: (u?.perfil || 'Lider') as Usuario['perfil'],
+    setor_id: String(u?.setor_id || u?.setorId || ''),
+    setoresPermitidos: parseSetoresPermitidos(u?.setores_permitidos ?? u?.setoresPermitidos, u?.setor_id ?? u?.setorId),
+    lideresSupervisionados: parseSetoresPermitidos(u?.lideres_supervisionados ?? u?.lideresSupervisionados, undefined),
+    dashboardsHabilitados: parseSetoresPermitidos(u?.dashboards_habilitados ?? u?.dashboardsHabilitados, undefined),
+    ativo: u?.ativo === true || u?.ativo === 'true' || u?.ativo === 1 || u?.ativo === '1' || u?.ativo === undefined,
+    ultimo_login: String(u?.ultimo_login || u?.ultimoLogin || ''),
+  };
+}
+
+export interface ResultadoLogin {
+  usuario: Usuario;
+  precisaTrocarSenha: boolean;
+}
+
 export interface IDataService {
+  // ── Autenticação (Fase 1 do Security Audit) ───────────────────────────
+  // `login`/`definirNovaSenha`/`validarSessao` são as ÚNICAS operações que
+  // tratam senha — em nenhuma outra chamada do sistema uma senha deveria
+  // trafegar. `temSessaoAtiva` é síncrono de propósito (só olha se existe um
+  // token local), nunca confirma sozinho que o token ainda é válido no
+  // servidor — para isso, use `validarSessao()`.
+  login(email: string, senha: string): Promise<ResultadoLogin>;
+  definirNovaSenha(novaSenha: string): Promise<Usuario>;
+  validarSessao(): Promise<Usuario | null>;
+  logout(): Promise<void>;
+  temSessaoAtiva(): boolean;
+
   getEmpresas(): Promise<Empresa[]>;
   getSetores(): Promise<Setor[]>;
   getCargos(): Promise<Cargo[]>;
@@ -533,6 +602,62 @@ export interface IDataService {
 // 1. IMPLEMENTAÇÃO LOCALSTORAGE (MODO DEMO / CACHE)
 // -----------------------------------------------------------------
 export class LocalDataService implements IDataService {
+  // Modo 100% local (sem backend) — usado como fallback de demonstração.
+  // Não existe fronteira de segurança real aqui (é tudo o mesmo navegador),
+  // então a "sessão" é só um token local para manter a mesma interface do
+  // GoogleScriptDataService; a validação de senha é feita comparando com o
+  // que estiver salvo no LocalStorage, sem envolver rede nenhuma.
+  async login(email: string, senha: string): Promise<ResultadoLogin> {
+    const usuarios = await StorageAPI.getUsuarios();
+    const found = usuarios.find((u) => u.email.toLowerCase() === email.trim().toLowerCase());
+    if (!found) throw new Error('E-mail ou senha inválidos.');
+    if (!found.ativo) throw new Error('Este usuário está inativo. Entre em contato com o administrador.');
+    const senhaEsperada = found.senha_hash || '';
+    if (!senhaEsperada || senha !== senhaEsperada) throw new Error('E-mail ou senha inválidos.');
+
+    definirTokenSessao('local-' + found.id);
+    const precisaTrocarSenha = found.senha_provisoria === true;
+    const sanitizado: Usuario = { ...found, senha_hash: '', temSenhaDefinida: !!found.senha_hash };
+    if (!precisaTrocarSenha) {
+      await StorageAPI.saveUsuario({ ...found, ultimo_login: new Date().toLocaleString('pt-BR') });
+    }
+    return { usuario: sanitizado, precisaTrocarSenha };
+  }
+
+  async definirNovaSenha(novaSenha: string): Promise<Usuario> {
+    const token = obterTokenSessao();
+    const id = token.startsWith('local-') ? token.slice('local-'.length) : '';
+    const usuarios = await StorageAPI.getUsuarios();
+    const found = usuarios.find((u) => u.id === id);
+    if (!found) throw new Error('Sessão inválida.');
+    const atualizado: Usuario = {
+      ...found,
+      senha_hash: novaSenha,
+      senha_provisoria: false,
+      ultimo_login: new Date().toLocaleString('pt-BR'),
+    };
+    await StorageAPI.saveUsuario(atualizado);
+    return { ...atualizado, senha_hash: '', temSenhaDefinida: true };
+  }
+
+  async validarSessao(): Promise<Usuario | null> {
+    const token = obterTokenSessao();
+    if (!token.startsWith('local-')) return null;
+    const id = token.slice('local-'.length);
+    const usuarios = await StorageAPI.getUsuarios();
+    const found = usuarios.find((u) => u.id === id && u.ativo);
+    if (!found) return null;
+    return { ...found, senha_hash: '', temSenhaDefinida: !!found.senha_hash };
+  }
+
+  async logout(): Promise<void> {
+    definirTokenSessao('');
+  }
+
+  temSessaoAtiva(): boolean {
+    return obterTokenSessao().startsWith('local-');
+  }
+
   async getEmpresas(): Promise<Empresa[]> {
     return StorageAPI.getEmpresas();
   }
@@ -1409,7 +1534,15 @@ export class GoogleScriptDataService implements IDataService {
     // fallback local. O Content-Type 'text/plain' é usado de propósito: é um dos poucos
     // tipos "simples" que o navegador NÃO faz preflight (OPTIONS) antes de enviar, e o
     // Google Apps Script não trata OPTIONS — então precisamos evitar o preflight.
-    const bodyStr = JSON.stringify({ action, data: dataToSend });
+    //
+    // Security Audit (Fase 1): todo request carrega o `sessionToken` da sessão
+    // atual (se houver) num campo de nível superior — separado de `data`,
+    // porque é sobre IDENTIDADE de quem está chamando, não sobre o recurso
+    // sendo lido/gravado. O backend resolve esse token para um usuário real
+    // a cada chamada sensível; nunca confia em `usuarioId`/`perfil` soltos
+    // dentro de `data`.
+    const sessionToken = obterTokenSessao();
+    const bodyStr = JSON.stringify({ action, sessionToken, data: dataToSend });
 
     // Erro "de aplicação": a requisição chegou ao servidor e ele respondeu, mas com
     // status de erro (ex.: permissão negada no Drive, ação desconhecida, etc). Nesse
@@ -1505,6 +1638,7 @@ export class GoogleScriptDataService implements IDataService {
       try {
         const url = new URL(webAppUrl);
         url.searchParams.set('action', action);
+        if (sessionToken) url.searchParams.set('sessionToken', sessionToken);
         if (dataToSend) {
           url.searchParams.set('data', encodeURIComponent(JSON.stringify(dataToSend)));
         }
@@ -1520,6 +1654,55 @@ export class GoogleScriptDataService implements IDataService {
         throw err;
       }
     }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // SECURITY AUDIT (Fase 1) — Autenticação e sessão
+  // ═══════════════════════════════════════════════════════════════════
+  // Substitui o fluxo antigo (Login.tsx chamava getUsuarios() e comparava
+  // senha no navegador). Agora a senha nunca sai do backend: `login` valida
+  // no servidor e devolve só um token opaco + o usuário sanitizado.
+  async login(email: string, senha: string): Promise<ResultadoLogin> {
+    const resposta = await this.request<{ sessionToken: string; usuario: any; precisaTrocarSenha: boolean }>(
+      'login',
+      { email, senha }
+    );
+    definirTokenSessao(resposta.sessionToken);
+    return {
+      usuario: mapearUsuarioSanitizado(resposta.usuario),
+      precisaTrocarSenha: !!resposta.precisaTrocarSenha,
+    };
+  }
+
+  async definirNovaSenha(novaSenha: string): Promise<Usuario> {
+    const resposta = await this.request<{ usuario: any }>('definirNovaSenha', { novaSenha });
+    return mapearUsuarioSanitizado(resposta.usuario);
+  }
+
+  async validarSessao(): Promise<Usuario | null> {
+    if (!obterTokenSessao()) return null;
+    try {
+      const resposta = await this.request<{ usuario: any }>('getSessaoAtual');
+      return mapearUsuarioSanitizado(resposta.usuario);
+    } catch (e) {
+      console.warn('Sessão inválida ou expirada:', e);
+      definirTokenSessao('');
+      return null;
+    }
+  }
+
+  async logout(): Promise<void> {
+    try {
+      await this.request('logout');
+    } catch (e) {
+      console.warn('Falha ao invalidar sessão no servidor (limpando localmente mesmo assim):', e);
+    } finally {
+      definirTokenSessao('');
+    }
+  }
+
+  temSessaoAtiva(): boolean {
+    return !!obterTokenSessao();
   }
 
   async getEmpresas(): Promise<Empresa[]> {
@@ -2042,12 +2225,20 @@ export class GoogleScriptDataService implements IDataService {
   }
 
   async resetData(): Promise<void> {
-    await this.localFallback.resetData();
+    // Security Audit (Fase 1, V04): resetData agora exige Administrador
+    // validado no servidor (a UI também já bloqueia antes de chamar isto —
+    // ver App.tsx `handleResetDemoData` — mas a trava real é aqui/no backend).
     try {
-      await this.request('resetData');
-    } catch (e) {
-      console.warn('Erro ao resetar dados no GoogleScript (usando fallback local):', e);
+      await this.request('resetData', { confirmar: true });
+    } catch (e: any) {
+      if (e?.isAppError) {
+        // Não mascarar uma recusa do servidor limpando só o cache local e
+        // fingindo sucesso — quem chamou precisa saber que NADA foi apagado.
+        throw e;
+      }
+      console.warn('Erro de rede ao resetar dados no GoogleScript (limpando só o fallback local):', e);
     }
+    await this.localFallback.resetData();
   }
 
   async getUsuarios(): Promise<Usuario[]> {
@@ -2055,38 +2246,39 @@ export class GoogleScriptDataService implements IDataService {
       let raw: any[];
       try {
         raw = await this.request<any[]>('getUsuarios');
-      } catch (err) {
+      } catch (err: any) {
+        if (err?.isAppError) throw err;
         raw = await this.request<any[]>('listarUsuarios');
       }
 
       // Filtra usuários com IDs vazios
       raw = raw.filter(u => u && u.id && String(u.id).trim() !== '');
 
-      return raw.map(u => ({
-        id: String(u.id || ''),
-        nome: String(u.nome || ''),
-        email: String(u.email || ''),
-        senha_hash: String(u.senha_hash || u.senhaHash || ''),
-        senha_provisoria: u.senha_provisoria === true || u.senha_provisoria === 'true' || u.senha_provisoria === 'TRUE',
-        perfil: (u.perfil || 'Lider') as any,
-        setor_id: String(u.setor_id || u.setorId || ''),
-        setoresPermitidos: parseSetoresPermitidos(
-          u.setores_permitidos ?? u.setoresPermitidos,
-          u.setor_id ?? u.setorId
-        ),
-        lideresSupervisionados: parseSetoresPermitidos(u.lideres_supervisionados ?? u.lideresSupervisionados, undefined),
-        dashboardsHabilitados: parseSetoresPermitidos(u.dashboards_habilitados ?? u.dashboardsHabilitados, undefined),
-        ativo: u.ativo === true || u.ativo === 'true' || u.ativo === 1 || u.ativo === '1' || u.ativo === undefined,
-        ultimo_login: String(u.ultimo_login || u.ultimoLogin || '')
-      }));
-    } catch (e) {
-      console.warn('GoogleScript getUsuarios falhou, usando LocalStorage fallback:', e);
+      return raw.map(u => mapearUsuarioSanitizado(u));
+    } catch (e: any) {
+      if (e?.isAppError) {
+        // Security Audit (Fase 1, V05/V10): isto não é falha de rede — é o
+        // backend recusando explicitamente (ex.: quem pediu não é
+        // Administrador). NUNCA mascarar isso com o fallback local, que
+        // poderia devolver uma lista de usuários desatualizada/incorreta
+        // como se fosse a real. Devolver vazio é o comportamento correto
+        // para quem não tem permissão nenhuma de ver esta lista.
+        console.warn('Acesso negado pelo backend em getUsuarios (esperado para quem não é Administrador):', e.message);
+        return [];
+      }
+      console.warn('GoogleScript getUsuarios falhou (rede), usando LocalStorage fallback:', e);
       return this.localFallback.getUsuarios();
     }
   }
 
   async saveUsuario(usuario: Usuario): Promise<void> {
-    await this.localFallback.saveUsuario(usuario);
+    // Security Audit (Fase 1, V06): o backend agora exige Administrador
+    // para esta action inteira — não confiamos mais em nenhum campo vindo
+    // do cliente (perfil, dashboards_habilitados, etc.) para decidir o que
+    // pode ser alterado; quem não é Administrador simplesmente não consegue
+    // chamar a action. Por isso, ao contrário de outras entidades, NÃO
+    // gravamos primeiro no fallback local "otimisticamente" — se o servidor
+        // recusar, quem chamou precisa saber, em vez de a tela achar que salvou.
     const body = {
       id: usuario.id,
       nome: usuario.nome,
@@ -2103,31 +2295,38 @@ export class GoogleScriptDataService implements IDataService {
     };
     try {
       await this.request('saveUsuario', { data: body });
-    } catch (e) {
+    } catch (e: any) {
+      if (e?.isAppError) throw e;
       try {
         await this.request('salvarUsuario', { data: body });
-      } catch (e2) {
-        console.warn('Erro ao sincronizar usuario com GoogleScript (usando fallback local):', e2);
+      } catch (e2: any) {
+        if (e2?.isAppError) throw e2;
+        console.warn('Erro de rede ao sincronizar usuario com GoogleScript (usando fallback local):', e2);
+        await this.localFallback.saveUsuario(usuario);
       }
     }
   }
 
   async deleteUsuario(id: string): Promise<void> {
-    await this.localFallback.deleteUsuario(id);
     try {
       await this.request('deleteUsuario', { id });
-    } catch (e) {
+    } catch (e: any) {
+      if (e?.isAppError) throw e;
       try {
         await this.request('excluirUsuario', { id });
-      } catch (e2) {
+      } catch (e2: any) {
+        if (e2?.isAppError) throw e2;
         try {
           await this.request('deletarUsuario', { id });
-        } catch (e3) {
-          console.warn('Erro ao excluir usuario no GoogleScript (usando fallback local):', e3);
+        } catch (e3: any) {
+          if (e3?.isAppError) throw e3;
+          console.warn('Erro de rede ao excluir usuario no GoogleScript (usando fallback local):', e3);
+          await this.localFallback.deleteUsuario(id);
         }
       }
     }
   }
+
 
   // Avaliações de Experiência — achado da auditoria do Sprint 3: esta
   // implementação só escrevia no localStorage (this.localFallback), nunca no
@@ -4159,6 +4358,25 @@ class DynamicDataService implements IDataService {
   private getService(): IDataService {
     const config = StorageAPI.getGoogleScriptConfig();
     return new GoogleScriptDataService(config);
+  }
+
+  // Security Audit (Fase 1) — autenticação delegada ao serviço real.
+  // `temSessaoAtiva` é síncrono e só olha o token local, então não precisa
+  // de uma instância de serviço configurada para responder.
+  async login(email: string, senha: string): Promise<ResultadoLogin> {
+    return this.getService().login(email, senha);
+  }
+  async definirNovaSenha(novaSenha: string): Promise<Usuario> {
+    return this.getService().definirNovaSenha(novaSenha);
+  }
+  async validarSessao(): Promise<Usuario | null> {
+    return this.getService().validarSessao();
+  }
+  async logout(): Promise<void> {
+    return this.getService().logout();
+  }
+  temSessaoAtiva(): boolean {
+    return obterTokenSessao().length > 0;
   }
 
   async getEmpresas(): Promise<Empresa[]> {

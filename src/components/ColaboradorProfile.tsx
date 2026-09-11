@@ -64,6 +64,9 @@ import {
   CheckCircle2,
   TrendingUp,
   Eye,
+  Pencil,
+  Trash2,
+  ArrowRightLeft,
 } from 'lucide-react';
 
 // Mapeia o Tipo de Registro da timeline para uma Categoria de Documento já
@@ -112,6 +115,19 @@ interface ColaboradorProfileProps {
   onBack: () => void;
   onUpdateColaborador: (col: Colaborador) => Promise<Colaborador>;
   onAddTimelineRegistro: (reg: TimelineRegistro) => void;
+  // Cria OU edita um registro do tipo "Mudança de Cargo" — diferente de
+  // onAddTimelineRegistro porque também precisa atualizar o Cargo/Setor
+  // reais do colaborador e espelhar o registro na dashboard de
+  // Reconhecimento (ver App.tsx > handleSalvarMudancaCargo).
+  onSalvarMudancaCargo: (reg: TimelineRegistro) => void;
+  // Edição de um registro "comum" (qualquer tipo, exceto Mudança de Cargo,
+  // que usa onSalvarMudancaCargo mesmo ao editar) — corrige um lançamento
+  // feito por engano sem repetir as automações de criação.
+  onUpdateTimelineRegistro: (reg: TimelineRegistro) => void;
+  // Exclui um registro da timeline — usado para corrigir lançamentos feitos
+  // por engano ou para o colaborador errado. `reverterCargo` só se aplica a
+  // registros do tipo "Mudança de Cargo".
+  onDeleteTimelineRegistro: (reg: TimelineRegistro, reverterCargo: boolean) => void;
   onAddDocumento: (doc: Documento) => void;
   onDeleteDocumento: (id: string) => void;
   // Conclusão de Tarefa com relato obrigatório (ver Tarefas.tsx): quando
@@ -138,6 +154,9 @@ export default function ColaboradorProfile({
   onBack,
   onUpdateColaborador,
   onAddTimelineRegistro,
+  onSalvarMudancaCargo,
+  onUpdateTimelineRegistro,
+  onDeleteTimelineRegistro,
   onAddDocumento,
   onDeleteDocumento,
   tarefaParaConcluir,
@@ -179,6 +198,7 @@ export default function ColaboradorProfile({
   const formRegistroRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (tarefaParaConcluir && tarefaParaConcluir.colaboradorId === colaborador.id) {
+      setEditingRegistroId(null);
       setIsFormOpen(true);
       setRegTipo(tarefaParaConcluir.tipoOrigem);
       setRegTitulo(`Conclusão: ${tarefaParaConcluir.titulo}`);
@@ -231,6 +251,20 @@ export default function ColaboradorProfile({
   const [regPrazo, setRegPrazo] = useState('');
   const [regGerarTarefa, setRegGerarTarefa] = useState(false);
   const [regAnexos, setRegAnexos] = useState<Anexo[]>([]);
+  // Preenchido quando o "Novo Registro" está, na verdade, editando um
+  // registro já existente (ver openEditRegistro) — null significa criação.
+  const [editingRegistroId, setEditingRegistroId] = useState<string | null>(null);
+  // Só usados quando regTipo === 'Mudança de Cargo': o Setor é escolhido
+  // primeiro e filtra a lista de Cargos disponíveis (ver arquitetura: Cargo
+  // vinculado a Setor), evitando que a lista inteira de cargos da empresa
+  // apareça de uma vez.
+  const [regNovoSetorId, setRegNovoSetorId] = useState(colaborador.setorId);
+  const [regNovoCargoId, setRegNovoCargoId] = useState('');
+  // Confirmação de exclusão de um registro da timeline — guarda o registro
+  // inteiro (não só o id) porque, se for uma Mudança de Cargo, precisamos do
+  // cargoAnteriorId/setorAnteriorId para oferecer a reversão.
+  const [deleteRegistroConfirm, setDeleteRegistroConfirm] = useState<TimelineRegistro | null>(null);
+  const [reverterCargoAoExcluir, setReverterCargoAoExcluir] = useState(true);
 
   // Filtro de Drag and Drop
   const [isDragging, setIsDragging] = useState(false);
@@ -239,6 +273,13 @@ export default function ColaboradorProfile({
   const cargoNome = cargos.find((c) => c.id === colaborador.cargoId)?.nome || 'Não definido';
   const setorNome = setores.find((s) => s.id === colaborador.setorId)?.nome || 'Não definido';
   const empresaNome = empresas.find((e) => e.id === colaborador.empresaId)?.nome || 'Não definida';
+
+  // Cargos filtrados pelo Setor escolhido no formulário de Mudança de Cargo —
+  // Cargos sem setorId (ainda não migrados) continuam aparecendo, para não
+  // travar quem só tem cargos antigos ainda não vinculados a um setor.
+  const cargosDoNovoSetor = regNovoSetorId
+    ? cargos.filter((c) => c.setorId === regNovoSetorId || !c.setorId)
+    : cargos;
   const liderObj = lideres.find((l) => l.id === colaborador.liderId);
 
   // Calcular tempo de empresa
@@ -332,6 +373,8 @@ export default function ColaboradorProfile({
         return <AlertTriangle className="text-red-500" size={18} />;
       case 'Acompanhamento':
         return <ClipboardList className="text-sky-500" size={18} />;
+      case 'Mudança de Cargo':
+        return <ArrowRightLeft className="text-sky-600" size={18} />;
       default:
         return <FileText className="text-slate-500" size={18} />;
     }
@@ -353,6 +396,8 @@ export default function ColaboradorProfile({
       case 'Suspensão':
       case 'Reclamação de Cliente':
         return 'bg-rose-50 text-rose-700 border-rose-100';
+      case 'Mudança de Cargo':
+        return 'bg-sky-50 text-sky-700 border-sky-100';
       default:
         return 'bg-slate-50 text-slate-700 border-slate-100';
     }
@@ -466,15 +511,39 @@ export default function ColaboradorProfile({
     handleFileUpload(e.dataTransfer.files);
   };
 
-  // Submit Novo Registro
+  // Submit do formulário "Adicionar/Editar Histórico" — decide entre três
+  // caminhos, sempre respeitando a regra: só um registro criado por aqui
+  // ("Novo Registro" na timeline do colaborador) pode ser uma Mudança de
+  // Cargo de verdade; o "Editar" geral do colaborador nunca passa por este
+  // formulário.
+  //   1. Mudança de Cargo (criação OU edição) → onSalvarMudancaCargo, que
+  //      também atualiza o Cargo/Setor reais do colaborador e espelha o
+  //      registro em Reconhecimento;
+  //   2. Edição de um registro comum → onUpdateTimelineRegistro (upsert
+  //      simples, sem repetir automações de criação);
+  //   3. Criação de um registro comum → onAddTimelineRegistro (fluxo
+  //      original, com auto-geração de tarefa de acompanhamento).
   const handleCreateRegistro = (e: React.FormEvent) => {
     e.preventDefault();
     if (!regTitulo || !regDescricao) return;
 
-    const concluindoTarefa = tarefaParaConcluir && tarefaParaConcluir.colaboradorId === colaborador.id;
+    const isMudancaCargo = regTipo === 'Mudança de Cargo';
+    if (isMudancaCargo && !regNovoCargoId) return;
 
-    const novoReg: TimelineRegistro = {
-      id: `reg-${Date.now()}`,
+    const concluindoTarefa = !editingRegistroId && tarefaParaConcluir && tarefaParaConcluir.colaboradorId === colaborador.id;
+    const cargoNovoEscolhido = cargos.find((c) => c.id === regNovoCargoId);
+    // Ao editar uma Mudança de Cargo já existente, o "cargo anterior" deve
+    // continuar sendo o valor original guardado no registro — o cargo ATUAL
+    // do colaborador já reflete o cargoNovoId desta mesma mudança (aplicado
+    // quando ela foi criada), então recalculá-lo aqui apagaria o histórico
+    // real de "de onde veio". Só numa criação nova é que o cargo atual do
+    // colaborador é, de fato, o "anterior".
+    const registroOriginal = editingRegistroId ? timeline.find((r) => r.id === editingRegistroId) : undefined;
+    const cargoAnteriorParaSalvar = registroOriginal?.cargoAnteriorId ?? colaborador.cargoId;
+    const setorAnteriorParaSalvar = registroOriginal?.setorAnteriorId ?? colaborador.setorId;
+
+    const registro: TimelineRegistro = {
+      id: editingRegistroId || `reg-${Date.now()}`,
       colaboradorId: colaborador.id,
       tipo: regTipo,
       data: regData,
@@ -484,27 +553,91 @@ export default function ColaboradorProfile({
       prioridade: regPrioridade,
       status: regStatus,
       prazoAcompanhamento: regPrazo || undefined,
-      gerarTarefaFutura: regGerarTarefa,
+      gerarTarefaFutura: isMudancaCargo ? false : regGerarTarefa,
       tarefaId: concluindoTarefa ? tarefaParaConcluir!.id : undefined,
       anexos: regAnexos,
+      ...(isMudancaCargo
+        ? {
+            cargoAnteriorId: cargoAnteriorParaSalvar,
+            cargoNovoId: regNovoCargoId,
+            setorAnteriorId: setorAnteriorParaSalvar,
+            setorNovoId: regNovoSetorId || cargoNovoEscolhido?.setorId || colaborador.setorId,
+          }
+        : {}),
     };
 
-    onAddTimelineRegistro(novoReg);
-
-    // Se este registro é o relato de conclusão de uma Tarefa (ver
-    // Tarefas.tsx), a Tarefa só vira "concluída" agora — depois que o relato
-    // já está salvo no histórico do colaborador.
-    if (concluindoTarefa) {
-      onConcluirTarefa?.(tarefaParaConcluir!.id, novoReg.id);
+    if (isMudancaCargo) {
+      onSalvarMudancaCargo(registro);
+    } else if (editingRegistroId) {
+      onUpdateTimelineRegistro(registro);
+    } else {
+      onAddTimelineRegistro(registro);
+      // Se este registro é o relato de conclusão de uma Tarefa (ver
+      // Tarefas.tsx), a Tarefa só vira "concluída" agora — depois que o
+      // relato já está salvo no histórico do colaborador. Só se aplica à
+      // criação de um registro comum, nunca a uma edição.
+      if (concluindoTarefa) {
+        onConcluirTarefa?.(tarefaParaConcluir!.id, registro.id);
+      }
     }
 
-    // Reset Form
+    closeRegistroForm();
+  };
+
+  // Fecha e reseta o formulário de "Adicionar/Editar Histórico", tanto ao
+  // salvar quanto ao cancelar.
+  const closeRegistroForm = () => {
     setIsFormOpen(false);
+    setEditingRegistroId(null);
+    setRegTipo('Feedback Positivo');
     setRegTitulo('');
     setRegDescricao('');
     setRegPrazo('');
     setRegGerarTarefa(false);
     setRegAnexos([]);
+    setRegNovoSetorId(colaborador.setorId);
+    setRegNovoCargoId('');
+  };
+
+  // Abre o formulário já preenchido com os dados de um registro existente —
+  // usado tanto para corrigir um texto/data quanto para reaplicar o Cargo de
+  // uma Mudança de Cargo lançada por engano.
+  const openEditRegistro = (reg: TimelineRegistro) => {
+    setEditingRegistroId(reg.id);
+    setRegTipo(reg.tipo);
+    setRegTitulo(reg.titulo);
+    setRegDescricao(reg.descricao);
+    setRegData(reg.data);
+    setRegLiderId(reg.responsavelId);
+    setRegPrioridade(reg.prioridade);
+    setRegStatus(reg.status);
+    setRegPrazo(reg.prazoAcompanhamento || '');
+    setRegGerarTarefa(reg.gerarTarefaFutura);
+    setRegAnexos(reg.anexos || []);
+    if (reg.tipo === 'Mudança de Cargo') {
+      setRegNovoSetorId(reg.setorNovoId || colaborador.setorId);
+      setRegNovoCargoId(reg.cargoNovoId || '');
+    }
+    setIsFormOpen(true);
+    formRegistroRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  // Abre a confirmação de exclusão de um registro — por padrão já vem com a
+  // reversão de cargo marcada quando aplicável, pois normalmente é isso que
+  // se quer ao desfazer um lançamento por engano.
+  const handleDeleteRegistroClick = (reg: TimelineRegistro) => {
+    setDeleteRegistroConfirm(reg);
+    setReverterCargoAoExcluir(true);
+  };
+
+  const confirmDeleteRegistro = () => {
+    if (!deleteRegistroConfirm) return;
+    onDeleteTimelineRegistro(deleteRegistroConfirm, reverterCargoAoExcluir);
+    setDeleteRegistroConfirm(null);
+  };
+
+  const cancelDeleteRegistro = () => {
+    setDeleteRegistroConfirm(null);
   };
 
   // Estatísticas de timeline rápidas
@@ -728,7 +861,14 @@ export default function ColaboradorProfile({
             {/* Add timeline entry button */}
             <button
               id="btn-open-timeline-form"
-              onClick={() => setIsFormOpen(!isFormOpen)}
+              onClick={() => {
+                if (isFormOpen) {
+                  closeRegistroForm();
+                } else {
+                  setEditingRegistroId(null);
+                  setIsFormOpen(true);
+                }
+              }}
               className="flex items-center gap-1 px-4 py-1.5 bg-teal-500 text-slate-950 font-bold rounded-xl text-xs hover:bg-teal-400 cursor-pointer transition shadow-sm"
             >
               <PlusCircle size={14} />
@@ -736,7 +876,7 @@ export default function ColaboradorProfile({
             </button>
           </div>
 
-          {/* INLINE COLLAPSIBLE FORM: ADD TIMELINE ENTRY */}
+          {/* INLINE COLLAPSIBLE FORM: ADD/EDIT TIMELINE ENTRY */}
           {isFormOpen && (
             <div
               ref={formRegistroRef}
@@ -760,7 +900,7 @@ export default function ColaboradorProfile({
                   <button
                     type="button"
                     onClick={() => {
-                      setIsFormOpen(false);
+                      closeRegistroForm();
                       onCancelarConclusaoTarefa?.();
                     }}
                     className="text-xs font-semibold text-teal-700 bg-white border border-teal-200 rounded-lg px-2.5 py-1 hover:bg-teal-100 shrink-0 cursor-pointer"
@@ -772,12 +912,18 @@ export default function ColaboradorProfile({
 
               <div className="flex justify-between items-center border-b border-slate-100 pb-3">
                 <div>
-                  <h3 className="font-extrabold text-slate-900">Adicionar Histórico à Timeline</h3>
-                  <p className="text-xs text-slate-400 mt-0.5">Este registro formará a timeline cronológica oficial do colaborador.</p>
+                  <h3 className="font-extrabold text-slate-900">
+                    {editingRegistroId ? 'Editar Registro da Timeline' : 'Adicionar Histórico à Timeline'}
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    {editingRegistroId
+                      ? 'Corrija o que for necessário — o registro continua no mesmo lugar da timeline.'
+                      : 'Este registro formará a timeline cronológica oficial do colaborador.'}
+                  </p>
                 </div>
                 <button
                   onClick={() => {
-                    setIsFormOpen(false);
+                    closeRegistroForm();
                     if (tarefaParaConcluir && tarefaParaConcluir.colaboradorId === colaborador.id) {
                       onCancelarConclusaoTarefa?.();
                     }
@@ -794,7 +940,18 @@ export default function ColaboradorProfile({
                     <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Tipo de Registro</label>
                     <select
                       value={regTipo}
-                      onChange={(e) => setRegTipo(e.target.value as TipoRegistro)}
+                      onChange={(e) => {
+                        const novoTipo = e.target.value as TipoRegistro;
+                        setRegTipo(novoTipo);
+                        if (novoTipo === 'Mudança de Cargo' && !editingRegistroId) {
+                          setRegNovoSetorId(colaborador.setorId);
+                          setRegNovoCargoId('');
+                          if (!regTitulo) setRegTitulo(`Mudança de cargo de ${colaborador.nome}`);
+                          if (!regDescricao) {
+                            setRegDescricao(`De "${cargoNome}" para novo cargo a definir.`);
+                          }
+                        }
+                      }}
                       className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-1 focus:ring-teal-500 cursor-pointer"
                     >
                       <option value="Feedback Positivo">Feedback Positivo</option>
@@ -802,6 +959,7 @@ export default function ColaboradorProfile({
                       <option value="Reconhecimento">Reconhecimento</option>
                       <option value="Conversa Individual (1:1)">Conversa Individual (1:1)</option>
                       <option value="Plano de Desenvolvimento Individual (PDI)">Plano de Desenvolvimento Individual (PDI)</option>
+                      <option value="Mudança de Cargo">Mudança de Cargo</option>
                       <option value="Advertência">Advertência</option>
                       <option value="Suspensão">Suspensão</option>
                       <option value="Elogio de Cliente">Elogio de Cliente</option>
@@ -824,6 +982,71 @@ export default function ColaboradorProfile({
                     />
                   </div>
                 </div>
+
+                {/* Campos exclusivos de "Mudança de Cargo": o Setor é
+                    escolhido primeiro e filtra a lista de Cargos disponíveis
+                    (Cargo vinculado a Setor) — evita listar todos os cargos
+                    da empresa de uma vez. Ao salvar, isso atualiza de fato o
+                    Cargo/Setor do colaborador e aparece também na dashboard
+                    de Reconhecimento. */}
+                {regTipo === 'Mudança de Cargo' && (
+                  <div className="p-4 bg-sky-50 rounded-2xl border border-sky-100 space-y-4">
+                    <h4 className="text-xs font-bold text-sky-700 uppercase tracking-wider flex items-center gap-1.5">
+                      <ArrowRightLeft size={14} />
+                      Mudança de Cargo
+                    </h4>
+                    <p className="text-[11px] text-sky-700/80 -mt-2">
+                      Cargo atual: <strong>{cargoNome}</strong> ({setorNome}). Ao salvar, o cargo do colaborador é atualizado e este registro também aparece na dashboard de Reconhecimento.
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-500 mb-1.5">Novo Setor</label>
+                        <select
+                          value={regNovoSetorId}
+                          onChange={(e) => {
+                            const novoSetorId = e.target.value;
+                            setRegNovoSetorId(novoSetorId);
+                            const cargoAindaValido = cargos.find(
+                              (c) => c.id === regNovoCargoId && (c.setorId === novoSetorId || !c.setorId)
+                            );
+                            if (!cargoAindaValido) setRegNovoCargoId('');
+                          }}
+                          className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-1 focus:ring-teal-500 cursor-pointer"
+                        >
+                          {setores.map((s) => (
+                            <option key={s.id} value={s.id}>
+                              {s.nome}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-500 mb-1.5">Novo Cargo</label>
+                        <select
+                          required
+                          value={regNovoCargoId}
+                          onChange={(e) => {
+                            const novoCargoId = e.target.value;
+                            setRegNovoCargoId(novoCargoId);
+                            const cargoEscolhido = cargos.find((c) => c.id === novoCargoId);
+                            if (cargoEscolhido?.setorId) setRegNovoSetorId(cargoEscolhido.setorId);
+                          }}
+                          className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-1 focus:ring-teal-500 cursor-pointer"
+                        >
+                          <option value="">Selecione o novo cargo...</option>
+                          {cargosDoNovoSetor.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.nome}
+                            </option>
+                          ))}
+                        </select>
+                        {cargosDoNovoSetor.length === 0 && (
+                          <p className="text-[10px] text-amber-600 mt-1">Nenhum cargo vinculado a este setor ainda.</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
@@ -908,18 +1131,20 @@ export default function ColaboradorProfile({
                 </div>
 
                 {/* Checklist toggle to Auto-generate Task */}
-                <div className="bg-slate-50 p-3.5 rounded-2xl flex items-center gap-3 border border-slate-100">
-                  <input
-                    type="checkbox"
-                    id="chk-gerar-tarefa"
-                    checked={regGerarTarefa}
-                    onChange={(e) => setRegGerarTarefa(e.target.checked)}
-                    className="w-4 h-4 text-teal-600 border-slate-300 rounded focus:ring-teal-500 cursor-pointer"
-                  />
-                  <label htmlFor="chk-gerar-tarefa" className="text-xs text-slate-600 font-semibold cursor-pointer">
-                    Gerar tarefa futura de acompanhamento para o líder na lista de tarefas automaticamente.
-                  </label>
-                </div>
+                {regTipo !== 'Mudança de Cargo' && (
+                  <div className="bg-slate-50 p-3.5 rounded-2xl flex items-center gap-3 border border-slate-100">
+                    <input
+                      type="checkbox"
+                      id="chk-gerar-tarefa"
+                      checked={regGerarTarefa}
+                      onChange={(e) => setRegGerarTarefa(e.target.checked)}
+                      className="w-4 h-4 text-teal-600 border-slate-300 rounded focus:ring-teal-500 cursor-pointer"
+                    />
+                    <label htmlFor="chk-gerar-tarefa" className="text-xs text-slate-600 font-semibold cursor-pointer">
+                      Gerar tarefa futura de acompanhamento para o líder na lista de tarefas automaticamente.
+                    </label>
+                  </div>
+                )}
 
                 {/* SUPABASE STORAGE: FILE UPLOAD ZONE */}
                 <div className="space-y-2">
@@ -1004,7 +1229,7 @@ export default function ColaboradorProfile({
                 <div className="flex justify-end gap-2 pt-4 border-t border-slate-100">
                   <button
                     type="button"
-                    onClick={() => setIsFormOpen(false)}
+                    onClick={closeRegistroForm}
                     className="px-4 py-2 border border-slate-200 text-slate-600 bg-slate-50 rounded-xl text-xs font-semibold hover:bg-slate-100 cursor-pointer transition"
                   >
                     Cancelar
@@ -1013,7 +1238,7 @@ export default function ColaboradorProfile({
                     type="submit"
                     className="px-5 py-2 bg-teal-500 text-slate-950 font-bold rounded-xl text-xs hover:bg-teal-400 cursor-pointer transition"
                   >
-                    Lançar no Histórico
+                    {editingRegistroId ? 'Salvar Alterações' : 'Lançar no Histórico'}
                   </button>
                 </div>
               </form>
@@ -1374,6 +1599,30 @@ export default function ColaboradorProfile({
                               </span>
                             </div>
                           )}
+
+                          {/* Editar/Excluir registro — corrige um lançamento
+                              feito por engano ou para o colaborador errado.
+                              Sempre disponível, independente do tipo. */}
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => openEditRegistro(reg)}
+                              className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-500 bg-slate-50 hover:bg-slate-100 px-2 py-1 rounded-lg cursor-pointer transition"
+                              title="Editar este registro"
+                            >
+                              <Pencil size={11} />
+                              Editar
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteRegistroClick(reg)}
+                              className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-600 bg-rose-50 hover:bg-rose-100 px-2 py-1 rounded-lg cursor-pointer transition"
+                              title="Excluir este registro"
+                            >
+                              <Trash2 size={11} />
+                              Excluir
+                            </button>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -1387,6 +1636,58 @@ export default function ColaboradorProfile({
 
       {anexoEmPreview && (
         <AnexoPreviewModal arquivo={anexoEmPreview} onClose={() => setAnexoEmPreview(null)} />
+      )}
+
+      {/* MODAL: CONFIRMAÇÃO DE EXCLUSÃO DE REGISTRO */}
+      {deleteRegistroConfirm && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-6 animate-scale-up border border-slate-100">
+            <div className="text-center mb-6">
+              <div className="w-16 h-16 bg-rose-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Trash2 size={32} className="text-rose-600" />
+              </div>
+              <h3 className="text-lg font-bold text-slate-900 mb-2">Excluir Registro</h3>
+              <p className="text-sm text-slate-500">
+                Tem certeza que deseja excluir "{deleteRegistroConfirm.titulo}" da timeline? Esta ação não pode ser desfeita.
+              </p>
+            </div>
+
+            {deleteRegistroConfirm.tipo === 'Mudança de Cargo' && (
+              <div className="bg-sky-50 border border-sky-100 rounded-2xl p-3.5 mb-5">
+                <label className="flex items-start gap-2.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={reverterCargoAoExcluir}
+                    onChange={(e) => setReverterCargoAoExcluir(e.target.checked)}
+                    className="w-4 h-4 mt-0.5 text-teal-600 border-slate-300 rounded focus:ring-teal-500 cursor-pointer"
+                  />
+                  <span className="text-xs text-sky-800">
+                    Também devolver o cargo do colaborador para o cargo anterior a esta mudança
+                    {deleteRegistroConfirm.cargoAnteriorId
+                      ? ` (${cargos.find((c) => c.id === deleteRegistroConfirm.cargoAnteriorId)?.nome || 'cargo anterior'})`
+                      : ''}
+                    . Desmarque se este registro foi lançado para o colaborador errado — nesse caso, corrija o cargo diretamente no colaborador certo.
+                  </span>
+                </label>
+              </div>
+            )}
+
+            <div className="flex gap-3">
+              <button
+                onClick={cancelDeleteRegistro}
+                className="flex-1 px-4 py-3 border border-slate-200 text-slate-600 bg-slate-50 rounded-xl text-sm font-semibold hover:bg-slate-100 transition cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmDeleteRegistro}
+                className="flex-1 px-4 py-3 bg-rose-500 text-white font-bold rounded-xl text-sm hover:bg-rose-600 transition cursor-pointer"
+              >
+                Sim, Excluir
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

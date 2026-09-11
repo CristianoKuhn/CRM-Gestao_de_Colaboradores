@@ -29,6 +29,18 @@ export default function Login({ onLoginSuccess }: LoginProps) {
   const [showNovaSenha, setShowNovaSenha] = useState(false);
   const [isSavingNovaSenha, setIsSavingNovaSenha] = useState(false);
 
+  // ── "Esqueci minha senha" ──────────────────────────────────────────────
+  // Tela extra, acionada pelo link abaixo do formulário de login. Só pede o
+  // e-mail e dispara `solicitarRecuperacaoSenha` — o restante do fluxo (abrir
+  // o link do e-mail e definir a nova senha) acontece em RedefinirSenhaPage,
+  // fora do Login, já que a pessoa não está autenticada quando chega lá.
+  const [modoRecuperacao, setModoRecuperacao] = useState(false);
+  const [recEmail, setRecEmail] = useState('');
+  const [recEnviado, setRecEnviado] = useState(false);
+  const [recMensagem, setRecMensagem] = useState<string | null>(null);
+  const [recErro, setRecErro] = useState<string | null>(null);
+  const [recLoading, setRecLoading] = useState(false);
+
   // ── Security Audit (Fase 1, V01/V02/V03) ──────────────────────────────
   // Antes, o login baixava a lista COMPLETA de usuários (com senha) e
   // comparava no navegador — qualquer chamada a `getUsuarios` expunha a
@@ -97,6 +109,39 @@ export default function Login({ onLoginSuccess }: LoginProps) {
     } finally {
       setIsSavingNovaSenha(false);
     }
+  };
+
+  // Dispara o pedido de recuperação — sempre mostra a mesma mensagem de
+  // sucesso genérica devolvida pelo backend, exista ou não o e-mail
+  // cadastrado (nunca revela isso na tela).
+  const handleSolicitarRecuperacao = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (recLoading) return;
+    if (!recEmail.trim()) {
+      setRecErro('Informe o e-mail cadastrado na sua conta.');
+      return;
+    }
+
+    setRecLoading(true);
+    setRecErro(null);
+    try {
+      const resultado = await DataService.solicitarRecuperacaoSenha(recEmail.trim());
+      setRecMensagem(resultado.mensagem);
+      setRecEnviado(true);
+    } catch (err: any) {
+      console.error(err);
+      setRecErro(err.message || 'Não foi possível processar sua solicitação agora. Tente novamente em instantes.');
+    } finally {
+      setRecLoading(false);
+    }
+  };
+
+  const voltarParaLoginNormal = () => {
+    setModoRecuperacao(false);
+    setRecEmail('');
+    setRecEnviado(false);
+    setRecMensagem(null);
+    setRecErro(null);
   };
 
   // ── Etapa 2: definir nova senha (primeiro acesso ou pós-reset) ──────────
@@ -200,6 +245,100 @@ export default function Login({ onLoginSuccess }: LoginProps) {
     );
   }
 
+  // ── "Esqueci minha senha" ────────────────────────────────────────────
+  if (modoRecuperacao) {
+    return (
+      <div id="login-container" className="min-h-screen bg-slate-900 flex flex-col justify-center py-12 sm:px-6 lg:px-8 font-sans antialiased">
+        <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
+          <div className="inline-flex items-center gap-3 bg-teal-500 text-slate-900 font-extrabold p-3 rounded-2xl shadow-lg shadow-teal-500/20 mb-4">
+            <KeyRound size={28} />
+          </div>
+          <h2 className="text-2xl font-extrabold text-white tracking-tight">Recuperar Senha</h2>
+          <p className="mt-1 text-xs text-slate-400 font-medium">
+            {recEnviado
+              ? 'Confira sua caixa de entrada em instantes.'
+              : 'Informe seu e-mail de acesso ao Gestão360.'}
+          </p>
+        </div>
+
+        <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md p-4">
+          <div className="bg-slate-800/80 backdrop-blur-md py-8 px-6 shadow-2xl rounded-3xl border border-slate-700/50 space-y-6">
+            {recEnviado ? (
+              <div className="space-y-5">
+                <div className="bg-teal-500/10 border border-teal-500/20 p-4 rounded-2xl flex items-start gap-3 animate-scale-up">
+                  <CheckCircle className="text-teal-400 shrink-0 mt-0.5" size={18} />
+                  <p className="text-xs text-teal-200 leading-relaxed">{recMensagem}</p>
+                </div>
+                <p className="text-[11px] text-slate-400 text-center leading-relaxed">
+                  O link recebido expira em 30 minutos e só pode ser usado uma vez. Não recebeu nada? Confira o spam ou tente novamente em 1 minuto.
+                </p>
+                <button
+                  onClick={voltarParaLoginNormal}
+                  className="w-full flex justify-center items-center gap-2 py-3.5 bg-teal-500 hover:bg-teal-400 active:bg-teal-600 text-slate-950 font-extrabold rounded-2xl text-xs transition duration-150 shadow-lg shadow-teal-500/10 cursor-pointer"
+                >
+                  Voltar para o Login
+                </button>
+              </div>
+            ) : (
+              <>
+                {recErro && (
+                  <div className="bg-rose-500/10 border border-rose-500/30 p-4 rounded-2xl flex items-start gap-3 animate-scale-up">
+                    <ShieldAlert className="text-rose-400 shrink-0 mt-0.5" size={18} />
+                    <div>
+                      <p className="text-xs font-bold text-rose-300">Não foi possível continuar</p>
+                      <p className="text-[10px] text-rose-400/90 mt-0.5 leading-relaxed">{recErro}</p>
+                    </div>
+                  </div>
+                )}
+
+                <form onSubmit={handleSolicitarRecuperacao} className="space-y-5">
+                  <div>
+                    <label htmlFor="recEmail" className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+                      E-mail de Acesso
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+                        <Mail size={16} />
+                      </div>
+                      <input
+                        id="recEmail"
+                        type="email"
+                        required
+                        autoFocus
+                        disabled={recLoading}
+                        value={recEmail}
+                        onChange={(e) => setRecEmail(e.target.value)}
+                        placeholder="seu.nome@empresa.com"
+                        className="block w-full pl-10 pr-4 py-3 bg-slate-900/50 border border-slate-700 focus:border-teal-500 focus:bg-slate-900 outline-none rounded-2xl text-xs text-white placeholder-slate-500 transition duration-150 disabled:opacity-50"
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={recLoading}
+                    className="w-full flex justify-center items-center gap-2 py-3.5 bg-teal-500 hover:bg-teal-400 active:bg-teal-600 disabled:opacity-50 text-slate-950 font-extrabold rounded-2xl text-xs transition duration-150 shadow-lg shadow-teal-500/10 cursor-pointer"
+                  >
+                    {recLoading ? 'Enviando...' : 'Enviar Link de Recuperação'}
+                    {!recLoading && <ArrowRight size={14} />}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={voltarParaLoginNormal}
+                    className="w-full text-center text-[11px] font-semibold text-slate-400 hover:text-slate-200 transition cursor-pointer"
+                  >
+                    Voltar para o login
+                  </button>
+                </form>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // ── Etapa 1: credenciais ─────────────────────────────────────────────
   return (
     <div id="login-container" className="min-h-screen bg-slate-900 flex flex-col justify-center py-12 sm:px-6 lg:px-8 font-sans antialiased">
@@ -275,6 +414,19 @@ export default function Login({ onLoginSuccess }: LoginProps) {
                   className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-500 hover:text-slate-300 cursor-pointer"
                 >
                   {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+              <div className="text-right mt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setError(null);
+                    setRecEmail(email);
+                    setModoRecuperacao(true);
+                  }}
+                  className="text-[11px] font-semibold text-teal-400 hover:text-teal-300 transition cursor-pointer"
+                >
+                  Esqueci minha senha
                 </button>
               </div>
             </div>

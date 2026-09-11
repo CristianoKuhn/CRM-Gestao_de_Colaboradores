@@ -42,7 +42,7 @@ interface ColaboradoresProps {
   onAddColaborador: (col: Colaborador) => void;
   onAddEmpresa: (nome: string) => void;
   onAddSetor: (nome: string) => void;
-  onAddCargo: (nome: string) => void;
+  onAddCargo: (nome: string, setorId: string) => void;
   onAddLider: (lider: Lider) => void;
   onUpdateColaborador: (col: Colaborador) => void;
   onDeleteColaborador: (id: string) => void;
@@ -120,6 +120,11 @@ export default function Colaboradores({
   const [auxNome, setAuxNome] = useState('');
   const [auxEmail, setAuxEmail] = useState(''); // apenas para Líder
   const [auxSetoresPermitidos, setAuxSetoresPermitidos] = useState<string[]>([]);
+  // Setor ao qual o novo Cargo será vinculado — todo Cargo criado a partir de
+  // agora precisa nascer já vinculado a um Setor (ver arquitetura: Cargo
+  // vinculado a Setor). Cargos criados antes desta mudança continuam sem
+  // vínculo até serem editados manualmente em Config.tsx > aba Cargos.
+  const [auxCargoSetorId, setAuxCargoSetorId] = useState(setores[0]?.id || '');
 
   // Função para calcular o tempo de empresa de forma legível
   function calcularTempoEmpresa(dataAdmissaoStr: string | undefined): string {
@@ -147,6 +152,20 @@ export default function Colaboradores({
     const mesesStr = meses > 0 ? ` e ${meses} ${meses === 1 ? 'mês' : 'meses'}` : '';
     return `${anosStr}${mesesStr}`;
   }
+
+  // Cargos filtrados pelo Setor escolhido no filtro da listagem — Cargos sem
+  // setorId (ainda não migrados) continuam aparecendo em qualquer Setor, para
+  // não "sumir" da tela até serem editados em Config.tsx.
+  const cargosParaFiltro = filterSetor
+    ? cargos.filter((c) => c.setorId === filterSetor || !c.setorId)
+    : cargos;
+
+  // Cargos filtrados pelo Setor escolhido no formulário de Novo Colaborador —
+  // evita que a lista inteira de Cargos da empresa apareça ali; só mostra os
+  // vinculados ao Setor já selecionado (ver arquitetura: Cargo vinculado a Setor).
+  const cargosDoSetorSelecionado = newColSetorId
+    ? cargos.filter((c) => c.setorId === newColSetorId || !c.setorId)
+    : cargos;
 
   // Filtragem inteligente
   const colaboradoresFiltrados = colaboradores.filter((col) => {
@@ -252,7 +271,8 @@ export default function Colaboradores({
     } else if (isAuxModalOpen === 'setor') {
       onAddSetor(auxNome);
     } else if (isAuxModalOpen === 'cargo') {
-      onAddCargo(auxNome);
+      if (!auxCargoSetorId) return;
+      onAddCargo(auxNome, auxCargoSetorId);
     } else if (isAuxModalOpen === 'lider') {
       onAddLider({
         id: `lid-${Date.now()}`,
@@ -266,6 +286,7 @@ export default function Colaboradores({
     setAuxNome('');
     setAuxEmail('');
     setAuxSetoresPermitidos([]);
+    setAuxCargoSetorId(setores[0]?.id || '');
     setIsAuxModalOpen(null);
   };
 
@@ -341,7 +362,10 @@ export default function Colaboradores({
           <select
             id="filter-setor"
             value={filterSetor}
-            onChange={(e) => setFilterSetor(e.target.value)}
+            onChange={(e) => {
+              setFilterSetor(e.target.value);
+              setFilterCargo('');
+            }}
             className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none text-slate-700 cursor-pointer"
           >
             <option value="">Todos os Setores</option>
@@ -359,7 +383,7 @@ export default function Colaboradores({
             className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none text-slate-700 cursor-pointer"
           >
             <option value="">Todos os Cargos</option>
-            {cargos.map((c) => (
+            {cargosParaFiltro.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.nome}
               </option>
@@ -597,24 +621,23 @@ export default function Colaboradores({
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Cargo</label>
-                  <select
-                    value={newColCargoId}
-                    onChange={(e) => setNewColCargoId(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 cursor-pointer"
-                  >
-                    {cargos.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.nome}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Setor</label>
                   <select
                     value={newColSetorId}
-                    onChange={(e) => setNewColSetorId(e.target.value)}
+                    onChange={(e) => {
+                      const novoSetorId = e.target.value;
+                      setNewColSetorId(novoSetorId);
+                      // Ao trocar de Setor, garante que o Cargo selecionado
+                      // continue pertencendo a ele — evita salvar um
+                      // colaborador com Setor e Cargo de áreas diferentes.
+                      const cargoAtualAindaValido = cargos.find(
+                        (c) => c.id === newColCargoId && (c.setorId === novoSetorId || !c.setorId)
+                      );
+                      if (!cargoAtualAindaValido) {
+                        const primeiroCargoDoSetor = cargos.find((c) => c.setorId === novoSetorId);
+                        setNewColCargoId(primeiroCargoDoSetor?.id || '');
+                      }
+                    }}
                     className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 cursor-pointer"
                   >
                     {setores.map((s) => (
@@ -623,6 +646,26 @@ export default function Colaboradores({
                       </option>
                     ))}
                   </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Cargo</label>
+                  <select
+                    value={newColCargoId}
+                    onChange={(e) => setNewColCargoId(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 cursor-pointer"
+                  >
+                    <option value="">Selecione um cargo...</option>
+                    {cargosDoSetorSelecionado.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.nome}
+                      </option>
+                    ))}
+                  </select>
+                  {cargosDoSetorSelecionado.length === 0 && (
+                    <p className="text-[10px] text-amber-600 mt-1">
+                      Nenhum cargo vinculado a este setor ainda. Use "+ Cargo" para cadastrar um.
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -842,6 +885,30 @@ export default function Colaboradores({
                   className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
                 />
               </div>
+
+              {isAuxModalOpen === 'cargo' && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">
+                    Setor Vinculado
+                  </label>
+                  <select
+                    required
+                    value={auxCargoSetorId}
+                    onChange={(e) => setAuxCargoSetorId(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 cursor-pointer"
+                  >
+                    <option value="">Selecione um setor...</option>
+                    {setores.map((setor) => (
+                      <option key={setor.id} value={setor.id}>
+                        {setor.nome}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    Todo cargo precisa pertencer a um setor — isso permite que, ao cadastrar um colaborador, o campo Cargo já apareça filtrado pelo Setor escolhido.
+                  </p>
+                </div>
+              )}
 
               {isAuxModalOpen === 'lider' && (
                 <>

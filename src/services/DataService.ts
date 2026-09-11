@@ -362,6 +362,7 @@ export interface IDataService {
   saveColaborador(colaborador: Colaborador): Promise<void>;
   deleteColaborador(id: string): Promise<void>;
   saveTimelineRegistro(registro: TimelineRegistro): Promise<void>;
+  deleteTimelineRegistro(id: string): Promise<void>;
   saveTarefa(tarefa: Tarefa): Promise<void>;
   toggleTarefa(id: string): Promise<Tarefa | undefined>;
   deleteTarefa(id: string): Promise<void>;
@@ -712,6 +713,9 @@ export class LocalDataService implements IDataService {
   }
   async saveTimelineRegistro(registro: TimelineRegistro): Promise<void> {
     StorageAPI.saveTimelineRegistro(registro);
+  }
+  async deleteTimelineRegistro(id: string): Promise<void> {
+    StorageAPI.deleteTimelineRegistro(id);
   }
   async saveTarefa(tarefa: Tarefa): Promise<void> {
     StorageAPI.saveTarefa(tarefa);
@@ -1737,6 +1741,7 @@ export class GoogleScriptDataService implements IDataService {
       return raw.map(c => ({
         id: String(c.id || ''),
         nome: String(c.nome || ''),
+        setorId: c.setor_id ? String(c.setor_id) : undefined,
         familiaId: c.familia_id ? String(c.familia_id) : undefined,
         nivelOrdem: c.nivel_ordem !== '' && c.nivel_ordem != null ? Number(c.nivel_ordem) : undefined,
         proximoCargoId: c.proximo_cargo_id ? String(c.proximo_cargo_id) : undefined,
@@ -1909,7 +1914,14 @@ export class GoogleScriptDataService implements IDataService {
           prazoAcompanhamento: String(r.prazo || r.prazo_acompanhamento || r.prazoAcompanhamento || ''),
           gerarTarefaFutura: r.gerar_tarefa_futura === true || r.gerar_tarefa_futura === 'true',
           anexos: typeof r.anexos === 'string' ? JSON.parse(r.anexos) : (r.anexos || []),
-          tarefaId: String(r.tarefa_id || r.tarefaId || '')
+          tarefaId: String(r.tarefa_id || r.tarefaId || ''),
+          // Só vêm preenchidos quando tipo === 'Mudança de Cargo' (ver
+          // ColaboradorProfile.tsx) — usados para reaplicar/reverter o
+          // Cargo/Setor do colaborador ao editar ou excluir este registro.
+          cargoAnteriorId: r.cargo_anterior_id ? String(r.cargo_anterior_id) : undefined,
+          cargoNovoId: r.cargo_novo_id ? String(r.cargo_novo_id) : undefined,
+          setorAnteriorId: r.setor_anterior_id ? String(r.setor_anterior_id) : undefined,
+          setorNovoId: r.setor_novo_id ? String(r.setor_novo_id) : undefined,
         };
       });
     } catch (e) {
@@ -1978,6 +1990,7 @@ export class GoogleScriptDataService implements IDataService {
     const body = {
       id: cargo.id,
       nome: cargo.nome,
+      setor_id: cargo.setorId || '',
       familia_id: cargo.familiaId || '',
       nivel_ordem: cargo.nivelOrdem ?? '',
       proximo_cargo_id: cargo.proximoCargoId || '',
@@ -2160,6 +2173,11 @@ export class GoogleScriptDataService implements IDataService {
       gerar_tarefa_futura: registro.gerarTarefaFutura || false,
       anexos: registro.anexos || [],
       tarefa_id: registro.tarefaId || '',
+      // Preenchidos apenas para tipo === 'Mudança de Cargo'.
+      cargo_anterior_id: registro.cargoAnteriorId || '',
+      cargo_novo_id: registro.cargoNovoId || '',
+      setor_anterior_id: registro.setorAnteriorId || '',
+      setor_novo_id: registro.setorNovoId || '',
     };
 
     try {
@@ -2170,6 +2188,15 @@ export class GoogleScriptDataService implements IDataService {
       } catch (err2) {
         console.warn('Erro ao sincronizar registro timeline com GoogleScript (usando fallback local):', err2);
       }
+    }
+  }
+
+  async deleteTimelineRegistro(id: string): Promise<void> {
+    await this.localFallback.deleteTimelineRegistro(id);
+    try {
+      await this.request('deleteTimelineRegistro', { id });
+    } catch (e) {
+      console.warn('Erro ao excluir registro da timeline no GoogleScript (usando fallback local):', e);
     }
   }
 
@@ -4433,6 +4460,9 @@ class DynamicDataService implements IDataService {
   }
   async saveTimelineRegistro(registro: TimelineRegistro): Promise<void> {
     await this.getService().saveTimelineRegistro(registro);
+  }
+  async deleteTimelineRegistro(id: string): Promise<void> {
+    await this.getService().deleteTimelineRegistro(id);
   }
   async saveTarefa(tarefa: Tarefa): Promise<void> {
     await this.getService().saveTarefa(tarefa);

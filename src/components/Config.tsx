@@ -57,7 +57,7 @@ interface ConfigProps {
   colaboradores?: Colaborador[];
   onAddEmpresa?: (nome: string) => void;
   onAddSetor?: (nome: string) => void;
-  onAddCargo?: (nome: string) => void;
+  onAddCargo?: (nome: string, setorId: string) => void;
   onAddLider?: (lider: Lider) => void;
   onUpdateSetor?: (setor: Setor) => void;
   onUpdateCargo?: (cargo: Cargo) => void;
@@ -106,10 +106,15 @@ export default function Config({
   const [editingLider, setEditingLider] = useState<string | null>(null);
   const [newSetorNome, setNewSetorNome] = useState('');
   const [newCargoNome, setNewCargoNome] = useState('');
+  // Todo cargo criado a partir de agora precisa nascer vinculado a um Setor
+  // (ver arquitetura: Cargo vinculado a Setor). Cargos criados antes desta
+  // mudança ficam sem setorId até serem editados aqui.
+  const [newCargoSetorId, setNewCargoSetorId] = useState('');
   const [newLiderNome, setNewLiderNome] = useState('');
   const [newLiderEmail, setNewLiderEmail] = useState('');
   const [editSetorNome, setEditSetorNome] = useState('');
   const [editCargoNome, setEditCargoNome] = useState('');
+  const [editCargoSetorId, setEditCargoSetorId] = useState('');
   const [editLiderNome, setEditLiderNome] = useState('');
   const [editLiderEmail, setEditLiderEmail] = useState('');
 
@@ -191,17 +196,18 @@ export default function Config({
 
   const handleAddCargo = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newCargoNome.trim() || !onAddCargo) return;
-    onAddCargo(newCargoNome.trim());
+    if (!newCargoNome.trim() || !newCargoSetorId || !onAddCargo) return;
+    onAddCargo(newCargoNome.trim(), newCargoSetorId);
     setNewCargoNome('');
+    setNewCargoSetorId('');
     setIsAddingCargo(false);
   };
 
   const handleSaveEditCargo = () => {
-    if (!editingCargo || !editCargoNome.trim() || !onUpdateCargo) return;
+    if (!editingCargo || !editCargoNome.trim() || !editCargoSetorId || !onUpdateCargo) return;
     const cargo = cargos.find(c => c.id === editingCargo);
     if (cargo) {
-      onUpdateCargo({ ...cargo, nome: editCargoNome.trim() });
+      onUpdateCargo({ ...cargo, nome: editCargoNome.trim(), setorId: editCargoSetorId });
     }
     setEditingCargo(null);
   };
@@ -418,7 +424,7 @@ export default function Config({
               <div className="space-y-4">
                 <div className="flex justify-between items-center">
                   <p className="text-xs text-slate-500">
-                    Gerencie os cargos da organização. Cada cargo define a função do colaborador.
+                    Gerencie os cargos da organização. Todo cargo precisa estar vinculado a um setor.
                   </p>
                   {!isAddingCargo && (
                     <button
@@ -431,9 +437,20 @@ export default function Config({
                   )}
                 </div>
 
+                {/* Cargos sem Setor vinculado ainda (cadastrados antes desta
+                    mudança) — aviso para lembrar de editá-los. */}
+                {cargos.some(c => !c.setorId) && (
+                  <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
+                    <AlertCircle size={14} className="text-amber-600 shrink-0 mt-0.5" />
+                    <p className="text-xs text-amber-700">
+                      {cargos.filter(c => !c.setorId).length} cargo(s) ainda não têm um setor vinculado. Clique no lápis de cada um para editar e escolher o setor.
+                    </p>
+                  </div>
+                )}
+
                 {/* Form de adição */}
                 {isAddingCargo && (
-                  <form onSubmit={handleAddCargo} className="flex gap-2 bg-teal-50 p-4 rounded-xl border border-teal-100">
+                  <form onSubmit={handleAddCargo} className="flex flex-col sm:flex-row gap-2 bg-teal-50 p-4 rounded-xl border border-teal-100">
                     <input
                       type="text"
                       value={newCargoNome}
@@ -442,6 +459,17 @@ export default function Config({
                       className="flex-1 px-3 py-2 bg-white border border-teal-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-teal-500"
                       autoFocus
                     />
+                    <select
+                      required
+                      value={newCargoSetorId}
+                      onChange={(e) => setNewCargoSetorId(e.target.value)}
+                      className="px-3 py-2 bg-white border border-teal-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-teal-500 cursor-pointer"
+                    >
+                      <option value="">Selecione o setor...</option>
+                      {setores.map(setor => (
+                        <option key={setor.id} value={setor.id}>{setor.nome}</option>
+                      ))}
+                    </select>
                     <button
                       type="submit"
                       className="px-4 py-2 bg-teal-500 text-white rounded-lg text-xs font-bold hover:bg-teal-600 transition cursor-pointer"
@@ -450,7 +478,7 @@ export default function Config({
                     </button>
                     <button
                       type="button"
-                      onClick={() => { setIsAddingCargo(false); setNewCargoNome(''); }}
+                      onClick={() => { setIsAddingCargo(false); setNewCargoNome(''); setNewCargoSetorId(''); }}
                       className="px-4 py-2 bg-slate-200 text-slate-600 rounded-lg text-xs font-bold hover:bg-slate-300 transition cursor-pointer"
                     >
                       <X size={14} />
@@ -460,7 +488,9 @@ export default function Config({
 
                 {/* Lista de Cargos */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {cargos.map(cargo => (
+                  {cargos.map(cargo => {
+                    const setorDoCargo = setores.find(s => s.id === cargo.setorId);
+                    return (
                     <div key={cargo.id} className="bg-slate-50 border border-slate-100 rounded-xl p-4 group hover:border-teal-200 transition">
                       {editingCargo === cargo.id ? (
                         <div className="space-y-2">
@@ -471,6 +501,17 @@ export default function Config({
                             className="w-full px-3 py-2 bg-white border border-teal-200 rounded-lg text-xs focus:outline-none"
                             autoFocus
                           />
+                          <select
+                            required
+                            value={editCargoSetorId}
+                            onChange={(e) => setEditCargoSetorId(e.target.value)}
+                            className="w-full px-3 py-2 bg-white border border-teal-200 rounded-lg text-xs focus:outline-none cursor-pointer"
+                          >
+                            <option value="">Selecione o setor...</option>
+                            {setores.map(setor => (
+                              <option key={setor.id} value={setor.id}>{setor.nome}</option>
+                            ))}
+                          </select>
                           <div className="flex gap-2">
                             <button
                               onClick={handleSaveEditCargo}
@@ -491,21 +532,32 @@ export default function Config({
                           <div className="flex items-start justify-between">
                             <div>
                               <h4 className="font-bold text-slate-800 text-sm">{cargo.nome}</h4>
-                              <p className="text-xs text-slate-400 mt-0.5">
+                              {setorDoCargo ? (
+                                <span className="inline-block mt-1 text-[10px] font-semibold text-teal-700 bg-teal-50 border border-teal-100 px-1.5 py-0.5 rounded">
+                                  {setorDoCargo.nome}
+                                </span>
+                              ) : (
+                                <span className="inline-block mt-1 text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-100 px-1.5 py-0.5 rounded">
+                                  Sem setor vinculado
+                                </span>
+                              )}
+                              <p className="text-xs text-slate-400 mt-1">
                                 {colaboradores.filter(c => c.cargoId === cargo.id).length} colaboradores
                               </p>
                             </div>
                             <button
-                              onClick={() => { setEditingCargo(cargo.id); setEditCargoNome(cargo.nome); }}
+                              onClick={() => { setEditingCargo(cargo.id); setEditCargoNome(cargo.nome); setEditCargoSetorId(cargo.setorId || ''); }}
                               className="p-1.5 text-slate-300 hover:text-teal-500 opacity-0 group-hover:opacity-100 transition cursor-pointer"
                             >
                               <Edit2 size={14} />
                             </button>
                           </div>
+
                         </>
                       )}
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}

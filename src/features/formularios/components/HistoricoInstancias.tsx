@@ -11,6 +11,16 @@ import { FormularioInstancia } from '../../../types';
 // com evolução das médias. Funciona para qualquer `tipoProcesso`, não só
 // avaliação — quem decide o que exibir é quem chama este componente
 // (ex.: ColaboradorProfile filtra por entidadeId antes de passar aqui).
+//
+// Ajuste (harmonização visual do Perfil do Colaborador): existir uma
+// FormularioInstancia com estadoWorkflow "concluida"/"arquivada" não é
+// garantia de que ela tenha conteúdo — o Motor de Avaliação de Experiência
+// agenda instâncias automaticamente (15/30/60/90 dias) que podem chegar a
+// esse estado sem que nenhum gestor tenha de fato preenchido nota, parecer
+// ou feedback. Mostrar essas entradas "vazias" só produz um bloco grande e
+// repetitivo sem informação nenhuma (ver captura de tela do CRM). Por isso,
+// além do filtro de estado, agora também exigimos que exista pelo menos um
+// dado de resultado real antes de renderizar o item.
 // ═══════════════════════════════════════════════════════════════════
 
 const ROTULOS_TIPO_PROCESSO: Record<string, string> = {
@@ -38,6 +48,23 @@ function corDoParecer(parecer?: string): string {
   return 'bg-slate-100 text-slate-600';
 }
 
+// Considera "preenchida" uma instância que tenha pelo menos um dado de
+// resultado real — média (simples ou ponderada), parecer final, ou algum
+// campo de IA já gerado. Uma instância "concluída" sem nenhum desses dados
+// é, na prática, um agendamento vazio e não deve aparecer no histórico.
+function temResultadoPreenchido(instancia: FormularioInstancia): boolean {
+  const resultado = instancia.resultado;
+  if (resultado) {
+    if (resultado.mediaGeral !== undefined && resultado.mediaGeral !== null) return true;
+    if (resultado.mediaPonderada !== undefined && resultado.mediaPonderada !== null) return true;
+    if (resultado.parecerFinal) return true;
+  }
+  if (instancia.iaParecerTecnico) return true;
+  if (instancia.iaFeedbackGestor) return true;
+  if (instancia.iaFeedbackColaborador) return true;
+  return false;
+}
+
 export interface HistoricoInstanciasProps {
   instancias: FormularioInstancia[];
   vazio?: string;
@@ -46,6 +73,7 @@ export interface HistoricoInstanciasProps {
 export default function HistoricoInstancias({ instancias, vazio }: HistoricoInstanciasProps) {
   const concluidas = instancias
     .filter((i) => i.estadoWorkflow === 'concluida' || i.estadoWorkflow === 'arquivada')
+    .filter(temResultadoPreenchido)
     .slice()
     .sort((a, b) => new Date(b.dataConclusao || 0).getTime() - new Date(a.dataConclusao || 0).getTime());
 

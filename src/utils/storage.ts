@@ -650,7 +650,13 @@ export const StorageAPI = {
 
   saveCargo: (cargo: Cargo) => {
     const list = StorageAPI.getCargos();
-    set(KEYS.CARGOS, [...list, cargo]);
+    const index = list.findIndex(c => c.id === cargo.id);
+    if (index >= 0) {
+      list[index] = cargo;
+      set(KEYS.CARGOS, list);
+    } else {
+      set(KEYS.CARGOS, [...list, cargo]);
+    }
   },
 
   saveLider: (lider: Lider) => {
@@ -683,6 +689,11 @@ export const StorageAPI = {
     } else {
       set(KEYS.TIMELINE, [registro, ...list]);
     }
+  },
+
+  deleteTimelineRegistro: (id: string) => {
+    const list = StorageAPI.getTimeline();
+    set(KEYS.TIMELINE, list.filter(r => r.id !== id));
   },
 
   saveTarefa: (tarefa: Tarefa) => {

@@ -12,6 +12,7 @@ import {
   Lider,
 } from '../types';
 import { DataService } from '../services/DataService';
+import FiltroMensal, { FiltroMensalValor, filtroMensalPadrao, dataDentroDoFiltroMensal } from './FiltroMensal';
 import {
   Award,
   Trophy,
@@ -27,6 +28,7 @@ import {
   Star,
   CheckCircle2,
   Medal,
+  Sparkles,
 } from 'lucide-react';
 
 interface SistemaReconhecimentoProps {
@@ -86,6 +88,24 @@ export default function SistemaReconhecimento({
   });
 
   const tiposAtivos = configuracao.tipos.filter((t) => t.ativo);
+
+  // Filtro mensal (ver FiltroMensal.tsx) — a dashboard nasce mostrando só o
+  // mês atual; a pessoa pode trocar para "todos os meses" ou escolher um ou
+  // mais meses específicos.
+  const [filtroMes, setFiltroMes] = useState<FiltroMensalValor>(filtroMensalPadrao());
+
+  const reconhecimentosFiltrados = reconhecimentos.filter((r) =>
+    dataDentroDoFiltroMensal(r.dataConcessao, filtroMes)
+  );
+
+  // "Recentes" de verdade agora: destaque primeiro (registros nascidos de um
+  // "Novo Registro" no CRM do colaborador — ver ColaboradorProfile.tsx),
+  // depois por data mais recente. Antes esta lista não era ordenada por data
+  // nenhuma, então "recentes" podia mostrar os primeiros já cadastrados.
+  const reconhecimentosOrdenados = [...reconhecimentosFiltrados].sort((a, b) => {
+    if (!!a.destaque !== !!b.destaque) return a.destaque ? -1 : 1;
+    return new Date(b.dataConcessao).getTime() - new Date(a.dataConcessao).getTime();
+  });
 
   const salvarReconhecimento = () => {
     if (!formReconhecimento.colaboradorId || !formReconhecimento.tipoId || !formReconhecimento.titulo) {
@@ -151,7 +171,7 @@ export default function SistemaReconhecimento({
     <div className="space-y-6">
       {/* Header */}
       <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm">
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center">
               <Trophy size={20} className="text-amber-600" />
@@ -159,11 +179,16 @@ export default function SistemaReconhecimento({
             <div>
               <h3 className="text-lg font-bold text-slate-900">Sistema de Reconhecimento</h3>
               <p className="text-xs text-slate-500">
-                {reconhecimentos.length} reconhecimento(s) registrado(s)
+                {reconhecimentosFiltrados.length} de {reconhecimentos.length} reconhecimento(s) — {filtroMes.modo === 'todos' ? 'todos os meses' : filtroMes.modo === 'mesAtual' ? 'mês atual' : 'meses selecionados'}
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <FiltroMensal
+              valor={filtroMes}
+              onChange={setFiltroMes}
+              datasDisponiveis={reconhecimentos.map((r) => r.dataConcessao)}
+            />
             <button
               onClick={() => setShowConfigModal(true)}
               className="px-4 py-2 bg-slate-100 text-slate-600 font-bold rounded-xl text-sm hover:bg-slate-200 transition cursor-pointer"
@@ -200,14 +225,18 @@ export default function SistemaReconhecimento({
         {/* Reconhecimentos Recentes */}
         <div>
           <h4 className="text-sm font-bold text-slate-700 mb-3">Reconhecimentos Recentes</h4>
-          {reconhecimentos.length === 0 ? (
+          {reconhecimentosOrdenados.length === 0 ? (
             <div className="text-center py-8 border-2 border-dashed border-slate-200 rounded-xl">
               <Award size={32} className="mx-auto text-slate-300 mb-2" />
-              <p className="text-sm text-slate-500">Nenhum reconhecimento ainda</p>
+              <p className="text-sm text-slate-500">
+                {reconhecimentos.length === 0
+                  ? 'Nenhum reconhecimento ainda'
+                  : 'Nenhum reconhecimento no período selecionado'}
+              </p>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {reconhecimentos.slice(0, 6).map((rec) => {
+              {reconhecimentosOrdenados.slice(0, 6).map((rec) => {
                 const tipo = configuracao.tipos.find((t) => t.id === rec.tipoId);
                 const col = colaboradores.find((c) => c.id === rec.colaboradorId);
                 const gestor = lideres.find((l) => l.id === rec.concedidoPor);
@@ -215,18 +244,28 @@ export default function SistemaReconhecimento({
                 return (
                   <div
                     key={rec.id}
-                    className="p-4 rounded-xl border border-slate-100 bg-slate-50"
+                    className={`p-4 rounded-xl border relative ${
+                      rec.destaque
+                        ? 'border-amber-300 bg-amber-50/60 ring-1 ring-amber-200 shadow-sm'
+                        : 'border-slate-100 bg-slate-50'
+                    }`}
                   >
+                    {rec.destaque && (
+                      <span className="absolute -top-2 -right-2 flex items-center gap-1 bg-amber-500 text-white text-[9px] font-extrabold px-2 py-0.5 rounded-full shadow-sm">
+                        <Sparkles size={10} />
+                        Destaque
+                      </span>
+                    )}
                     <div className="flex items-start gap-3">
                       {tipo && (
                         <div
-                          className="w-10 h-10 rounded-xl flex items-center justify-center"
+                          className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
                           style={{ backgroundColor: tipo.cor }}
                         >
                           <span className="text-white">{getIcone(tipo.icone)}</span>
                         </div>
                       )}
-                      <div className="flex-1">
+                      <div className="flex-1 min-w-0">
                         <p className="font-bold text-slate-800 text-sm">{rec.titulo}</p>
                         <p className="text-xs text-slate-500 mt-0.5">
                           {col?.nome || 'Colaborador'}

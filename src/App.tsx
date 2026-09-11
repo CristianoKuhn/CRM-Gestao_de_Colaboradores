@@ -514,11 +514,79 @@ export default function App() {
     loadAllData();
   };
 
+  // Tipo de Reconhecimento genérico usado quando um registro "Reconhecimento"
+  // é criado sem nenhuma categoria configurada em ConfiguracaoReconhecimento
+  // (ex.: empresa que ainda não cadastrou nenhum tipo). Mesmo padrão
+  // idempotente de garantirTipoReconhecimentoMudancaCargo_ acima.
+  const TIPO_RECONHECIMENTO_GENERICO_ID = 'tipo-reconhecimento-generico';
+
+  const garantirTipoReconhecimentoGenerico_ = async (): Promise<ConfiguracaoReconhecimento> => {
+    if (configReconhecimento.tipos.some((t) => t.id === TIPO_RECONHECIMENTO_GENERICO_ID)) {
+      return configReconhecimento;
+    }
+    const novaConfig: ConfiguracaoReconhecimento = {
+      ...configReconhecimento,
+      tipos: [
+        ...configReconhecimento.tipos,
+        {
+          id: TIPO_RECONHECIMENTO_GENERICO_ID,
+          nome: 'Reconhecimento',
+          icone: 'Award',
+          cor: '#f59e0b',
+          ativo: true,
+          criterios: 'Criado automaticamente para registros de Reconhecimento lançados sem um tipo específico configurado.',
+        },
+      ],
+    };
+    await DataService.saveConfiguracaoReconhecimento(novaConfig);
+    setConfigReconhecimento(novaConfig);
+    return novaConfig;
+  };
+
+  // Registrar (ou editar) um Reconhecimento a partir de "Novo Registro" na
+  // timeline do colaborador (ColaboradorProfile.tsx). Ação única que:
+  //   1. Grava/atualiza o Registro na timeline oficial (histórico);
+  //   2. Espelha o registro na dashboard de Reconhecimento, marcado com
+  //      `destaque: true` — é assim que ele aparece em primeiro lugar e com
+  //      estilo diferenciado lá (ver SistemaReconhecimento.tsx), já que
+  //      nasceu direto do CRM do colaborador, não de um lançamento manual
+  //      na própria dashboard de Reconhecimento.
+  // Um Reconhecimento concedido diretamente pela dashboard de Reconhecimento
+  // (handleSaveReconhecimento) nunca passa por aqui e não vem marcado.
+  const handleSalvarRegistroReconhecimento = async (reg: TimelineRegistro) => {
+    await DataService.saveTimelineRegistro(reg);
+
+    let tipoIdParaUsar = reg.reconhecimentoTipoId;
+    if (!tipoIdParaUsar || !configReconhecimento.tipos.some((t) => t.id === tipoIdParaUsar)) {
+      const configAtualizada = await garantirTipoReconhecimentoGenerico_();
+      tipoIdParaUsar =
+        reg.reconhecimentoTipoId && configAtualizada.tipos.some((t) => t.id === reg.reconhecimentoTipoId)
+          ? reg.reconhecimentoTipoId
+          : TIPO_RECONHECIMENTO_GENERICO_ID;
+    }
+
+    const reconhecimentoEspelhado: Reconhecimento = {
+      id: `rec-registro-${reg.id}`,
+      colaboradorId: reg.colaboradorId,
+      tipoId: tipoIdParaUsar,
+      titulo: reg.titulo,
+      descricao: reg.descricao,
+      concedidoPor: reg.responsavelId,
+      dataConcessao: reg.data,
+      visibleEquipe: true,
+      destaque: true,
+    };
+    await DataService.saveReconhecimento(reconhecimentoEspelhado);
+
+    loadAllData();
+  };
+
   // Exclusão de um Registro da timeline — corrige um lançamento feito por
   // engano ou para o colaborador errado. Quando o registro excluído é uma
   // Mudança de Cargo, também remove o Reconhecimento espelhado e, se
   // solicitado, devolve o colaborador ao Cargo/Setor anteriores guardados no
   // próprio registro (ver ColaboradorProfile.tsx, modal de confirmação).
+  // Quando é um Reconhecimento, remove o espelho correspondente também.
   const handleDeleteTimelineRegistro = async (reg: TimelineRegistro, reverterCargo: boolean) => {
     await DataService.deleteTimelineRegistro(reg.id);
 
@@ -535,6 +603,10 @@ export default function App() {
           });
         }
       }
+    }
+
+    if (reg.tipo === 'Reconhecimento') {
+      await DataService.deleteReconhecimento(`rec-registro-${reg.id}`);
     }
 
     loadAllData();
@@ -967,6 +1039,7 @@ export default function App() {
                 onUpdateColaborador={handleUpdateColaborador}
                 onAddTimelineRegistro={handleAddTimelineRegistro}
                 onSalvarMudancaCargo={handleSalvarMudancaCargo}
+                onSalvarRegistroReconhecimento={handleSalvarRegistroReconhecimento}
                 onUpdateTimelineRegistro={handleUpdateTimelineRegistro}
                 onDeleteTimelineRegistro={handleDeleteTimelineRegistro}
                 onAddDocumento={handleAddDocumento}

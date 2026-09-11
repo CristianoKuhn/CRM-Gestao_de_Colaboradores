@@ -5,6 +5,7 @@
 
 import { useState } from 'react';
 import { Colaborador, TimelineRegistro, Setor, Tarefa } from '../types';
+import FiltroMensal, { FiltroMensalValor, filtroMensalPadrao, dataDentroDoFiltroMensal } from './FiltroMensal';
 import {
   BarChart,
   Bar,
@@ -46,21 +47,31 @@ export default function Analytics({
 }: AnalyticsProps) {
   const [activeTab, setActiveTab] = useState<'geral' | 'setores' | 'rankings'>('geral');
 
+  // Filtro mensal (ver FiltroMensal.tsx) — a dashboard nasce mostrando só o
+  // mês atual; a pessoa pode trocar para "todos os meses" ou escolher um ou
+  // mais meses específicos. Todo o restante deste componente passa a
+  // calcular suas métricas em cima de `timelineFiltrada`/`tarefasFiltradas`,
+  // nunca do array cru — exceto a "Evolução Mensal" (dadosEvolucaoMensal),
+  // que já é uma série de 12 meses por natureza e não faz sentido recortar.
+  const [filtroMes, setFiltroMes] = useState<FiltroMensalValor>(filtroMensalPadrao());
+  const timelineFiltrada = timeline.filter((r) => dataDentroDoFiltroMensal(r.data, filtroMes));
+  const tarefasFiltradas = tarefas.filter((t) => dataDentroDoFiltroMensal(t.vencimento, filtroMes));
+
   // Cores modernas
   const COLORS = ['#0d9488', '#6366f1', '#f59e0b', '#f43f5e', '#0ea5e9', '#8b5cf6'];
   const FEEDBACK_COLORS = { positivo: '#0d9488', corretivo: '#f97316' };
 
   // --- 1. Estatísticas Gerais ---
-  const totalFeedbacks = timeline.filter((r) => r.tipo.includes('Feedback')).length;
+  const totalFeedbacks = timelineFiltrada.filter((r) => r.tipo.includes('Feedback')).length;
   
-  const pdiRegistros = timeline.filter((r) => r.tipo === 'Plano de Desenvolvimento Individual (PDI)');
+  const pdiRegistros = timelineFiltrada.filter((r) => r.tipo === 'Plano de Desenvolvimento Individual (PDI)');
   const pdiConcluidos = pdiRegistros.filter((r) => r.status === 'Concluído').length;
   const pdisConcluidosTaxa = pdiRegistros.length > 0 ? Math.round((pdiConcluidos / pdiRegistros.length) * 100) : 100;
 
-  const tarefasConcluidas = tarefas.filter((t) => t.concluida).length;
-  const taxaConclusaoTarefas = tarefas.length > 0 ? Math.round((tarefasConcluidas / tarefas.length) * 100) : 100;
+  const tarefasConcluidas = tarefasFiltradas.filter((t) => t.concluida).length;
+  const taxaConclusaoTarefas = tarefasFiltradas.length > 0 ? Math.round((tarefasConcluidas / tarefasFiltradas.length) * 100) : 100;
 
-  const totalDestaques = timeline.filter((r) => r.tipo === 'Reconhecimento' || r.tipo === 'Elogio de Cliente').length;
+  const totalDestaques = timelineFiltrada.filter((r) => r.tipo === 'Reconhecimento' || r.tipo === 'Elogio de Cliente').length;
 
   // --- 2. Dados por Setor (Comparativo Feedbacks Positivos vs Corretivos) ---
   const dadosSetores = setores.map((setor) => {
@@ -68,7 +79,7 @@ export default function Analytics({
     const colIds = colaboradoresSetor.map((c) => c.id);
 
     // Feedbacks deste setor
-    const feedbacksSetor = timeline.filter((r) => colIds.includes(r.colaboradorId));
+    const feedbacksSetor = timelineFiltrada.filter((r) => colIds.includes(r.colaboradorId));
     const positivos = feedbacksSetor.filter((r) => r.tipo === 'Feedback Positivo').length;
     const corretivos = feedbacksSetor.filter((r) => r.tipo === 'Feedback Corretivo').length;
     const pdis = feedbacksSetor.filter((r) => r.tipo === 'Plano de Desenvolvimento Individual (PDI)').length;
@@ -83,7 +94,7 @@ export default function Analytics({
   }).filter((d) => d.total > 0 || d.PDIs > 0);
 
   // --- 3. Distribuição por Tipo de Registro (PieChart) ---
-  const tiposRegistrosContagem = timeline.reduce((acc: { [key: string]: number }, cur) => {
+  const tiposRegistrosContagem = timelineFiltrada.reduce((acc: { [key: string]: number }, cur) => {
     acc[cur.tipo] = (acc[cur.tipo] || 0) + 1;
     return acc;
   }, {});
@@ -108,7 +119,7 @@ export default function Analytics({
   // --- 5. Rankings ---
   // Ranking de Reconhecimento/Elogio de Cliente
   const rankingReconhecimento = colaboradores.map((col) => {
-    const elogios = timeline.filter(
+    const elogios = timelineFiltrada.filter(
       (r) => r.colaboradorId === col.id && (r.tipo === 'Reconhecimento' || r.tipo === 'Elogio de Cliente')
     ).length;
     return { ...col, count: elogios };
@@ -116,7 +127,7 @@ export default function Analytics({
 
   // Ranking de Advertências/Suspensões
   const rankingAdvertencias = colaboradores.map((col) => {
-    const incidentes = timeline.filter(
+    const incidentes = timelineFiltrada.filter(
       (r) => r.colaboradorId === col.id && (r.tipo === 'Advertência' || r.tipo === 'Suspensão')
     ).length;
     return { ...col, count: incidentes };
@@ -134,7 +145,13 @@ export default function Analytics({
         </div>
 
         {/* Dashboard filter categories */}
-        <div className="flex bg-slate-100 p-1 rounded-xl shrink-0">
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <FiltroMensal
+            valor={filtroMes}
+            onChange={setFiltroMes}
+            datasDisponiveis={timeline.map((r) => r.data)}
+          />
+          <div className="flex bg-slate-100 p-1 rounded-xl">
           <button
             onClick={() => setActiveTab('geral')}
             className={`px-4 py-1.5 rounded-lg text-xs font-bold cursor-pointer transition ${
@@ -159,6 +176,7 @@ export default function Analytics({
           >
             Destaques e Rankings
           </button>
+          </div>
         </div>
       </div>
 

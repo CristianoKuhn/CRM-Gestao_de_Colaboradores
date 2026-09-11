@@ -120,6 +120,11 @@ interface ColaboradorProfileProps {
   // reais do colaborador e espelhar o registro na dashboard de
   // Reconhecimento (ver App.tsx > handleSalvarMudancaCargo).
   onSalvarMudancaCargo: (reg: TimelineRegistro) => void;
+  // Cria OU edita um registro do tipo "Reconhecimento" — assim como
+  // onSalvarMudancaCargo, também espelha o registro na dashboard de
+  // Reconhecimento (ver App.tsx > handleSalvarRegistroReconhecimento), só
+  // que marcado com destaque, já que nasceu direto do CRM do colaborador.
+  onSalvarRegistroReconhecimento: (reg: TimelineRegistro) => void;
   // Edição de um registro "comum" (qualquer tipo, exceto Mudança de Cargo,
   // que usa onSalvarMudancaCargo mesmo ao editar) — corrige um lançamento
   // feito por engano sem repetir as automações de criação.
@@ -155,6 +160,7 @@ export default function ColaboradorProfile({
   onUpdateColaborador,
   onAddTimelineRegistro,
   onSalvarMudancaCargo,
+  onSalvarRegistroReconhecimento,
   onUpdateTimelineRegistro,
   onDeleteTimelineRegistro,
   onAddDocumento,
@@ -260,6 +266,10 @@ export default function ColaboradorProfile({
   // apareça de uma vez.
   const [regNovoSetorId, setRegNovoSetorId] = useState(colaborador.setorId);
   const [regNovoCargoId, setRegNovoCargoId] = useState('');
+  // Só usado quando regTipo === 'Reconhecimento': qual categoria de
+  // ConfiguracaoReconhecimento.tipos este registro representa — é o que
+  // permite espelhá-lo com o ícone/cor certos na dashboard de Reconhecimento.
+  const [regReconhecimentoTipoId, setRegReconhecimentoTipoId] = useState('');
   // Confirmação de exclusão de um registro da timeline — guarda o registro
   // inteiro (não só o id) porque, se for uma Mudança de Cargo, precisamos do
   // cargoAnteriorId/setorAnteriorId para oferecer a reversão.
@@ -280,6 +290,10 @@ export default function ColaboradorProfile({
   const cargosDoNovoSetor = regNovoSetorId
     ? cargos.filter((c) => c.setorId === regNovoSetorId || !c.setorId)
     : cargos;
+  // Tipos de Reconhecimento ativos — usados no seletor exibido quando
+  // regTipo === 'Reconhecimento' (ver ConfiguracaoReconhecimento, gerenciada
+  // na própria dashboard de Reconhecimento).
+  const tiposReconhecimentoAtivos = configReconhecimento.tipos.filter((t) => t.ativo);
   const liderObj = lideres.find((l) => l.id === colaborador.liderId);
 
   // Calcular tempo de empresa
@@ -511,24 +525,28 @@ export default function ColaboradorProfile({
     handleFileUpload(e.dataTransfer.files);
   };
 
-  // Submit do formulário "Adicionar/Editar Histórico" — decide entre três
+  // Submit do formulário "Adicionar/Editar Histórico" — decide entre quatro
   // caminhos, sempre respeitando a regra: só um registro criado por aqui
-  // ("Novo Registro" na timeline do colaborador) pode ser uma Mudança de
-  // Cargo de verdade; o "Editar" geral do colaborador nunca passa por este
-  // formulário.
+  // ("Novo Registro" na timeline do colaborador) pode virar Mudança de Cargo
+  // ou Reconhecimento de verdade; o "Editar" geral do colaborador nunca passa
+  // por este formulário.
   //   1. Mudança de Cargo (criação OU edição) → onSalvarMudancaCargo, que
   //      também atualiza o Cargo/Setor reais do colaborador e espelha o
   //      registro em Reconhecimento;
-  //   2. Edição de um registro comum → onUpdateTimelineRegistro (upsert
+  //   2. Reconhecimento (criação OU edição) → onSalvarRegistroReconhecimento,
+  //      que espelha o registro em Reconhecimento já marcado com destaque;
+  //   3. Edição de um registro comum → onUpdateTimelineRegistro (upsert
   //      simples, sem repetir automações de criação);
-  //   3. Criação de um registro comum → onAddTimelineRegistro (fluxo
+  //   4. Criação de um registro comum → onAddTimelineRegistro (fluxo
   //      original, com auto-geração de tarefa de acompanhamento).
   const handleCreateRegistro = (e: React.FormEvent) => {
     e.preventDefault();
     if (!regTitulo || !regDescricao) return;
 
     const isMudancaCargo = regTipo === 'Mudança de Cargo';
+    const isReconhecimento = regTipo === 'Reconhecimento';
     if (isMudancaCargo && !regNovoCargoId) return;
+    if (isReconhecimento && tiposReconhecimentoAtivos.length > 0 && !regReconhecimentoTipoId) return;
 
     const concluindoTarefa = !editingRegistroId && tarefaParaConcluir && tarefaParaConcluir.colaboradorId === colaborador.id;
     const cargoNovoEscolhido = cargos.find((c) => c.id === regNovoCargoId);
@@ -553,7 +571,7 @@ export default function ColaboradorProfile({
       prioridade: regPrioridade,
       status: regStatus,
       prazoAcompanhamento: regPrazo || undefined,
-      gerarTarefaFutura: isMudancaCargo ? false : regGerarTarefa,
+      gerarTarefaFutura: isMudancaCargo || isReconhecimento ? false : regGerarTarefa,
       tarefaId: concluindoTarefa ? tarefaParaConcluir!.id : undefined,
       anexos: regAnexos,
       ...(isMudancaCargo
@@ -564,10 +582,13 @@ export default function ColaboradorProfile({
             setorNovoId: regNovoSetorId || cargoNovoEscolhido?.setorId || colaborador.setorId,
           }
         : {}),
+      ...(isReconhecimento ? { reconhecimentoTipoId: regReconhecimentoTipoId || undefined } : {}),
     };
 
     if (isMudancaCargo) {
       onSalvarMudancaCargo(registro);
+    } else if (isReconhecimento) {
+      onSalvarRegistroReconhecimento(registro);
     } else if (editingRegistroId) {
       onUpdateTimelineRegistro(registro);
     } else {
@@ -597,6 +618,7 @@ export default function ColaboradorProfile({
     setRegAnexos([]);
     setRegNovoSetorId(colaborador.setorId);
     setRegNovoCargoId('');
+    setRegReconhecimentoTipoId('');
   };
 
   // Abre o formulário já preenchido com os dados de um registro existente —
@@ -617,6 +639,9 @@ export default function ColaboradorProfile({
     if (reg.tipo === 'Mudança de Cargo') {
       setRegNovoSetorId(reg.setorNovoId || colaborador.setorId);
       setRegNovoCargoId(reg.cargoNovoId || '');
+    }
+    if (reg.tipo === 'Reconhecimento') {
+      setRegReconhecimentoTipoId(reg.reconhecimentoTipoId || tiposReconhecimentoAtivos[0]?.id || '');
     }
     setIsFormOpen(true);
     formRegistroRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -951,6 +976,9 @@ export default function ColaboradorProfile({
                             setRegDescricao(`De "${cargoNome}" para novo cargo a definir.`);
                           }
                         }
+                        if (novoTipo === 'Reconhecimento' && !editingRegistroId) {
+                          setRegReconhecimentoTipoId(tiposReconhecimentoAtivos[0]?.id || '');
+                        }
                       }}
                       className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-1 focus:ring-teal-500 cursor-pointer"
                     >
@@ -1048,6 +1076,44 @@ export default function ColaboradorProfile({
                   </div>
                 )}
 
+                {/* Campo exclusivo de "Reconhecimento": escolhe a categoria
+                    (ConfiguracaoReconhecimento.tipos) — ao salvar, este
+                    registro passa a aparecer também, com destaque, na
+                    dashboard de Reconhecimento (ver App.tsx >
+                    handleSalvarRegistroReconhecimento). */}
+                {regTipo === 'Reconhecimento' && (
+                  <div className="p-4 bg-amber-50 rounded-2xl border border-amber-100 space-y-3">
+                    <h4 className="text-xs font-bold text-amber-700 uppercase tracking-wider flex items-center gap-1.5">
+                      <Award size={14} />
+                      Reconhecimento
+                    </h4>
+                    <p className="text-[11px] text-amber-700/80 -mt-1">
+                      Ao salvar, este registro aparece automaticamente, com destaque, na dashboard de Reconhecimento.
+                    </p>
+                    {tiposReconhecimentoAtivos.length > 0 ? (
+                      <div>
+                        <label className="block text-xs font-bold text-slate-500 mb-1.5">Tipo de Reconhecimento</label>
+                        <select
+                          required
+                          value={regReconhecimentoTipoId}
+                          onChange={(e) => setRegReconhecimentoTipoId(e.target.value)}
+                          className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 cursor-pointer"
+                        >
+                          {tiposReconhecimentoAtivos.map((tipo) => (
+                            <option key={tipo.id} value={tipo.id}>
+                              {tipo.nome}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : (
+                      <p className="text-[11px] text-amber-700/80">
+                        Nenhum tipo de reconhecimento configurado ainda — será usado um tipo genérico. Para categorias personalizadas (ex.: "Estrela do Mês"), cadastre em Reconhecimento → Configurar.
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Título / Tópico Curto</label>
@@ -1131,7 +1197,7 @@ export default function ColaboradorProfile({
                 </div>
 
                 {/* Checklist toggle to Auto-generate Task */}
-                {regTipo !== 'Mudança de Cargo' && (
+                {regTipo !== 'Mudança de Cargo' && regTipo !== 'Reconhecimento' && (
                   <div className="bg-slate-50 p-3.5 rounded-2xl flex items-center gap-3 border border-slate-100">
                     <input
                       type="checkbox"

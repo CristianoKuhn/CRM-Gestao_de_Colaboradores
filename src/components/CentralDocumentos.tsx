@@ -39,6 +39,14 @@ interface CentralDocumentosProps {
   onAddDocumento: (doc: Documento) => void;
   onDeleteDocumento: (id: string) => void;
   currentUserId: string;
+  // Só é passada pela visão global "Central Docs" (App.tsx), onde
+  // `colaborador` é um placeholder ({ id: 'todos', ... }) e não representa
+  // ninguém de verdade — nesse caso, o upload precisa perguntar a quem o
+  // documento pertence antes de salvar (todo Documento tem que estar
+  // associado a um colaborador real; ver comentário em handleUpload).
+  // Quando usado dentro do perfil de um colaborador específico
+  // (ColaboradorProfile.tsx), esta prop não é necessária.
+  colaboradores?: Colaborador[];
 }
 
 const CATEGORIAS: { id: CategoriaDocumento; nome: string; icone: React.ReactNode; cor: string }[] = [
@@ -65,13 +73,20 @@ export default function CentralDocumentos({
   onAddDocumento,
   onDeleteDocumento,
   currentUserId,
+  colaboradores,
 }: CentralDocumentosProps) {
+  // A visão global "Central Docs" (App.tsx) chama este componente com um
+  // colaborador placeholder de id 'todos' — não existe, de fato, "um"
+  // colaborador dono do documento até a pessoa escolher no upload.
+  const modoGlobal = colaborador.id === 'todos';
+
   const [isUploading, setIsUploading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCategoria, setFilterCategoria] = useState<string>('todas');
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [preview, setPreview] = useState<ArquivoParaPreview | null>(null);
+  const [uploadColaboradorId, setUploadColaboradorId] = useState('');
   const [uploadData, setUploadData] = useState({
     nome: '',
     categoria: 'outro' as CategoriaDocumento,
@@ -99,15 +114,26 @@ export default function CentralDocumentos({
 
   const handleUpload = async () => {
     if (!selectedFile || !uploadData.nome) return;
+    // No modo global (Central Docs fora do perfil de um colaborador), todo
+    // documento precisa de um dono real escolhido na hora — nunca grava com
+    // o colaboradorId placeholder 'todos' (isso deixaria o documento "órfão":
+    // nunca apareceria no perfil de ninguém, e a partir da regra de
+    // visibilidade por setor/hierarquia, sumiria para todo mundo que não é
+    // Administrador).
+    const colaboradorAlvoId = modoGlobal ? uploadColaboradorId : colaborador.id;
+    if (modoGlobal && !colaboradorAlvoId) return;
+    const colaboradorAlvoNome = modoGlobal
+      ? colaboradores?.find((c) => c.id === colaboradorAlvoId)?.nome || 'Geral'
+      : colaborador.nome;
 
     setIsUploading(true);
     try {
       const folderName = 'Documentos';
-      const fileUrl = await DataService.uploadFile(selectedFile, 'documentos', colaborador.nome);
+      const fileUrl = await DataService.uploadFile(selectedFile, 'documentos', colaboradorAlvoNome);
 
       const novoDoc: Documento = {
         id: `doc-${Date.now()}`,
-        colaboradorId: colaborador.id,
+        colaboradorId: colaboradorAlvoId,
         nome: uploadData.nome,
         categoria: uploadData.categoria,
         tipoArquivo: selectedFile.type,
@@ -122,6 +148,7 @@ export default function CentralDocumentos({
       onAddDocumento(novoDoc);
       setShowUploadModal(false);
       setSelectedFile(null);
+      setUploadColaboradorId('');
       setUploadData({ nome: '', categoria: 'outro', descricao: '' });
     } catch (err) {
       console.error('Erro ao fazer upload:', err);
@@ -232,6 +259,11 @@ export default function CentralDocumentos({
                       </span>
                     </div>
                     <h4 className="font-bold text-slate-800 truncate">{doc.nome}</h4>
+                    {modoGlobal && (
+                      <p className="text-xs font-semibold text-teal-700 mt-0.5 truncate">
+                        {colaboradores?.find((c) => c.id === doc.colaboradorId)?.nome || 'Colaborador não identificado'}
+                      </p>
+                    )}
                     <div className="flex items-center gap-3 mt-1 text-xs text-slate-400">
                       <span>{doc.tamanho}</span>
                       <span>•</span>
@@ -279,7 +311,10 @@ export default function CentralDocumentos({
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-lg font-bold text-slate-900">Anexar Documento</h3>
               <button
-                onClick={() => setShowUploadModal(false)}
+                onClick={() => {
+                  setShowUploadModal(false);
+                  setUploadColaboradorId('');
+                }}
                 className="text-slate-400 hover:text-slate-600 cursor-pointer font-bold text-2xl"
               >
                 &times;
@@ -287,6 +322,31 @@ export default function CentralDocumentos({
             </div>
 
             <div className="space-y-4">
+              {/* Colaborador — só no modo global (Central Docs fora do
+                  perfil de um colaborador específico). Todo documento
+                  precisa de um dono real; sem isso, o upload fica bloqueado
+                  (ver validação no botão "Anexar" mais abaixo). */}
+              {modoGlobal && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                    Colaborador
+                  </label>
+                  <select
+                    required
+                    value={uploadColaboradorId}
+                    onChange={(e) => setUploadColaboradorId(e.target.value)}
+                    className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/20 cursor-pointer"
+                  >
+                    <option value="">Selecione o colaborador...</option>
+                    {(colaboradores || []).map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.nome}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               {/* Upload de Arquivo */}
               <div
                 className={`border-2 border-dashed rounded-2xl p-8 text-center transition cursor-pointer ${
@@ -392,14 +452,17 @@ export default function CentralDocumentos({
 
             <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-slate-100">
               <button
-                onClick={() => setShowUploadModal(false)}
+                onClick={() => {
+                  setShowUploadModal(false);
+                  setUploadColaboradorId('');
+                }}
                 className="px-4 py-2 border border-slate-200 text-slate-600 bg-slate-50 rounded-xl text-sm font-semibold hover:bg-slate-100 transition cursor-pointer"
               >
                 Cancelar
               </button>
               <button
                 onClick={handleUpload}
-                disabled={!selectedFile || !uploadData.nome || isUploading}
+                disabled={!selectedFile || !uploadData.nome || isUploading || (modoGlobal && !uploadColaboradorId)}
                 className="px-4 py-2 bg-teal-500 text-slate-950 font-bold rounded-xl text-sm hover:bg-teal-400 transition disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer flex items-center gap-2"
               >
                 {isUploading ? (
@@ -418,6 +481,13 @@ export default function CentralDocumentos({
           </div>
         </div>
       )}
+
+      {/* Modal de Pré-visualização — CORREÇÃO: este componente já existia
+          (a lógica de `setPreview(...)` já rodava no clique em "Visualizar"),
+          mas nunca era efetivamente renderizado em lugar nenhum, então nada
+          aparecia na tela. Só "Baixar" funcionava, por abrir a URL direto
+          numa nova guia sem depender deste modal. */}
+      {preview && <AnexoPreviewModal arquivo={preview} onClose={() => setPreview(null)} />}
     </div>
   );
 }

@@ -302,6 +302,49 @@ function definirTokenSessao(token: string): void {
   }
 }
 
+// ── "Esqueci minha senha" — auxiliares do modo LocalStorage (demo/sem
+// backend) ────────────────────────────────────────────────────────────────
+// Sem um Google Apps Script real conectado não existe como enviar e-mail de
+// verdade. Para o modo demo continuar funcionando de ponta a ponta (pedir
+// recuperação → abrir o link → redefinir), o token fica guardado aqui e o
+// "link" é apenas exibido no console do navegador — nunca chega a um e-mail
+// de fato. Isso é seguro porque o modo local já não tem fronteira de
+// segurança real (é tudo o mesmo navegador, ver comentário em LocalDataService).
+const RECUPERACAO_SENHA_LOCAL_KEY = 'gc_recuperacoes_senha_local';
+
+interface RecuperacaoSenhaLocal {
+  token: string;
+  usuarioId: string;
+  expiraEm: number;
+}
+
+function lerRecuperacoesSenhaLocais(): RecuperacaoSenhaLocal[] {
+  try {
+    const raw = localStorage.getItem(RECUPERACAO_SENHA_LOCAL_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function gravarRecuperacoesSenhaLocais(lista: RecuperacaoSenhaLocal[]): void {
+  try {
+    localStorage.setItem(RECUPERACAO_SENHA_LOCAL_KEY, JSON.stringify(lista));
+  } catch {
+    // Ambiente sem localStorage — recuperação local simplesmente não persiste.
+  }
+}
+
+// Mostra só os 2 primeiros caracteres do usuário do e-mail (ex.:
+// "jo***@empresa.com") — usado para confirmar visualmente, na tela de
+// redefinição, que o link pertence à conta certa, sem expor o e-mail inteiro.
+function mascararEmail(email: string): string {
+  const partes = String(email || '').split('@');
+  if (partes.length !== 2) return '';
+  const visivel = partes[0].slice(0, 2);
+  return `${visivel}***@${partes[1]}`;
+}
+
 // Mapeia o objeto de usuário devolvido pelas actions de autenticação
 // (`login`/`definirNovaSenha`/`getSessaoAtual`) — todas já vêm sanitizadas
 // do backend (sem senha_hash/senha_provisoria/senha_salt), mas passam pelo
@@ -330,6 +373,19 @@ export interface ResultadoLogin {
   precisaTrocarSenha: boolean;
 }
 
+// ── "Esqueci minha senha" ──────────────────────────────────────────────
+export interface ResultadoSolicitacaoRecuperacaoSenha {
+  enviado: boolean;
+  mensagem: string;
+}
+
+export interface ResultadoValidacaoTokenRecuperacao {
+  valido: boolean;
+  nome?: string;
+  emailMascarado?: string;
+  erro?: string;
+}
+
 export interface IDataService {
   // ── Autenticação (Fase 1 do Security Audit) ───────────────────────────
   // `login`/`definirNovaSenha`/`validarSessao` são as ÚNICAS operações que
@@ -342,6 +398,14 @@ export interface IDataService {
   validarSessao(): Promise<Usuario | null>;
   logout(): Promise<void>;
   temSessaoAtiva(): boolean;
+  // "Esqueci minha senha" — fluxo público (sem sessão), acionado a partir da
+  // tela de login. `solicitarRecuperacaoSenha` sempre responde com a mesma
+  // mensagem genérica, exista ou não o e-mail (evita enumeração de contas).
+  // `validarTokenRecuperacaoSenha` é chamado ao abrir o link recebido por
+  // e-mail, e `redefinirSenhaComToken` é o submit final da nova senha.
+  solicitarRecuperacaoSenha(email: string): Promise<ResultadoSolicitacaoRecuperacaoSenha>;
+  validarTokenRecuperacaoSenha(token: string): Promise<ResultadoValidacaoTokenRecuperacao>;
+  redefinirSenhaComToken(token: string, novaSenha: string): Promise<void>;
 
   getEmpresas(): Promise<Empresa[]>;
   getSetores(): Promise<Setor[]>;
@@ -657,6 +721,57 @@ export class LocalDataService implements IDataService {
 
   temSessaoAtiva(): boolean {
     return obterTokenSessao().startsWith('local-');
+  }
+
+  // "Esqueci minha senha" (modo demo/local): não existe backend real para
+  // enviar e-mail, então o "link" só é exibido no console — suficiente para
+  // testar o fluxo completo dentro do mesmo navegador.
+  async solicitarRecuperacaoSenha(email: string): Promise<ResultadoSolicitacaoRecuperacaoSenha> {
+    const mensagem = 'Se este e-mail estiver cadastrado, você receberá um link de recuperação em instantes.';
+    const usuarios = await StorageAPI.getUsuarios();
+    const found = usuarios.find((u) => u.email.toLowerCase() === email.trim().toLowerCase() && u.ativo);
+    // Resposta idêntica exista ou não o e-mail — só muda o que acontece por
+    // trás, igual ao backend real (ver GoogleScriptDataService).
+    if (!found) return { enviado: true, mensagem };
+
+    const token = `local-reset-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const lista = lerRecuperacoesSenhaLocais().filter((r) => r.usuarioId !== found.id);
+    lista.push({ token, usuarioId: found.id, expiraEm: Date.now() + 30 * 60 * 1000 });
+    gravarRecuperacoesSenhaLocais(lista);
+
+    const link = `${window.location.origin}${window.location.pathname}?resetToken=${token}`;
+    console.info(`[Modo local — sem backend real] Link de redefinição de senha para ${found.email}:\n${link}`);
+
+    return { enviado: true, mensagem };
+  }
+
+  async validarTokenRecuperacaoSenha(token: string): Promise<ResultadoValidacaoTokenRecuperacao> {
+    const registro = lerRecuperacoesSenhaLocais().find((r) => r.token === token);
+    if (!registro || registro.expiraEm < Date.now()) {
+      return { valido: false, erro: 'Este link de recuperação é inválido ou expirou.' };
+    }
+    const usuarios = await StorageAPI.getUsuarios();
+    const usuario = usuarios.find((u) => u.id === registro.usuarioId);
+    if (!usuario) return { valido: false, erro: 'Este link de recuperação não é mais válido.' };
+    return { valido: true, nome: usuario.nome, emailMascarado: mascararEmail(usuario.email) };
+  }
+
+  async redefinirSenhaComToken(token: string, novaSenha: string): Promise<void> {
+    const registro = lerRecuperacoesSenhaLocais().find((r) => r.token === token);
+    if (!registro || registro.expiraEm < Date.now()) {
+      throw new Error('Este link de recuperação é inválido ou expirou.');
+    }
+    const usuarios = await StorageAPI.getUsuarios();
+    const usuario = usuarios.find((u) => u.id === registro.usuarioId);
+    if (!usuario) throw new Error('Este link de recuperação não é mais válido.');
+
+    await StorageAPI.saveUsuario({
+      ...usuario,
+      senha_hash: novaSenha,
+      senha_provisoria: false,
+    });
+
+    gravarRecuperacoesSenhaLocais(lerRecuperacoesSenhaLocais().filter((r) => r.token !== token));
   }
 
   async getEmpresas(): Promise<Empresa[]> {
@@ -1707,6 +1822,35 @@ export class GoogleScriptDataService implements IDataService {
 
   temSessaoAtiva(): boolean {
     return !!obterTokenSessao();
+  }
+
+  // "Esqueci minha senha" — as três chamadas são públicas (sem sessão),
+  // resolvidas em processRequestAutenticacao_ no backend, junto de login/
+  // logout/definirNovaSenha. Nenhuma delas usa this.localFallback: não faz
+  // sentido "simular localmente" o envio de um e-mail quando o backend real
+  // está configurado — se a chamada falhar, o erro sobe para a tela.
+  async solicitarRecuperacaoSenha(email: string): Promise<ResultadoSolicitacaoRecuperacaoSenha> {
+    const resposta = await this.request<{ enviado: boolean; mensagem: string }>(
+      'solicitarRecuperacaoSenha',
+      { email }
+    );
+    return { enviado: !!resposta.enviado, mensagem: resposta.mensagem };
+  }
+
+  async validarTokenRecuperacaoSenha(token: string): Promise<ResultadoValidacaoTokenRecuperacao> {
+    try {
+      const resposta = await this.request<{ valido: boolean; nome: string; emailMascarado: string }>(
+        'validarTokenRecuperacaoSenha',
+        { token }
+      );
+      return { valido: true, nome: resposta.nome, emailMascarado: resposta.emailMascarado };
+    } catch (err: any) {
+      return { valido: false, erro: err?.message || 'Este link de recuperação é inválido ou expirou.' };
+    }
+  }
+
+  async redefinirSenhaComToken(token: string, novaSenha: string): Promise<void> {
+    await this.request('redefinirSenhaComToken', { token, novaSenha });
   }
 
   async getEmpresas(): Promise<Empresa[]> {
@@ -4404,6 +4548,15 @@ class DynamicDataService implements IDataService {
   }
   temSessaoAtiva(): boolean {
     return obterTokenSessao().length > 0;
+  }
+  async solicitarRecuperacaoSenha(email: string): Promise<ResultadoSolicitacaoRecuperacaoSenha> {
+    return this.getService().solicitarRecuperacaoSenha(email);
+  }
+  async validarTokenRecuperacaoSenha(token: string): Promise<ResultadoValidacaoTokenRecuperacao> {
+    return this.getService().validarTokenRecuperacaoSenha(token);
+  }
+  async redefinirSenhaComToken(token: string, novaSenha: string): Promise<void> {
+    return this.getService().redefinirSenhaComToken(token, novaSenha);
   }
 
   async getEmpresas(): Promise<Empresa[]> {

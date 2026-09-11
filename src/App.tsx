@@ -292,8 +292,8 @@ export default function App() {
     loadAllData();
   };
 
-  const handleAddCargo = async (nome: string) => {
-    await DataService.saveCargo({ id: `car-${Date.now()}`, nome });
+  const handleAddCargo = async (nome: string, setorId: string) => {
+    await DataService.saveCargo({ id: `car-${Date.now()}`, nome, setorId });
     loadAllData();
   };
 
@@ -422,6 +422,111 @@ export default function App() {
     loadAllData();
   };
 
+  // Identificador fixo do Tipo de Reconhecimento "Mudança de Cargo" dentro de
+  // ConfiguracaoReconhecimento.tipos — criado sozinho (idempotente) na
+  // primeira vez que alguém registra uma Mudança de Cargo pela timeline do
+  // colaborador, para que o Reconhecimento espelhado já saia com ícone/nome
+  // corretos na dashboard de Reconhecimento.
+  const TIPO_RECONHECIMENTO_MUDANCA_CARGO_ID = 'tipo-mudanca-cargo';
+
+  const garantirTipoReconhecimentoMudancaCargo_ = async (): Promise<ConfiguracaoReconhecimento> => {
+    if (configReconhecimento.tipos.some((t) => t.id === TIPO_RECONHECIMENTO_MUDANCA_CARGO_ID)) {
+      return configReconhecimento;
+    }
+    const novaConfig: ConfiguracaoReconhecimento = {
+      ...configReconhecimento,
+      tipos: [
+        ...configReconhecimento.tipos,
+        {
+          id: TIPO_RECONHECIMENTO_MUDANCA_CARGO_ID,
+          nome: 'Mudança de Cargo',
+          icone: 'TrendingUp',
+          cor: '#0ea5e9',
+          ativo: true,
+          criterios: 'Criado automaticamente ao registrar uma mudança de cargo na timeline do colaborador.',
+        },
+      ],
+    };
+    await DataService.saveConfiguracaoReconhecimento(novaConfig);
+    setConfigReconhecimento(novaConfig);
+    return novaConfig;
+  };
+
+  // Registrar (ou editar) uma Mudança de Cargo a partir de "Novo Registro" na
+  // timeline do colaborador (ColaboradorProfile.tsx). Ação única que:
+  //   1. Grava/atualiza o Registro na timeline oficial (histórico);
+  //   2. Atualiza de fato o cargoId/setorId do colaborador;
+  //   3. Espelha o registro na dashboard de Reconhecimento, para que a
+  //      liderança veja a promoção/mudança destacada — igual já acontece
+  //      hoje na direção inversa (handleSaveReconhecimento).
+  // Importante: uma mudança de cargo feita pelo botão "Editar" geral do
+  // colaborador (Colaboradores.tsx) NUNCA passa por aqui — aquele fluxo é só
+  // correção de cadastro e não gera histórico nem Reconhecimento.
+  const handleSalvarMudancaCargo = async (reg: TimelineRegistro) => {
+    await DataService.saveTimelineRegistro(reg);
+
+    const colaborador = colaboradores.find((c) => c.id === reg.colaboradorId);
+    if (colaborador && reg.cargoNovoId) {
+      await DataService.saveColaborador({
+        ...colaborador,
+        cargoId: reg.cargoNovoId,
+        setorId: reg.setorNovoId || colaborador.setorId,
+      });
+    }
+
+    const configAtualizada = await garantirTipoReconhecimentoMudancaCargo_();
+    const tipoReconhecimento = configAtualizada.tipos.find((t) => t.id === TIPO_RECONHECIMENTO_MUDANCA_CARGO_ID);
+    const reconhecimentoEspelhado: Reconhecimento = {
+      id: `rec-mudanca-cargo-${reg.id}`,
+      colaboradorId: reg.colaboradorId,
+      tipoId: TIPO_RECONHECIMENTO_MUDANCA_CARGO_ID,
+      titulo: tipoReconhecimento ? `${tipoReconhecimento.nome}: ${reg.titulo}` : reg.titulo,
+      descricao: reg.descricao,
+      concedidoPor: reg.responsavelId,
+      dataConcessao: reg.data,
+      visibleEquipe: true,
+    };
+    await DataService.saveReconhecimento(reconhecimentoEspelhado);
+
+    loadAllData();
+  };
+
+  // Edição de um Registro "comum" da timeline (qualquer tipo exceto Mudança
+  // de Cargo, que tem fluxo próprio acima) — corrige texto/data/anexos de um
+  // registro lançado por engano, sem repetir automações de criação (não gera
+  // nova Tarefa de acompanhamento a cada edição, mesmo com a caixinha
+  // marcada).
+  const handleUpdateTimelineRegistro = async (reg: TimelineRegistro) => {
+    await DataService.saveTimelineRegistro(reg);
+    loadAllData();
+  };
+
+  // Exclusão de um Registro da timeline — corrige um lançamento feito por
+  // engano ou para o colaborador errado. Quando o registro excluído é uma
+  // Mudança de Cargo, também remove o Reconhecimento espelhado e, se
+  // solicitado, devolve o colaborador ao Cargo/Setor anteriores guardados no
+  // próprio registro (ver ColaboradorProfile.tsx, modal de confirmação).
+  const handleDeleteTimelineRegistro = async (reg: TimelineRegistro, reverterCargo: boolean) => {
+    await DataService.deleteTimelineRegistro(reg.id);
+
+    if (reg.tipo === 'Mudança de Cargo') {
+      await DataService.deleteReconhecimento(`rec-mudanca-cargo-${reg.id}`);
+
+      if (reverterCargo && reg.cargoAnteriorId) {
+        const colaborador = colaboradores.find((c) => c.id === reg.colaboradorId);
+        if (colaborador) {
+          await DataService.saveColaborador({
+            ...colaborador,
+            cargoId: reg.cargoAnteriorId,
+            setorId: reg.setorAnteriorId || colaborador.setorId,
+          });
+        }
+      }
+    }
+
+    loadAllData();
+  };
+
   // Tratar salvamento e exclusão de Usuários
   const handleSaveUsuario = async (user: Usuario) => {
     await DataService.saveUsuario(user);
@@ -488,12 +593,10 @@ export default function App() {
 
   const handleDeleteReconhecimento = async (id: string) => {
     await DataService.deleteReconhecimento(id);
-    // OBS: o registro espelhado na timeline (id "reg-reconhecimento-{id}") não é
-    // removido aqui — o sistema não tem uma ação de excluir Registro da timeline
-    // (nem os registros "normais" podem ser apagados hoje, só criados/editados).
-    // Fica como um registro histórico órfão, o que é aceitável: reconhecimentos
-    // raramente são excluídos, e mesmo excluído o "aconteceu" continua sendo um
-    // fato histórico válido da timeline.
+    // Agora que a timeline suporta exclusão de registro (deleteTimelineRegistro),
+    // o espelho criado em handleSaveReconhecimento (id "reg-reconhecimento-{id}")
+    // é removido junto, em vez de virar um registro histórico órfão.
+    await DataService.deleteTimelineRegistro(`reg-reconhecimento-${id}`);
     loadAllData();
   };
 
@@ -830,6 +933,9 @@ export default function App() {
                 onBack={() => setSelectedColaboradorId(null)}
                 onUpdateColaborador={handleUpdateColaborador}
                 onAddTimelineRegistro={handleAddTimelineRegistro}
+                onSalvarMudancaCargo={handleSalvarMudancaCargo}
+                onUpdateTimelineRegistro={handleUpdateTimelineRegistro}
+                onDeleteTimelineRegistro={handleDeleteTimelineRegistro}
                 onAddDocumento={handleAddDocumento}
                 onDeleteDocumento={handleDeleteDocumento}
                 tarefaParaConcluir={

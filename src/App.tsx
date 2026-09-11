@@ -37,6 +37,7 @@ import Analytics from './components/Analytics';
 import Config from './components/Config';
 import Usuarios from './components/Usuarios';
 import Login from './components/Login';
+import RedefinirSenhaPage from './components/RedefinirSenhaPage';
 import CentralDocumentos from './components/CentralDocumentos';
 import SistemaReconhecimento from './components/SistemaReconhecimento';
 import MetasLideranca from './components/MetasLideranca';
@@ -51,6 +52,18 @@ import { Users2, X, PlusCircle } from 'lucide-react';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<Usuario | null>(null);
+  // "Esqueci minha senha": se a pessoa chegou aqui a partir do link recebido
+  // por e-mail (?resetToken=...), a tela de redefinição tem prioridade sobre
+  // tudo — login normal, sessão restaurada, dashboard etc. Lido uma única
+  // vez na carga da página; ao concluir (ou desistir), o próprio fluxo limpa
+  // o parâmetro da URL e este estado, devolvendo o app ao normal.
+  const [resetTokenAtivo, setResetTokenAtivo] = useState<string | null>(() => {
+    try {
+      return new URLSearchParams(window.location.search).get('resetToken');
+    } catch {
+      return null;
+    }
+  });
   // Enquanto a sessão restaurada do navegador ainda não foi revalidada contra
   // o backend, não renderizamos nem a tela de login nem o app — evita um
   // "flash" da UI de administrador para um usuário cujo token já expirou.
@@ -831,6 +844,26 @@ export default function App() {
     diaDoMes: diaDoMesDigest,
     diasNoMes: diasNoMesDigest,
   };
+
+  if (resetTokenAtivo) {
+    return (
+      <RedefinirSenhaPage
+        token={resetTokenAtivo}
+        onConcluir={() => {
+          // Remove o resetToken da URL sem recarregar a página, e volta ao
+          // fluxo normal (tela de login, ou dashboard se já houver sessão).
+          try {
+            const url = new URL(window.location.href);
+            url.searchParams.delete('resetToken');
+            window.history.replaceState({}, '', url.toString());
+          } catch {
+            // Ambiente sem History API — o próximo carregamento resolve.
+          }
+          setResetTokenAtivo(null);
+        }}
+      />
+    );
+  }
 
   if (validandoSessao) {
     return (

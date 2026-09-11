@@ -859,6 +859,18 @@ export default function App() {
     ? alertas
     : alertas.filter((alerta) => idsColaboradoresVisiveis.has(alerta.colaboradorId));
 
+  // Corrigido: a Central de Documentos (aba "Central Docs" do menu, fora do
+  // perfil de um colaborador específico) recebia sempre `documentos` sem
+  // filtro nenhum — ou seja, um Líder/Coordenador com hierarquia/setor
+  // restrito enxergava anexos de colaboradores fora do seu escopo, o que
+  // quebra a mesma regra de visibilidade já aplicada acima para
+  // colaboradores/timeline/tarefas/alertas. Um documento cujo colaboradorId
+  // não corresponde a ninguém visível (ex.: nunca preenchido corretamente)
+  // só continua aparecendo para quem tem acesso global.
+  const documentosVisiveis = acessoGlobal
+    ? documentos
+    : documentos.filter((doc) => idsColaboradoresVisiveis.has(doc.colaboradorId));
+
   // Contadores dinâmicos para barra lateral
   const tarefasPendentesCount = tarefasVisiveis.filter((t) => !t.concluida).length;
 
@@ -1114,7 +1126,8 @@ export default function App() {
           {activeTab === 'documentos' && (
             <CentralDocumentos
               colaborador={{ id: 'todos', nome: 'Todos', email: '', fotoUrl: '', cargoId: '', setorId: '', liderId: '', dataAdmissao: '', situacao: 'Ativo', empresaId: '' } as Colaborador}
-              documentos={documentos}
+              documentos={documentosVisiveis}
+              colaboradores={colaboradoresVisiveis}
               onAddDocumento={handleAddDocumento}
               onDeleteDocumento={handleDeleteDocumento}
               currentUserId={currentUser?.id || ''}

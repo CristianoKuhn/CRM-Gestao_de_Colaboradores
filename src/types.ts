@@ -31,6 +31,14 @@ export interface FamiliaCargo {
 export interface Cargo {
   id: string;
   nome: string;
+  // Vínculo do Cargo com um Setor — a partir de agora todo Cargo novo é
+  // criado já vinculado a um Setor (a UI de cadastro exige a escolha). O
+  // campo continua opcional no tipo só para não quebrar cargos cadastrados
+  // antes desta mudança; eles devem ser editados uma vez para receber o
+  // vínculo (ver Config.tsx, aba "Cargos"). Usado para filtrar a lista de
+  // Cargos disponíveis quando o Setor de um Colaborador (ou de uma Mudança
+  // de Cargo) já foi escolhido.
+  setorId?: string;
   familiaId?: string;      // vínculo com FamiliaCargo — opcional
   nivelOrdem?: number;     // posição na trilha (1=Júnior, 2=Pleno, 3=Sênior...)
   proximoCargoId?: string; // sucessor natural na progressão de carreira
@@ -83,6 +91,7 @@ export type TipoRegistro =
   | 'Acompanhamento'
   | 'Férias Planejadas'
   | 'Férias Gozadas'
+  | 'Mudança de Cargo'
   	  | 'Outros';
 
 
@@ -113,6 +122,19 @@ export interface TimelineRegistro {
   gerarTarefaFutura: boolean;
   tarefaId?: string;
   anexos: Anexo[];
+  // Preenchidos apenas quando tipo === 'Mudança de Cargo' (ver Colaboradores
+  // > CRM & Timeline > Novo Registro). Guardam o "antes" e o "depois" desta
+  // mudança específica — é o que permite: (1) o registro ser 100% auto-
+  // suficiente para exibição, mesmo se o Cargo/Setor for renomeado depois;
+  // (2) reverter o Cargo do colaborador para o valor anterior caso o
+  // registro tenha sido criado por engano ou para a pessoa errada; e (3)
+  // reaplicar o Cargo correto ao editar o registro. Nunca preenchidos por
+  // uma edição feita em Colaboradores > Editar (correção simples, sem
+  // efeito de histórico) — só pelo fluxo de "Novo Registro".
+  cargoAnteriorId?: string;
+  cargoNovoId?: string;
+  setorAnteriorId?: string;
+  setorNovoId?: string;
 }
 
 // Avaliação de Período de Experiência (15, 30, 60, 90 dias)

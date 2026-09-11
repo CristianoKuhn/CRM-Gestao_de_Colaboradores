@@ -28,7 +28,27 @@ import {
   RefreshCw,
   KeyRound,
   Copy,
+  AlertTriangle,
+  X,
 } from 'lucide-react';
+
+// "Gerenciar Usuários" e "Configurações Gerais" saíram da lista de dashboards
+// que dependem deste checklist (Security Audit, Fase 1, V07) — a visibilidade
+// delas hoje é sempre "só Administrador", independente do que for marcado
+// aqui. Mantê-las no checklist deixaria o Administrador achando que está
+// controlando algo que na verdade não tem mais efeito nenhum.
+const DASHBOARDS_CONFIGURAVEIS = DASHBOARDS_SELECIONAVEIS.filter(
+  (d) => d.id !== 'usuarios' && d.id !== 'config'
+);
+
+// Extrai uma mensagem de erro legível tanto de um Error "de verdade" quanto de
+// qualquer outra coisa lançada — o backend agora recusa ações de propósito
+// (sessão expirada, último Administrador, etc.), e essas mensagens precisam
+// chegar até quem está usando a tela, não só até o console.
+function mensagemDeErro(err: unknown, fallback: string): string {
+  if (err instanceof Error && err.message) return err.message;
+  return fallback;
+}
 
 interface UsuariosProps {
   usuarios: Usuario[];
@@ -60,6 +80,14 @@ export default function Usuarios({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingUsuario, setEditingUsuario] = useState<Usuario | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  // Mensagem de erro do modal de cadastro/edição — o backend pode recusar
+  // (sessão expirada, campos inválidos, etc.) e isso precisa aparecer aqui.
+  const [formError, setFormError] = useState<string | null>(null);
+
+  // Erro de uma ação na listagem (hoje, só a exclusão) — ex.: o backend agora
+  // recusa remover o último Administrador do sistema, e isso não tem modal
+  // próprio para mostrar a mensagem, então usamos um aviso no topo da página.
+  const [listError, setListError] = useState<string | null>(null);
 
   // Reset de senha rápido (Administrador) — modal dedicado, separado da edição
   // completa do cadastro, para o caso mais comum: usuário esqueceu a senha.
@@ -67,6 +95,7 @@ export default function Usuarios({
   const [novaSenhaTemporaria, setNovaSenhaTemporaria] = useState('');
   const [isResettingSenha, setIsResettingSenha] = useState(false);
   const [senhaResetadaComSucesso, setSenhaResetadaComSucesso] = useState(false);
+  const [resetSenhaError, setResetSenhaError] = useState<string | null>(null);
 
   // Campos do Formulário
   const [nome, setNome] = useState('');
@@ -76,7 +105,7 @@ export default function Usuarios({
   const [setoresPermitidos, setSetoresPermitidos] = useState<string[]>([]);
   const [lideresSupervisionados, setLideresSupervisionados] = useState<string[]>([]);
   const [dashboardsHabilitados, setDashboardsHabilitados] = useState<string[]>(
-    DASHBOARDS_SELECIONAVEIS.map((d) => d.id)
+    DASHBOARDS_CONFIGURAVEIS.map((d) => d.id)
   );
   const [ativo, setAtivo] = useState(true);
 
@@ -89,8 +118,9 @@ export default function Usuarios({
     setPerfil('Lider');
     setSetoresPermitidos([]);
     setLideresSupervisionados([]);
-    setDashboardsHabilitados(DASHBOARDS_SELECIONAVEIS.map((d) => d.id));
+    setDashboardsHabilitados(DASHBOARDS_CONFIGURAVEIS.map((d) => d.id));
     setAtivo(true);
+    setFormError(null);
     setIsModalOpen(true);
   };
 
@@ -112,9 +142,10 @@ export default function Usuarios({
     setDashboardsHabilitados(
       usuario.dashboardsHabilitados?.length
         ? usuario.dashboardsHabilitados
-        : DASHBOARDS_SELECIONAVEIS.map((d) => d.id)
+        : DASHBOARDS_CONFIGURAVEIS.map((d) => d.id)
     );
     setAtivo(usuario.ativo);
+    setFormError(null);
     setIsModalOpen(true);
   };
 
@@ -124,6 +155,7 @@ export default function Usuarios({
     if (!nome.trim() || !email.trim() || isSaving) return;
 
     setIsSaving(true);
+    setFormError(null);
     try {
       const senhaFoiAlteradaPeloAdmin = senhaHash.trim().length > 0 && senhaHash.trim() !== (editingUsuario?.senha_hash || '');
       const userData: Usuario = {
@@ -145,10 +177,11 @@ export default function Usuarios({
         // Só faz sentido para Coordenador; limpa se o perfil for outro para não deixar
         // configuração "fantasma" de uma troca de perfil anterior.
         lideresSupervisionados: perfil === 'Coordenador' ? lideresSupervisionados : [],
-        // Se todos os itens estiverem marcados, grava vazio (== "todos habilitados", mesmo
-        // efeito, e mantém a planilha limpa em vez de listar tudo explicitamente).
+        // Se todos os itens configuráveis estiverem marcados, grava vazio (==
+        // "todos habilitados", mesmo efeito, e mantém a planilha limpa em vez
+        // de listar tudo explicitamente).
         dashboardsHabilitados:
-          dashboardsHabilitados.length === DASHBOARDS_SELECIONAVEIS.length ? [] : dashboardsHabilitados,
+          dashboardsHabilitados.length === DASHBOARDS_CONFIGURAVEIS.length ? [] : dashboardsHabilitados,
         ativo,
         ultimo_login: editingUsuario?.ultimo_login || '',
       };
@@ -157,6 +190,10 @@ export default function Usuarios({
       setIsModalOpen(false);
     } catch (err) {
       console.error('Erro ao salvar usuário:', err);
+      // Security Audit (Fase 1): o backend agora pode recusar de propósito
+      // (ex.: sessão expirada, perfil sem permissão) — a pessoa precisa ver
+      // isso na tela, não só no console.
+      setFormError(mensagemDeErro(err, 'Não foi possível salvar o usuário. Tente novamente.'));
     } finally {
       setIsSaving(false);
     }
@@ -164,8 +201,15 @@ export default function Usuarios({
 
   // Excluir usuário
   const handleDeleteClick = async (id: string, name: string) => {
-    if (confirm(`Tem certeza de que deseja remover o usuário "${name}"?`)) {
+    if (!confirm(`Tem certeza de que deseja remover o usuário "${name}"?`)) return;
+    setListError(null);
+    try {
       await onDeleteUsuario(id);
+    } catch (err) {
+      console.error('Erro ao excluir usuário:', err);
+      // Ex.: o backend recusa remover o último Administrador do sistema —
+      // sem isto, a exclusão simplesmente "não acontecia" sem explicação.
+      setListError(mensagemDeErro(err, 'Não foi possível remover este usuário.'));
     }
   };
 
@@ -187,11 +231,13 @@ export default function Usuarios({
     setResetSenhaUsuario(usuario);
     setNovaSenhaTemporaria(gerarSenhaAleatoria());
     setSenhaResetadaComSucesso(false);
+    setResetSenhaError(null);
   };
 
   const handleConfirmarResetSenha = async () => {
     if (!resetSenhaUsuario || !novaSenhaTemporaria.trim() || isResettingSenha) return;
     setIsResettingSenha(true);
+    setResetSenhaError(null);
     try {
       await onSaveUsuario({
         ...resetSenhaUsuario,
@@ -201,6 +247,7 @@ export default function Usuarios({
       setSenhaResetadaComSucesso(true);
     } catch (err) {
       console.error('Erro ao resetar senha:', err);
+      setResetSenhaError(mensagemDeErro(err, 'Não foi possível resetar a senha. Tente novamente.'));
     } finally {
       setIsResettingSenha(false);
     }
@@ -210,6 +257,7 @@ export default function Usuarios({
     setResetSenhaUsuario(null);
     setNovaSenhaTemporaria('');
     setSenhaResetadaComSucesso(false);
+    setResetSenhaError(null);
   };
 
   // Filtrar usuários
@@ -260,6 +308,20 @@ export default function Usuarios({
           Novo Usuário
         </button>
       </div>
+
+      {/* Aviso de erro de uma ação da listagem (hoje, só a exclusão) */}
+      {listError && (
+        <div className="flex items-start gap-3 bg-rose-50 border border-rose-200 rounded-2xl p-4">
+          <AlertTriangle className="text-rose-500 shrink-0 mt-0.5" size={18} />
+          <p className="text-xs text-rose-700 flex-1 leading-relaxed">{listError}</p>
+          <button
+            onClick={() => setListError(null)}
+            className="text-rose-400 hover:text-rose-600 cursor-pointer shrink-0"
+          >
+            <X size={16} />
+          </button>
+        </div>
+      )}
 
       {/* Metrics Cards Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -692,7 +754,7 @@ export default function Usuarios({
                     Dashboards Habilitados
                   </label>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-40 overflow-y-auto p-3 bg-slate-50 border border-slate-200 rounded-2xl">
-                    {DASHBOARDS_SELECIONAVEIS.map((d) => (
+                    {DASHBOARDS_CONFIGURAVEIS.map((d) => (
                       <label key={d.id} className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
                         <input
                           type="checkbox"
@@ -733,6 +795,14 @@ export default function Usuarios({
                   </label>
                 </div>
               </div>
+
+              {/* Erro do backend ao tentar salvar (ex.: sessão expirada) */}
+              {formError && (
+                <div className="flex items-start gap-2 bg-rose-50 border border-rose-200 rounded-2xl p-3">
+                  <AlertTriangle className="text-rose-500 shrink-0 mt-0.5" size={16} />
+                  <p className="text-xs text-rose-700 leading-relaxed">{formError}</p>
+                </div>
+              )}
 
               {/* Modal Actions */}
               <div className="flex justify-end items-center gap-2 pt-4 border-t border-slate-100">
@@ -790,6 +860,12 @@ export default function Usuarios({
                   <p className="text-xs text-slate-500 leading-relaxed">
                     Uma senha temporária foi gerada. Você pode editá-la antes de confirmar. O usuário será obrigado a definir uma senha própria no próximo login.
                   </p>
+                  {resetSenhaError && (
+                    <div className="flex items-start gap-2 bg-rose-50 border border-rose-200 rounded-2xl p-3">
+                      <AlertTriangle className="text-rose-500 shrink-0 mt-0.5" size={16} />
+                      <p className="text-xs text-rose-700 leading-relaxed">{resetSenhaError}</p>
+                    </div>
+                  )}
                   <div>
                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">
                       Senha Temporária

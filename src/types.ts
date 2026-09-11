@@ -135,6 +135,12 @@ export interface TimelineRegistro {
   cargoNovoId?: string;
   setorAnteriorId?: string;
   setorNovoId?: string;
+  // Preenchido apenas quando tipo === 'Reconhecimento' (ver Colaboradores >
+  // CRM & Timeline > Novo Registro): a categoria escolhida em
+  // ConfiguracaoReconhecimento.tipos. É o que permite este registro ser
+  // espelhado com destaque na dashboard de Reconhecimento (ver
+  // App.tsx > handleSalvarRegistroReconhecimento), com o ícone/cor certos.
+  reconhecimentoTipoId?: string;
 }
 
 // Avaliação de Período de Experiência (15, 30, 60, 90 dias)
@@ -329,6 +335,13 @@ export interface Reconhecimento {
   dataConcessao: string;
   visibleEquipe: boolean; // Se aparece no mural da equipe
   arquivoUrl?: string; // Certificação PDF, se aplicável
+  // Marca este reconhecimento para aparecer em destaque na dashboard de
+  // Reconhecimento (topo da lista + estilo diferenciado). Hoje só é definido
+  // automaticamente quando o reconhecimento nasce de um "Novo Registro" com
+  // tipo "Reconhecimento" dentro do perfil do colaborador (ver
+  // ColaboradorProfile.tsx / App.tsx > handleSalvarRegistroReconhecimento) —
+  // reconhecimentos concedidos diretamente por aqui não vêm marcados.
+  destaque?: boolean;
 }
 
 export interface ConfiguracaoReconhecimento {

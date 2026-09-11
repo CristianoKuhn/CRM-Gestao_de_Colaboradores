@@ -2066,6 +2066,9 @@ export class GoogleScriptDataService implements IDataService {
           cargoNovoId: r.cargo_novo_id ? String(r.cargo_novo_id) : undefined,
           setorAnteriorId: r.setor_anterior_id ? String(r.setor_anterior_id) : undefined,
           setorNovoId: r.setor_novo_id ? String(r.setor_novo_id) : undefined,
+          // Só vem preenchido quando tipo === 'Reconhecimento' (ver
+          // ColaboradorProfile.tsx) — a categoria de Reconhecimento escolhida.
+          reconhecimentoTipoId: r.reconhecimento_tipo_id ? String(r.reconhecimento_tipo_id) : undefined,
         };
       });
     } catch (e) {
@@ -2322,6 +2325,8 @@ export class GoogleScriptDataService implements IDataService {
       cargo_novo_id: registro.cargoNovoId || '',
       setor_anterior_id: registro.setorAnteriorId || '',
       setor_novo_id: registro.setorNovoId || '',
+      // Preenchido apenas para tipo === 'Reconhecimento'.
+      reconhecimento_tipo_id: registro.reconhecimentoTipoId || '',
     };
 
     try {
@@ -2804,6 +2809,7 @@ export class GoogleScriptDataService implements IDataService {
         dataConcessao: r.data_concessao,
         visibleEquipe: r.visivel_equipe === true || r.visivel_equipe === 'true',
         arquivoUrl: r.arquivo_url || undefined,
+        destaque: r.destaque === true || r.destaque === 'true',
       }));
     } catch (e) {
       return this.localFallback.getReconhecimentos();
@@ -2822,6 +2828,7 @@ export class GoogleScriptDataService implements IDataService {
         data_concessao: rec.dataConcessao,
         visivel_equipe: rec.visibleEquipe,
         arquivo_url: rec.arquivoUrl || '',
+        destaque: rec.destaque || false,
       };
       await this.request('saveReconhecimento', { data: body });
     } catch (e) {

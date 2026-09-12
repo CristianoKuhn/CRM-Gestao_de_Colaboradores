@@ -27,6 +27,14 @@ import {
   AcompanhamentoRealizado,
   AlertaInteligente,
   ConfiguracaoAlertas,
+  EscalaDominio,
+  GrauDominio,
+  MatrizVersao,
+  MatrizCapacidadeCargo,
+  CapacidadeBiblioteca,
+  CompetenciaBiblioteca,
+  TipoEvidenciaCapacidade,
+  GravidadeOcorrencia,
 } from './types';
 import Sidebar from './components/Sidebar';
 import DashboardExecutiva from './components/DashboardExecutiva';
@@ -154,6 +162,15 @@ export default function App() {
   const [lideres, setLideres] = useState<Lider[]>([]);
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
+  // Reconstrução Multi-Departamento — dados do Motor de Desenvolvimento
+  const [escalas, setEscalas] = useState<EscalaDominio[]>([]);
+  const [graus, setGraus] = useState<GrauDominio[]>([]);
+  const [matrizVersoes, setMatrizVersoes] = useState<MatrizVersao[]>([]);
+  const [matrizCapacidades, setMatrizCapacidades] = useState<MatrizCapacidadeCargo[]>([]);
+  const [capacidades, setCapacidades] = useState<CapacidadeBiblioteca[]>([]);
+  const [competencias, setCompetencias] = useState<CompetenciaBiblioteca[]>([]);
+  const [tiposEvidencia, setTiposEvidencia] = useState<TipoEvidenciaCapacidade[]>([]);
+  const [gravidadesOcorrencia, setGravidadesOcorrencia] = useState<GravidadeOcorrencia[]>([]);
   const [supabaseConfig, setSupabaseConfig] = useState<SupabaseConfig>({
     supabaseUrl: '',
     supabaseAnonKey: '',
@@ -251,6 +268,30 @@ export default function App() {
 
       // P4: Reconhecimento
       setReconhecimentos(recsData);
+
+      // Reconstrução Multi-Departamento — carrega dados de desenvolvimento em
+      // paralelo, sem bloquear o carregamento principal (catch individual para
+      // que uma falha não derrube o resto — backends sem as novas abas ainda
+      // respondem com array vazio via fallback do DataService).
+      Promise.allSettled([
+        DataService.getEscalasDominio?.() || Promise.resolve([]),
+        DataService.getCapacidadesBiblioteca?.() || Promise.resolve([]),
+        DataService.getCompetenciasBiblioteca?.() || Promise.resolve([]),
+        DataService.getMatrizVersoes?.() || Promise.resolve([]),
+        DataService.getMatrizCapacidadesCargo?.() || Promise.resolve([]),
+        DataService.getTiposEvidencia?.() || Promise.resolve([]),
+        DataService.getGravidadesOcorrencia?.() || Promise.resolve([]),
+        DataService.getGrausDominio?.() || Promise.resolve([]),
+      ]).then(([escalasRes, capsRes, compsRes, versRes, matrizRes, tiposRes, gravsRes, grausRes]) => {
+        if (escalasRes.status === 'fulfilled') setEscalas(escalasRes.value as EscalaDominio[]);
+        if (capsRes.status === 'fulfilled') setCapacidades(capsRes.value as CapacidadeBiblioteca[]);
+        if (compsRes.status === 'fulfilled') setCompetencias(compsRes.value as CompetenciaBiblioteca[]);
+        if (versRes.status === 'fulfilled') setMatrizVersoes(versRes.value as MatrizVersao[]);
+        if (matrizRes.status === 'fulfilled') setMatrizCapacidades(matrizRes.value as MatrizCapacidadeCargo[]);
+        if (tiposRes.status === 'fulfilled') setTiposEvidencia(tiposRes.value as TipoEvidenciaCapacidade[]);
+        if (gravsRes.status === 'fulfilled') setGravidadesOcorrencia(gravsRes.value as GravidadeOcorrencia[]);
+        if (grausRes.status === 'fulfilled') setGraus(grausRes.value as GrauDominio[]);
+      }).catch(() => {/* dados de desenvolvimento não disponíveis — UI fica funcional com arrays vazios */});
       setConfigReconhecimento(configRecData);
 
       // P5: Metas
@@ -323,6 +364,48 @@ export default function App() {
 
   const handleUpdateCargo = async (cargo: Cargo) => {
     await DataService.saveCargo(cargo);
+    loadAllData();
+  };
+
+  // ── Reconstrução Multi-Departamento — handlers de Trilha & Matriz ─────
+  const handleSaveEscala = async (escala: EscalaDominio) => {
+    await DataService.saveEscalaDominio?.(escala);
+    loadAllData();
+  };
+  const handleSaveGrau = async (grau: GrauDominio) => {
+    await DataService.saveGrauDominio?.(grau);
+    loadAllData();
+  };
+  const handleDeleteGrau = async (id: string) => {
+    await DataService.deleteGrauDominio?.(id);
+    loadAllData();
+  };
+  const handleSaveMatrizVersao = async (versao: MatrizVersao) => {
+    await DataService.saveMatrizVersao?.(versao);
+    loadAllData();
+  };
+  const handleSaveMatrizCapacidadeCargo = async (item: MatrizCapacidadeCargo) => {
+    await DataService.saveMatrizCapacidadeCargo?.(item);
+    loadAllData();
+  };
+  const handleDeleteMatrizCapacidadeCargo = async (id: string) => {
+    await DataService.deleteMatrizCapacidadeCargo?.(id);
+    loadAllData();
+  };
+  const handleSaveCapacidade = async (cap: CapacidadeBiblioteca) => {
+    await DataService.saveCapacidadeBiblioteca?.(cap);
+    loadAllData();
+  };
+  const handleSaveCompetencia = async (comp: CompetenciaBiblioteca) => {
+    await DataService.saveCompetenciaBiblioteca?.(comp);
+    loadAllData();
+  };
+  const handleSaveTipoEvidencia = async (tipo: TipoEvidenciaCapacidade) => {
+    await DataService.saveTipoEvidencia?.(tipo);
+    loadAllData();
+  };
+  const handleSaveGravidadeOcorrencia = async (grav: GravidadeOcorrencia) => {
+    await DataService.saveGravidadeOcorrencia?.(grav);
     loadAllData();
   };
 
@@ -1056,6 +1139,14 @@ export default function App() {
                 onDeleteTimelineRegistro={handleDeleteTimelineRegistro}
                 onAddDocumento={handleAddDocumento}
                 onDeleteDocumento={handleDeleteDocumento}
+                escalas={escalas}
+                graus={graus}
+                matrizVersoes={matrizVersoes}
+                matrizCapacidades={matrizCapacidades}
+                capacidades={capacidades}
+                competencias={competencias}
+                tiposEvidencia={tiposEvidencia}
+                gravidadesOcorrencia={gravidadesOcorrencia}
                 tarefaParaConcluir={
                   tarefaEmConclusao && tarefaEmConclusao.colaboradorId === colaboradorSelecionado.id
                     ? tarefaEmConclusao
@@ -1192,6 +1283,24 @@ export default function App() {
               onUpdateSetor={handleUpdateSetor}
               onUpdateCargo={handleUpdateCargo}
               onUpdateLider={handleUpdateLider}
+              escalas={escalas}
+              graus={graus}
+              matrizVersoes={matrizVersoes}
+              matrizCapacidades={matrizCapacidades}
+              capacidades={capacidades}
+              competencias={competencias}
+              tiposEvidencia={tiposEvidencia}
+              gravidadesOcorrencia={gravidadesOcorrencia}
+              onSaveEscala={handleSaveEscala}
+              onSaveGrau={handleSaveGrau}
+              onDeleteGrau={handleDeleteGrau}
+              onSaveMatrizVersao={handleSaveMatrizVersao}
+              onSaveMatrizCapacidadeCargo={handleSaveMatrizCapacidadeCargo}
+              onDeleteMatrizCapacidadeCargo={handleDeleteMatrizCapacidadeCargo}
+              onSaveCapacidade={handleSaveCapacidade}
+              onSaveCompetencia={handleSaveCompetencia}
+              onSaveTipoEvidencia={handleSaveTipoEvidencia}
+              onSaveGravidadeOcorrencia={handleSaveGravidadeOcorrencia}
             />
           )}
 

@@ -24,6 +24,14 @@ import {
   Tarefa,
   FormularioInstancia,
   Usuario,
+  EscalaDominio,
+  GrauDominio,
+  MatrizVersao,
+  TipoEvidenciaCapacidade,
+  GravidadeOcorrencia,
+  CapacidadeBiblioteca,
+  CompetenciaBiblioteca,
+  MatrizCapacidadeCargo,
 } from '../types';
 import LinhaDoTempoInteligente from './LinhaDoTempoInteligente';
 import HistoricoInstancias from '../features/formularios/components/HistoricoInstancias';
@@ -32,6 +40,7 @@ import AnexoPreviewModal, { ArquivoParaPreview } from './AnexoPreviewModal';
 import JornadaColaboradorPanel from '../features/desenvolvimento-colaboradores/JornadaColaboradorPanel';
 import PerfilCompetenciasPanel from '../features/desenvolvimento-colaboradores/PerfilCompetenciasPanel';
 import InsightsPanel from '../features/desenvolvimento-colaboradores/InsightsPanel';
+import PainelDesenvolvimento from '../features/desenvolvimento-colaboradores/PainelDesenvolvimento';
 import {
   Calendar,
   Briefcase,
@@ -112,6 +121,15 @@ interface ColaboradorProfileProps {
   configReconhecimento: ConfiguracaoReconhecimento;
   tarefas: Tarefa[];
   currentUser?: Usuario;
+  // Reconstrução Multi-Departamento — Etapa 5: dados para o PainelDesenvolvimento
+  escalas?: EscalaDominio[];
+  graus?: GrauDominio[];
+  matrizVersoes?: MatrizVersao[];
+  matrizCapacidades?: MatrizCapacidadeCargo[];
+  capacidades?: CapacidadeBiblioteca[];
+  competencias?: CompetenciaBiblioteca[];
+  tiposEvidencia?: TipoEvidenciaCapacidade[];
+  gravidadesOcorrencia?: GravidadeOcorrencia[];
   onBack: () => void;
   onUpdateColaborador: (col: Colaborador) => Promise<Colaborador>;
   onAddTimelineRegistro: (reg: TimelineRegistro) => void;
@@ -156,6 +174,14 @@ export default function ColaboradorProfile({
   configReconhecimento,
   tarefas,
   currentUser,
+  escalas = [],
+  graus = [],
+  matrizVersoes = [],
+  matrizCapacidades = [],
+  capacidades = [],
+  competencias = [],
+  tiposEvidencia = [],
+  gravidadesOcorrencia = [],
   onBack,
   onUpdateColaborador,
   onAddTimelineRegistro,
@@ -275,6 +301,9 @@ export default function ColaboradorProfile({
   // cargoAnteriorId/setorAnteriorId para oferecer a reversão.
   const [deleteRegistroConfirm, setDeleteRegistroConfirm] = useState<TimelineRegistro | null>(null);
   const [reverterCargoAoExcluir, setReverterCargoAoExcluir] = useState(true);
+  // Aba principal do perfil: "crm" = timeline + documentos (comportamento
+  // original); "desenvolvimento" = novo PainelDesenvolvimento (Etapa 5).
+  const [secaoPerfil, setSecaoPerfil] = useState<'crm' | 'desenvolvimento'>('crm');
 
   // Filtro de Drag and Drop
   const [isDragging, setIsDragging] = useState(false);
@@ -833,7 +862,49 @@ export default function ColaboradorProfile({
         </div>
 
         {/* RIGHT COLUMN: Interactive Timeline & Registry Creation */}
-        <div className="lg:col-span-8 space-y-6">
+        <div className="lg:col-span-8">
+
+          {/* Seletor de seção principal — CRM & Timeline vs. Desenvolvimento */}
+          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-2xl w-fit mb-6">
+            <button
+              onClick={() => setSecaoPerfil('crm')}
+              className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+                secaoPerfil === 'crm' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <ClipboardList size={13} />
+              CRM &amp; Timeline
+            </button>
+            <button
+              onClick={() => setSecaoPerfil('desenvolvimento')}
+              className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+                secaoPerfil === 'desenvolvimento' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <TrendingUp size={13} />
+              Desenvolvimento
+            </button>
+          </div>
+
+          {/* SEÇÃO: DESENVOLVIMENTO */}
+          {secaoPerfil === 'desenvolvimento' && (
+            <PainelDesenvolvimento
+              colaborador={colaborador}
+              capacidades={capacidades}
+              competencias={competencias}
+              escalas={escalas}
+              graus={graus}
+              tiposEvidencia={tiposEvidencia}
+              gravidadesOcorrencia={gravidadesOcorrencia}
+              matrizVersoes={matrizVersoes}
+              setores={setores}
+              currentUserId={currentUser?.id || ''}
+            />
+          )}
+
+          {/* SEÇÃO: CRM & TIMELINE */}
+          {secaoPerfil === 'crm' && (
+          <div className="space-y-6">
           <InsightsPanel
             colaboradorId={colaborador.id}
             currentUser={currentUser}
@@ -1697,6 +1768,9 @@ export default function ColaboradorProfile({
               )}
             </div>
           </div>
+        </div>
+          )}
+
         </div>
       </div>
 

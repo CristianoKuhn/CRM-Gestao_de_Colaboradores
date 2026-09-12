@@ -15,6 +15,14 @@ import {
   Cargo,
   Lider,
   Colaborador,
+  EscalaDominio,
+  GrauDominio,
+  MatrizVersao,
+  MatrizCapacidadeCargo,
+  CapacidadeBiblioteca,
+  CompetenciaBiblioteca,
+  TipoEvidenciaCapacidade,
+  GravidadeOcorrencia,
 } from '../types';
 import {
   Key,
@@ -39,6 +47,10 @@ import {
   Shield,
   LayoutDashboard,
   Eye,
+  GitBranch,
+  Layers,
+  Award,
+  ChevronRight,
 } from 'lucide-react';
 
 interface ConfigProps {
@@ -62,6 +74,25 @@ interface ConfigProps {
   onUpdateSetor?: (setor: Setor) => void;
   onUpdateCargo?: (cargo: Cargo) => void;
   onUpdateLider?: (lider: Lider) => void;
+  // Trilha & Matriz
+  escalas?: EscalaDominio[];
+  graus?: GrauDominio[];
+  matrizVersoes?: MatrizVersao[];
+  matrizCapacidades?: MatrizCapacidadeCargo[];
+  capacidades?: CapacidadeBiblioteca[];
+  competencias?: CompetenciaBiblioteca[];
+  tiposEvidencia?: TipoEvidenciaCapacidade[];
+  gravidadesOcorrencia?: GravidadeOcorrencia[];
+  onSaveEscala?: (escala: EscalaDominio) => void;
+  onSaveGrau?: (grau: GrauDominio) => void;
+  onDeleteGrau?: (id: string) => void;
+  onSaveMatrizVersao?: (versao: MatrizVersao) => void;
+  onSaveMatrizCapacidadeCargo?: (item: MatrizCapacidadeCargo) => void;
+  onDeleteMatrizCapacidadeCargo?: (id: string) => void;
+  onSaveCapacidade?: (cap: CapacidadeBiblioteca) => void;
+  onSaveCompetencia?: (comp: CompetenciaBiblioteca) => void;
+  onSaveTipoEvidencia?: (tipo: TipoEvidenciaCapacidade) => void;
+  onSaveGravidadeOcorrencia?: (grav: GravidadeOcorrencia) => void;
 }
 
 export default function Config({
@@ -84,6 +115,24 @@ export default function Config({
   onUpdateSetor,
   onUpdateCargo,
   onUpdateLider,
+  escalas = [],
+  graus = [],
+  matrizVersoes = [],
+  matrizCapacidades = [],
+  capacidades = [],
+  competencias = [],
+  tiposEvidencia = [],
+  gravidadesOcorrencia = [],
+  onSaveEscala,
+  onSaveGrau,
+  onDeleteGrau,
+  onSaveMatrizVersao,
+  onSaveMatrizCapacidadeCargo,
+  onDeleteMatrizCapacidadeCargo,
+  onSaveCapacidade,
+  onSaveCompetencia,
+  onSaveTipoEvidencia,
+  onSaveGravidadeOcorrencia,
 }: ConfigProps) {
   const [webAppUrl, setWebAppUrl] = useState(googleConfig.webAppUrl || '');
 
@@ -97,7 +146,9 @@ export default function Config({
   const [errorMessage, setErrorMessage] = useState('');
 
   // Estado para Dashboard Admin
-  const [adminTab, setAdminTab] = useState<'empresas' | 'setores' | 'cargos' | 'lideres'>('setores');
+  const [adminTab, setAdminTab] = useState<'empresas' | 'setores' | 'cargos' | 'lideres' | 'trilha'>('setores');
+  // Sub-aba da nova Trilha & Matriz
+  const [trilhaSubTab, setTrilhaSubTab] = useState<'competencias' | 'escalas' | 'matriz' | 'catalogo'>('competencias');
   const [isAddingSetor, setIsAddingSetor] = useState(false);
   const [isAddingCargo, setIsAddingCargo] = useState(false);
   const [isAddingLider, setIsAddingLider] = useState(false);
@@ -317,6 +368,17 @@ export default function Config({
             >
               <Building2 size={14} />
               Empresas ({empresas.length})
+            </button>
+            <button
+              onClick={() => setAdminTab('trilha')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition ${
+                adminTab === 'trilha'
+                  ? 'bg-teal-500 text-white'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              <GitBranch size={14} />
+              Trilha &amp; Matriz
             </button>
           </div>
 
@@ -751,6 +813,393 @@ export default function Config({
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {/* TAB: TRILHA & MATRIZ */}
+            {adminTab === 'trilha' && (
+              <div className="space-y-4">
+                <div className="flex items-start justify-between gap-3 flex-wrap">
+                  <p className="text-xs text-slate-500 max-w-xl">
+                    Configure Competências, Capacidades, Escalas de Domínio e a Matriz de Requisitos por Cargo.
+                    Cada setor pode ter sua própria estrutura — nada aqui é global ou fixo.
+                  </p>
+                  {/* Sub-abas */}
+                  <div className="flex flex-wrap gap-1">
+                    {(['competencias', 'escalas', 'matriz', 'catalogo'] as const).map((tab) => {
+                      const labels: Record<string, string> = {
+                        competencias: 'Competências & Capacidades',
+                        escalas: 'Escalas de Domínio',
+                        matriz: 'Matriz por Cargo',
+                        catalogo: 'Catálogos'
+                      };
+                      return (
+                        <button
+                          key={tab}
+                          onClick={() => setTrilhaSubTab(tab)}
+                          className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition cursor-pointer ${
+                            trilhaSubTab === tab ? 'bg-teal-500 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                          }`}
+                        >
+                          {labels[tab]}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Sub-aba: Competências & Capacidades */}
+                {trilhaSubTab === 'competencias' && (
+                  <div className="space-y-4">
+                    <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-xs text-blue-700 flex items-start gap-2">
+                      <AlertCircle size={14} className="shrink-0 mt-0.5" />
+                      <span>
+                        <strong>Direção correta:</strong> uma Competência agrupa várias Capacidades (a Capacidade é quem pertence à Competência, não o contrário).
+                        Cada item pode ter um Setor vinculado (exclusivo daquele setor) ou nenhum (compartilhado entre todos).
+                      </span>
+                    </div>
+
+                    {/* Competências */}
+                    <div>
+                      <div className="flex items-center justify-between mb-3">
+                        <h4 className="text-sm font-bold text-slate-700 flex items-center gap-2">
+                          <Layers size={16} className="text-teal-600" />
+                          Competências ({competencias.length})
+                        </h4>
+                        <button
+                          onClick={() => {
+                            const nome = prompt('Nome da nova Competência:');
+                            if (!nome?.trim()) return;
+                            const setorEscolhido = prompt('Setor vinculado (deixe em branco para compartilhada entre todos):');
+                            const setor = setores.find(s => s.nome.toLowerCase() === (setorEscolhido || '').toLowerCase());
+                            onSaveCompetencia?.({ id: `comp-${Date.now()}`, nome: nome.trim(), niveis: [], ativo: true, setorId: setor?.id });
+                          }}
+                          className="flex items-center gap-1 px-3 py-1.5 bg-teal-500 text-white rounded-lg text-xs font-bold hover:bg-teal-600 cursor-pointer"
+                        >
+                          <PlusCircle size={13} />
+                          Nova Competência
+                        </button>
+                      </div>
+                      <div className="space-y-2">
+                        {competencias.map(comp => {
+                          const capsDaComp = capacidades.filter(c => c.competenciaId === comp.id);
+                          const setorComp = setores.find(s => s.id === comp.setorId);
+                          return (
+                            <div key={comp.id} className="bg-slate-50 border border-slate-100 rounded-xl p-4">
+                              <div className="flex items-start justify-between gap-2">
+                                <div>
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="font-bold text-slate-800 text-sm">{comp.nome}</span>
+                                    {setorComp
+                                      ? <span className="text-[10px] font-semibold text-teal-700 bg-teal-50 border border-teal-100 px-1.5 py-0.5 rounded">{setorComp.nome}</span>
+                                      : <span className="text-[10px] font-semibold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">Compartilhada</span>
+                                    }
+                                    {!comp.ativo && <span className="text-[10px] font-bold text-rose-500 bg-rose-50 px-1.5 py-0.5 rounded">Inativa</span>}
+                                  </div>
+                                  <p className="text-xs text-slate-400 mt-1">{capsDaComp.length} capacidade(s) vinculada(s)</p>
+                                </div>
+                                <button
+                                  onClick={() => onSaveCompetencia?.({ ...comp, ativo: !comp.ativo })}
+                                  className="text-[10px] font-bold text-slate-400 hover:text-teal-600 cursor-pointer"
+                                >
+                                  {comp.ativo ? 'Inativar' : 'Ativar'}
+                                </button>
+                              </div>
+
+                              {/* Capacidades desta Competência */}
+                              <div className="mt-3 space-y-1.5 pl-4 border-l-2 border-slate-200">
+                                {capsDaComp.map(cap => (
+                                  <div key={cap.id} className="flex items-center justify-between bg-white border border-slate-100 rounded-lg px-3 py-2">
+                                    <div>
+                                      <span className="text-xs font-semibold text-slate-700">{cap.nome}</span>
+                                      {!cap.ativo && <span className="ml-2 text-[10px] text-rose-500">Inativa</span>}
+                                    </div>
+                                    <button
+                                      onClick={() => onSaveCapacidade?.({ ...cap, ativo: !cap.ativo })}
+                                      className="text-[10px] text-slate-400 hover:text-teal-600 cursor-pointer"
+                                    >
+                                      {cap.ativo ? 'Inativar' : 'Ativar'}
+                                    </button>
+                                  </div>
+                                ))}
+                                <button
+                                  onClick={() => {
+                                    const nome = prompt(`Nova Capacidade dentro de "${comp.nome}":`);
+                                    if (!nome?.trim()) return;
+                                    onSaveCapacidade?.({ id: `cap-${Date.now()}`, nome: nome.trim(), ativo: true, competenciaId: comp.id, setorId: comp.setorId });
+                                  }}
+                                  className="flex items-center gap-1 text-[11px] font-semibold text-teal-600 hover:text-teal-700 cursor-pointer mt-1"
+                                >
+                                  <PlusCircle size={12} /> Adicionar Capacidade
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                        {competencias.length === 0 && (
+                          <div className="text-center py-8 border-2 border-dashed border-slate-200 rounded-xl">
+                            <Layers size={28} className="mx-auto text-slate-300 mb-2" />
+                            <p className="text-xs text-slate-400">Nenhuma Competência cadastrada ainda. Cada setor pode ter as suas próprias.</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Sub-aba: Escalas de Domínio */}
+                {trilhaSubTab === 'escalas' && (
+                  <div className="space-y-4">
+                    <div className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 text-xs text-amber-700 flex items-start gap-2">
+                      <AlertCircle size={14} className="shrink-0 mt-0.5" />
+                      <span>
+                        Cada Escala de Domínio tem seus próprios graus, nomes e ordem — nenhum departamento é obrigado a usar a mesma escala.
+                        Setor vinculado vazio = escala compartilhada entre todos os setores.
+                      </span>
+                    </div>
+                    <div className="flex justify-end">
+                      <button
+                        onClick={() => {
+                          const nome = prompt('Nome da nova Escala (ex.: "Escala Suporte 2026"):');
+                          if (!nome?.trim()) return;
+                          const setorEscolhido = prompt('Setor vinculado (deixe em branco para compartilhada):');
+                          const setor = setores.find(s => s.nome.toLowerCase() === (setorEscolhido || '').toLowerCase());
+                          onSaveEscala?.({ id: `escala-${Date.now()}`, nome: nome.trim(), ativo: true, setorId: setor?.id });
+                        }}
+                        className="flex items-center gap-1 px-3 py-1.5 bg-teal-500 text-white rounded-lg text-xs font-bold hover:bg-teal-600 cursor-pointer"
+                      >
+                        <PlusCircle size={13} /> Nova Escala
+                      </button>
+                    </div>
+                    <div className="space-y-3">
+                      {escalas.map(escala => {
+                        const grausDaEscala = graus.filter(g => g.escalaId === escala.id).sort((a, b) => a.ordem - b.ordem);
+                        const setorEscala = setores.find(s => s.id === escala.setorId);
+                        return (
+                          <div key={escala.id} className="bg-slate-50 border border-slate-100 rounded-xl p-4 space-y-3">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-bold text-slate-800 text-sm">{escala.nome}</span>
+                                {setorEscala
+                                  ? <span className="text-[10px] font-semibold text-teal-700 bg-teal-50 border border-teal-100 px-1.5 py-0.5 rounded">{setorEscala.nome}</span>
+                                  : <span className="text-[10px] font-semibold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">Compartilhada</span>
+                                }
+                              </div>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              {grausDaEscala.map((grau, idx) => (
+                                <div key={grau.id} className="flex items-center gap-1.5 bg-white border border-slate-100 rounded-lg px-3 py-1.5">
+                                  <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: grau.cor || '#94a3b8' }} />
+                                  <span className="text-xs font-semibold text-slate-700">{grau.nome}</span>
+                                  <span className="text-[10px] text-slate-400">({idx})</span>
+                                  <button onClick={() => onDeleteGrau?.(grau.id)} className="text-slate-300 hover:text-rose-500 cursor-pointer ml-1"><X size={11} /></button>
+                                </div>
+                              ))}
+                              <button
+                                onClick={() => {
+                                  const nome = prompt('Nome do novo grau (ex.: "Especialista"):');
+                                  if (!nome?.trim()) return;
+                                  const cor = prompt('Cor hex (ex.: #0d9488 — deixe em branco para padrão):') || '#94a3b8';
+                                  onSaveGrau?.({ id: `grau-${Date.now()}`, escalaId: escala.id, ordem: grausDaEscala.length, nome: nome.trim(), cor, ativo: true });
+                                }}
+                                className="flex items-center gap-1 text-[11px] font-semibold text-teal-600 hover:text-teal-700 cursor-pointer bg-white border border-dashed border-teal-200 rounded-lg px-3 py-1.5"
+                              >
+                                <PlusCircle size={12} /> Adicionar Grau
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {escalas.length === 0 && (
+                        <div className="text-center py-8 border-2 border-dashed border-slate-200 rounded-xl">
+                          <Award size={28} className="mx-auto text-slate-300 mb-2" />
+                          <p className="text-xs text-slate-400">Nenhuma Escala de Domínio cadastrada. Crie uma para cada setor ou uma compartilhada entre todos.</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Sub-aba: Matriz por Cargo */}
+                {trilhaSubTab === 'matriz' && (
+                  <div className="space-y-4">
+                    <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-xs text-blue-700 flex items-start gap-2">
+                      <AlertCircle size={14} className="shrink-0 mt-0.5" />
+                      <span>
+                        A Matriz define quais Capacidades (e em qual grau mínimo) cada Cargo precisa demonstrar.
+                        Cada versão pertence a um Setor e nunca pode ser alterada depois que houver avaliações vinculadas — crie uma nova versão nesses casos.
+                      </span>
+                    </div>
+
+                    {/* Versões de Matriz por setor */}
+                    {setores.map(setor => {
+                      const versoesDoSetor = matrizVersoes.filter(v => v.setorId === setor.id);
+                      const versaoAtiva = versoesDoSetor.find(v => v.ativa);
+                      const cargosDoSetor = cargos.filter(c => c.setorId === setor.id);
+                      const itensAtivos = versaoAtiva ? matrizCapacidades.filter(m => m.matrizVersaoId === versaoAtiva.id) : [];
+
+                      return (
+                        <div key={setor.id} className="border border-slate-100 rounded-2xl overflow-hidden">
+                          <div className="bg-slate-50 px-4 py-3 flex items-center justify-between">
+                            <div>
+                              <h4 className="font-bold text-slate-800 text-sm">{setor.nome}</h4>
+                              <p className="text-xs text-slate-400">
+                                {versaoAtiva ? `Versão ativa: ${versaoAtiva.nome}` : 'Nenhuma versão ativa'}
+                              </p>
+                            </div>
+                            <button
+                              onClick={() => {
+                                const nome = prompt(`Nome da nova versão para ${setor.nome} (ex.: "2026.1"):`);
+                                if (!nome?.trim()) return;
+                                onSaveMatrizVersao?.({ id: `mv-${Date.now()}`, setorId: setor.id, nome: nome.trim(), vigenteDesde: new Date().toISOString().split('T')[0], ativa: true });
+                              }}
+                              className="flex items-center gap-1 px-3 py-1.5 bg-teal-500 text-white rounded-lg text-xs font-bold hover:bg-teal-600 cursor-pointer"
+                            >
+                              <PlusCircle size={13} /> Nova Versão
+                            </button>
+                          </div>
+
+                          {versaoAtiva && cargosDoSetor.length > 0 && (
+                            <div className="p-4 overflow-x-auto">
+                              <table className="w-full text-xs border-collapse">
+                                <thead>
+                                  <tr>
+                                    <th className="text-left text-slate-500 font-bold py-2 pr-4 whitespace-nowrap">Capacidade</th>
+                                    {cargosDoSetor.map(cargo => (
+                                      <th key={cargo.id} className="text-center text-slate-500 font-bold py-2 px-2 whitespace-nowrap">{cargo.nome}</th>
+                                    ))}
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {capacidades.filter(c => c.setorId === setor.id || !c.setorId).map(cap => (
+                                    <tr key={cap.id} className="border-t border-slate-50 hover:bg-slate-50">
+                                      <td className="py-2 pr-4 font-semibold text-slate-700 whitespace-nowrap">{cap.nome}</td>
+                                      {cargosDoSetor.map(cargo => {
+                                        const item = itensAtivos.find(m => m.capacidadeId === cap.id && m.cargoId === cargo.id);
+                                        return (
+                                          <td key={cargo.id} className="text-center py-2 px-2">
+                                            {item ? (
+                                              <div className="flex flex-col items-center gap-0.5">
+                                                <span className="font-bold text-teal-700">{graus.find(g => g.id === item.grauMinimo)?.nome || '—'}</span>
+                                                {item.obrigatorio && <span className="text-[9px] text-rose-500 font-bold">OBR</span>}
+                                                <button onClick={() => onDeleteMatrizCapacidadeCargo?.(item.id)} className="text-slate-300 hover:text-rose-500 cursor-pointer mt-0.5"><X size={10} /></button>
+                                              </div>
+                                            ) : (
+                                              <button
+                                                onClick={() => {
+                                                  const escalasDoCargo = escalas.filter(e => !e.setorId || e.setorId === setor.id);
+                                                  if (escalasDoCargo.length === 0) { alert('Nenhuma Escala de Domínio configurada para este setor. Configure uma primeiro.'); return; }
+                                                  const escalaEscolhida = escalasDoCargo[0];
+                                                  const grausDaEscala = graus.filter(g => g.escalaId === escalaEscolhida.id).sort((a, b) => a.ordem - b.ordem);
+                                                  if (grausDaEscala.length === 0) { alert('A escala ainda não tem graus configurados.'); return; }
+                                                  const nomeGrau = prompt(`Grau mínimo para "${cap.nome}" no cargo "${cargo.nome}"?\nOpções: ${grausDaEscala.map(g => g.nome).join(', ')}`);
+                                                  const grauEscolhido = grausDaEscala.find(g => g.nome.toLowerCase() === (nomeGrau || '').toLowerCase());
+                                                  if (!grauEscolhido) return;
+                                                  const obr = confirm('Este item é OBRIGATÓRIO para o cargo?');
+                                                  onSaveMatrizCapacidadeCargo?.({ id: `mc-${Date.now()}`, matrizVersaoId: versaoAtiva.id, cargoId: cargo.id, capacidadeId: cap.id, escalaId: escalaEscolhida.id, grauMinimo: grauEscolhido.id, obrigatorio: obr });
+                                                }}
+                                                className="text-slate-300 hover:text-teal-500 cursor-pointer"
+                                              >
+                                                <PlusCircle size={14} />
+                                              </button>
+                                            )}
+                                          </td>
+                                        );
+                                      })}
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+
+                          {!versaoAtiva && (
+                            <div className="p-4 text-center text-xs text-slate-400">Crie uma versão de Matriz para este setor antes de configurar os requisitos por cargo.</div>
+                          )}
+                          {versaoAtiva && cargosDoSetor.length === 0 && (
+                            <div className="p-4 text-center text-xs text-slate-400">Nenhum cargo vinculado a este setor ainda. Configure cargos na aba "Cargos".</div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Sub-aba: Catálogos */}
+                {trilhaSubTab === 'catalogo' && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Tipos de Evidência */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-sm font-bold text-slate-700">Tipos de Evidência de Capacidade</h4>
+                        <button
+                          onClick={() => {
+                            const nome = prompt('Nome do novo tipo (ex.: "Situação real observada"):');
+                            if (!nome?.trim()) return;
+                            const ehTreinamento = confirm('Este tipo conta como TREINAMENTO (exposição à teoria) e não como demonstração prática?\n\nOK = apenas treinamento (não evolui grau)\nCancelar = demonstração prática (pode evoluir grau)');
+                            const setorEscolhido = prompt('Setor vinculado (vazio = compartilhado):');
+                            const setor = setores.find(s => s.nome.toLowerCase() === (setorEscolhido || '').toLowerCase());
+                            onSaveTipoEvidencia?.({ id: `te-${Date.now()}`, nome: nome.trim(), ativo: true, setorId: setor?.id, contaComoTreinamento: ehTreinamento });
+                          }}
+                          className="flex items-center gap-1 px-2.5 py-1.5 bg-teal-500 text-white rounded-lg text-xs font-bold hover:bg-teal-600 cursor-pointer"
+                        >
+                          <PlusCircle size={12} />
+                        </button>
+                      </div>
+                      <p className="text-[11px] text-slate-400">
+                        <strong>Conta como treinamento:</strong> ao validar, só marca "Treinado" — nunca evolui grau.<br/>
+                        <strong>Demonstração prática:</strong> ao validar, pode evoluir o grau de domínio da capacidade.
+                      </p>
+                      <div className="space-y-1.5">
+                        {tiposEvidencia.map(te => (
+                          <div key={te.id} className="flex items-center justify-between bg-slate-50 border border-slate-100 rounded-xl px-3 py-2">
+                            <div>
+                              <span className="text-xs font-semibold text-slate-700">{te.nome}</span>
+                              <span className={`ml-2 text-[10px] font-bold px-1.5 py-0.5 rounded ${te.contaComoTreinamento ? 'bg-blue-50 text-blue-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                                {te.contaComoTreinamento ? 'Treinamento' : 'Demonstração'}
+                              </span>
+                              {te.setorId && <span className="ml-1 text-[10px] text-slate-400">{setores.find(s => s.id === te.setorId)?.nome}</span>}
+                            </div>
+                            <button onClick={() => onSaveTipoEvidencia?.({ ...te, ativo: !te.ativo })} className="text-[10px] text-slate-400 hover:text-rose-500 cursor-pointer">
+                              {te.ativo ? 'Inativar' : 'Ativar'}
+                            </button>
+                          </div>
+                        ))}
+                        {tiposEvidencia.length === 0 && <p className="text-xs text-slate-400 text-center py-4 border-2 border-dashed border-slate-200 rounded-xl">Nenhum tipo cadastrado.</p>}
+                      </div>
+                    </div>
+
+                    {/* Gravidades de Ocorrência */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-sm font-bold text-slate-700">Gravidades de Ocorrência</h4>
+                        <button
+                          onClick={() => {
+                            const nome = prompt('Nome da nova gravidade (ex.: "Alta"):');
+                            if (!nome?.trim()) return;
+                            const cor = prompt('Cor hex (ex.: #ef4444):') || '#94a3b8';
+                            const setorEscolhido = prompt('Setor vinculado (vazio = compartilhada):');
+                            const setor = setores.find(s => s.nome.toLowerCase() === (setorEscolhido || '').toLowerCase());
+                            onSaveGravidadeOcorrencia?.({ id: `grav-${Date.now()}`, nome: nome.trim(), cor, ordem: gravidadesOcorrencia.length, ativo: true, setorId: setor?.id });
+                          }}
+                          className="flex items-center gap-1 px-2.5 py-1.5 bg-teal-500 text-white rounded-lg text-xs font-bold hover:bg-teal-600 cursor-pointer"
+                        >
+                          <PlusCircle size={12} />
+                        </button>
+                      </div>
+                      <div className="space-y-1.5">
+                        {gravidadesOcorrencia.sort((a, b) => a.ordem - b.ordem).map(grav => (
+                          <div key={grav.id} className="flex items-center gap-2 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2">
+                            <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: grav.cor || '#94a3b8' }} />
+                            <span className="text-xs font-semibold text-slate-700 flex-1">{grav.nome}</span>
+                            {grav.setorId && <span className="text-[10px] text-slate-400">{setores.find(s => s.id === grav.setorId)?.nome}</span>}
+                          </div>
+                        ))}
+                        {gravidadesOcorrencia.length === 0 && <p className="text-xs text-slate-400 text-center py-4 border-2 border-dashed border-slate-200 rounded-xl">Nenhuma gravidade cadastrada.</p>}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>

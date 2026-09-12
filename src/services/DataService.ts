@@ -78,6 +78,11 @@ import {
   StatusInsight,
   ResultadoDecisaoInsight,
   VisaoAnalitica,
+  PerfilCapacidade,
+  Ocorrencia,
+  GravidadeOcorrencia,
+  ProjecaoProntidao,
+  ResultadoMudancaEstadoOcorrencia,
 } from '../types';
 import { StorageAPI } from '../utils/storage';
 
@@ -608,8 +613,15 @@ export interface IDataService {
     resultados: AvaliacaoCompetenciaResultado[]
   ): Promise<{ instanciaId: string; totalGravado: number }>;
 
-  getEvidencias(filtro?: { entidadeTipo?: EntidadeTipoEvidencia; entidadeId?: string }): Promise<Evidencia[]>;
+  getEvidencias(filtro?: { entidadeTipo?: EntidadeTipoEvidencia; entidadeId?: string; colaboradorId?: string }): Promise<Evidencia[]>;
   anexarEvidencia(evidencia: Evidencia): Promise<void>;
+  // Reconstrução Multi-Departamento — Etapas 2/3/4
+  getPerfilCapacidades(colaboradorId: string): Promise<PerfilCapacidade[]>;
+  getOcorrencias(colaboradorId: string): Promise<Ocorrencia[]>;
+  criarOcorrencia(dados: Partial<Ocorrencia>): Promise<Ocorrencia>;
+  mudarEstadoOcorrencia(id: string, novoEstado: string, observacao?: string): Promise<ResultadoMudancaEstadoOcorrencia>;
+  getProntidaoProximoNivel(colaboradorId: string): Promise<ProjecaoProntidao>;
+  getProntidaoParaCargo(colaboradorId: string, cargoAlvoId: string): Promise<ProjecaoProntidao>;
   validarEvidencia(id: string, validadoPor?: string): Promise<void>;
   rejeitarEvidencia(id: string, validadoPor?: string): Promise<void>;
 
@@ -1367,15 +1379,23 @@ export class LocalDataService implements IDataService {
     return { instanciaId, totalGravado: resultados.length };
   }
 
-  async getEvidencias(filtro?: { entidadeTipo?: EntidadeTipoEvidencia; entidadeId?: string }): Promise<Evidencia[]> {
+  async getEvidencias(filtro?: { entidadeTipo?: EntidadeTipoEvidencia; entidadeId?: string; colaboradorId?: string }): Promise<Evidencia[]> {
     let evidencias = itensLocalGetArray<Evidencia>('evidencias');
     if (filtro?.entidadeTipo) evidencias = evidencias.filter((e) => e.entidadeTipo === filtro.entidadeTipo);
     if (filtro?.entidadeId) evidencias = evidencias.filter((e) => e.entidadeId === filtro.entidadeId);
+    if (filtro?.colaboradorId) evidencias = evidencias.filter((e) => e.colaboradorId === filtro.colaboradorId);
     return evidencias;
   }
   async anexarEvidencia(evidencia: Evidencia): Promise<void> {
     itensLocalSaveItem('evidencias', { ...evidencia, status: evidencia.status || 'pendente' });
   }
+  // ── Reconstrução Multi-Departamento — Etapas 2/3/4 (stubs locais) ─────
+  async getPerfilCapacidades(_colaboradorId: string): Promise<PerfilCapacidade[]> { return []; }
+  async getOcorrencias(_colaboradorId: string): Promise<Ocorrencia[]> { return []; }
+  async criarOcorrencia(_dados: Partial<Ocorrencia>): Promise<Ocorrencia> { throw new Error('criarOcorrencia não implementado no modo local.'); }
+  async mudarEstadoOcorrencia(_id: string, _novoEstado: string, _obs?: string): Promise<ResultadoMudancaEstadoOcorrencia> { throw new Error('mudarEstadoOcorrencia não implementado no modo local.'); }
+  async getProntidaoProximoNivel(_colaboradorId: string): Promise<ProjecaoProntidao> { return { semProximoCargo: true, motivo: 'Funcionalidade disponível apenas com backend conectado.' }; }
+  async getProntidaoParaCargo(_colaboradorId: string, _cargoAlvoId: string): Promise<ProjecaoProntidao> { return { semMatriz: true, motivo: 'Funcionalidade disponível apenas com backend conectado.' }; }
   async validarEvidencia(id: string, validadoPor?: string): Promise<void> {
     const evidencia = itensLocalGetArray<Evidencia>('evidencias').find((e) => e.id === id);
     if (evidencia) {
@@ -4231,11 +4251,12 @@ export class GoogleScriptDataService implements IDataService {
     }
   }
 
-  async getEvidencias(filtro?: { entidadeTipo?: EntidadeTipoEvidencia; entidadeId?: string }): Promise<Evidencia[]> {
+  async getEvidencias(filtro?: { entidadeTipo?: EntidadeTipoEvidencia; entidadeId?: string; colaboradorId?: string }): Promise<Evidencia[]> {
     try {
       const raw = await this.request<any[]>('getEvidencias', {
         entidadeTipo: filtro?.entidadeTipo || '',
         entidadeId: filtro?.entidadeId || '',
+        colaboradorId: filtro?.colaboradorId || '',
       });
       return (raw || []).map((e) => ({
         id: e.id,
@@ -4250,6 +4271,15 @@ export class GoogleScriptDataService implements IDataService {
         status: e.status,
         validadoPor: e.validado_por || undefined,
         dataValidacao: e.data_validacao || undefined,
+        colaboradorId: e.colaborador_id || undefined,
+        competenciaId: e.competencia_id || undefined,
+        capacidadeId: e.capacidade_id || undefined,
+        tipoEvidenciaId: e.tipo_evidencia_id || undefined,
+        escalaId: e.escala_id || undefined,
+        grauDemonstrado: e.grau_demonstrado || undefined,
+        situacaoObservada: e.situacao_observada || undefined,
+        observacaoGestor: e.observacao_gestor || undefined,
+        matrizVersaoId: e.matriz_versao_id || undefined,
       }));
     } catch (e) {
       return this.localFallback.getEvidencias(filtro);
@@ -4292,6 +4322,86 @@ export class GoogleScriptDataService implements IDataService {
     } catch (e) {
       console.warn('Erro ao rejeitar Evidência no GoogleScript:', e);
       throw e;
+    }
+  }
+
+  // ── Reconstrução Multi-Departamento — Etapas 2/3/4 ────────────────────
+  async getPerfilCapacidades(colaboradorId: string): Promise<PerfilCapacidade[]> {
+    try {
+      const raw = await this.request<any[]>('getPerfilCapacidades', { colaboradorId });
+      return (raw || []).map((p) => ({
+        id: p.id,
+        colaboradorId: p.colaborador_id,
+        capacidadeId: p.capacidade_id,
+        escalaId: p.escala_id || undefined,
+        grauAtual: p.grau_atual || undefined,
+        matrizVersaoId: p.matriz_versao_id || undefined,
+        treinado: p.treinado === true || p.treinado === 'true',
+        avaliado: p.avaliado === true || p.avaliado === 'true',
+        demonstrado: p.demonstrado === true || p.demonstrado === 'true',
+        atualizadoEm: p.atualizado_em || undefined,
+        atualizadoPor: p.atualizado_por || undefined,
+      }));
+    } catch (e) {
+      return this.localFallback.getPerfilCapacidades(colaboradorId);
+    }
+  }
+
+  async getOcorrencias(colaboradorId: string): Promise<Ocorrencia[]> {
+    try {
+      const raw = await this.request<any[]>('getOcorrencias', { colaboradorId });
+      return (raw || []).map((o) => ({
+        id: o.id,
+        colaboradorId: o.colaborador_id,
+        competenciaId: o.competencia_id || undefined,
+        capacidadeId: o.capacidade_id || undefined,
+        data: o.data,
+        avaliadorId: o.avaliador_id || undefined,
+        titulo: o.titulo,
+        descricao: o.descricao || undefined,
+        gravidadeId: o.gravidade_id || undefined,
+        workflowId: o.workflow_id,
+        estadoWorkflow: o.estado_workflow,
+        ocorrenciaOrigemId: o.ocorrencia_origem_id || undefined,
+      }));
+    } catch (e) {
+      return this.localFallback.getOcorrencias(colaboradorId);
+    }
+  }
+
+  async criarOcorrencia(dados: Partial<Ocorrencia>): Promise<Ocorrencia> {
+    const body: any = {
+      colaborador_id: (dados as any).colaborador_id || (dados as any).colaboradorId,
+      competencia_id: (dados as any).competencia_id || dados.competenciaId || '',
+      capacidade_id: (dados as any).capacidade_id || dados.capacidadeId || '',
+      data: dados.data || new Date().toISOString().split('T')[0],
+      avaliador_id: (dados as any).avaliador_id || dados.avaliadorId || '',
+      titulo: dados.titulo,
+      descricao: dados.descricao || '',
+      gravidade_id: (dados as any).gravidade_id || dados.gravidadeId || '',
+    };
+    const raw = await this.request<any>('criarOcorrencia', { data: body });
+    return { ...dados, id: raw?.id || `oc-${Date.now()}`, workflowId: raw?.workflow_id || '', estadoWorkflow: raw?.estado_workflow || 'aberto' } as Ocorrencia;
+  }
+
+  async mudarEstadoOcorrencia(id: string, novoEstado: string, observacao?: string): Promise<ResultadoMudancaEstadoOcorrencia> {
+    const raw = await this.request<any>('mudarEstadoOcorrencia', { data: { id, novo_estado: novoEstado, observacao: observacao || '' } });
+    return { id, estadoAnterior: raw?.estadoAnterior || '', estadoAtual: novoEstado };
+  }
+
+  async getProntidaoProximoNivel(colaboradorId: string): Promise<ProjecaoProntidao> {
+    try {
+      return await this.request<ProjecaoProntidao>('getProntidaoProximoNivel', { colaboradorId });
+    } catch (e) {
+      return this.localFallback.getProntidaoProximoNivel(colaboradorId);
+    }
+  }
+
+  async getProntidaoParaCargo(colaboradorId: string, cargoAlvoId: string): Promise<ProjecaoProntidao> {
+    try {
+      return await this.request<ProjecaoProntidao>('getProntidaoParaCargo', { colaboradorId, cargoAlvoId });
+    } catch (e) {
+      return this.localFallback.getProntidaoParaCargo(colaboradorId, cargoAlvoId);
     }
   }
 
@@ -5011,7 +5121,7 @@ class DynamicDataService implements IDataService {
   ): Promise<{ instanciaId: string; totalGravado: number }> {
     return this.getService().saveAvaliacaoCompetenciaResultadosBatch(instanciaId, resultados);
   }
-  async getEvidencias(filtro?: { entidadeTipo?: EntidadeTipoEvidencia; entidadeId?: string }): Promise<Evidencia[]> {
+  async getEvidencias(filtro?: { entidadeTipo?: EntidadeTipoEvidencia; entidadeId?: string; colaboradorId?: string }): Promise<Evidencia[]> {
     return this.getService().getEvidencias(filtro);
   }
   async anexarEvidencia(evidencia: Evidencia): Promise<void> {
@@ -5022,6 +5132,25 @@ class DynamicDataService implements IDataService {
   }
   async rejeitarEvidencia(id: string, validadoPor?: string): Promise<void> {
     await this.getService().rejeitarEvidencia(id, validadoPor);
+  }
+  // ── Reconstrução Multi-Departamento — Etapas 2/3/4 ────────────────────
+  async getPerfilCapacidades(colaboradorId: string): Promise<PerfilCapacidade[]> {
+    return this.getService().getPerfilCapacidades(colaboradorId);
+  }
+  async getOcorrencias(colaboradorId: string): Promise<Ocorrencia[]> {
+    return this.getService().getOcorrencias(colaboradorId);
+  }
+  async criarOcorrencia(dados: Partial<Ocorrencia>): Promise<Ocorrencia> {
+    return this.getService().criarOcorrencia(dados);
+  }
+  async mudarEstadoOcorrencia(id: string, novoEstado: string, observacao?: string): Promise<ResultadoMudancaEstadoOcorrencia> {
+    return this.getService().mudarEstadoOcorrencia(id, novoEstado, observacao);
+  }
+  async getProntidaoProximoNivel(colaboradorId: string): Promise<ProjecaoProntidao> {
+    return this.getService().getProntidaoProximoNivel(colaboradorId);
+  }
+  async getProntidaoParaCargo(colaboradorId: string, cargoAlvoId: string): Promise<ProjecaoProntidao> {
+    return this.getService().getProntidaoParaCargo(colaboradorId, cargoAlvoId);
   }
 
   // ── Motor de Desenvolvimento de Colaboradores — Perfil (Aggregate Root) ──

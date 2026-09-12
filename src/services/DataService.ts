@@ -3775,6 +3775,12 @@ export class GoogleScriptDataService implements IDataService {
         nome: c.nome,
         descricao: c.descricao || undefined,
         ativo: c.ativo === true || c.ativo === 'true',
+        // Campos adicionados na Etapa 1 — eram ignorados no mapeamento,
+        // causando o bug onde capacidades salvas desapareciam da lista
+        // (Config.tsx filtra por competenciaId e sem esse campo o filtro
+        // sempre retornava vazio).
+        competenciaId: c.competencia_id ? String(c.competencia_id) : undefined,
+        setorId: c.setor_id ? String(c.setor_id) : undefined,
       }));
     } catch (e) {
       return this.localFallback.getCapacidadesBiblioteca();
@@ -3802,6 +3808,7 @@ export class GoogleScriptDataService implements IDataService {
         categoria: c.categoria || undefined,
         niveis: Array.isArray(c.niveis) ? c.niveis : [],
         ativo: c.ativo === true || c.ativo === 'true',
+        setorId: c.setor_id ? String(c.setor_id) : undefined,
       }));
     } catch (e) {
       return this.localFallback.getCompetenciasBiblioteca(filtro);

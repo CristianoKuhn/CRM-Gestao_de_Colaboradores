@@ -83,6 +83,11 @@ import {
   GravidadeOcorrencia,
   ProjecaoProntidao,
   ResultadoMudancaEstadoOcorrencia,
+  EscalaDominio,
+  GrauDominio,
+  MatrizVersao,
+  MatrizCapacidadeCargo,
+  TipoEvidenciaCapacidade,
 } from '../types';
 import { StorageAPI } from '../utils/storage';
 
@@ -622,6 +627,21 @@ export interface IDataService {
   mudarEstadoOcorrencia(id: string, novoEstado: string, observacao?: string): Promise<ResultadoMudancaEstadoOcorrencia>;
   getProntidaoProximoNivel(colaboradorId: string): Promise<ProjecaoProntidao>;
   getProntidaoParaCargo(colaboradorId: string, cargoAlvoId: string): Promise<ProjecaoProntidao>;
+  // Reconstrução Multi-Departamento — Escalas/Graus/Matriz/Catálogos
+  getEscalasDominio?(setorId?: string): Promise<EscalaDominio[]>;
+  getGrausDominio?(escalaId?: string): Promise<GrauDominio[]>;
+  saveEscalaDominio?(escala: EscalaDominio): Promise<void>;
+  saveGrauDominio?(grau: GrauDominio): Promise<void>;
+  deleteGrauDominio?(id: string): Promise<void>;
+  getMatrizVersoes?(setorId?: string): Promise<MatrizVersao[]>;
+  getMatrizCapacidadesCargo?(filtro?: { matrizVersaoId?: string; cargoId?: string }): Promise<MatrizCapacidadeCargo[]>;
+  saveMatrizVersao?(versao: MatrizVersao): Promise<void>;
+  saveMatrizCapacidadeCargo?(item: MatrizCapacidadeCargo): Promise<void>;
+  deleteMatrizCapacidadeCargo?(id: string): Promise<void>;
+  getTiposEvidencia?(setorId?: string): Promise<TipoEvidenciaCapacidade[]>;
+  saveTipoEvidencia?(tipo: TipoEvidenciaCapacidade): Promise<void>;
+  getGravidadesOcorrencia?(setorId?: string): Promise<GravidadeOcorrencia[]>;
+  saveGravidadeOcorrencia?(grav: GravidadeOcorrencia): Promise<void>;
   validarEvidencia(id: string, validadoPor?: string): Promise<void>;
   rejeitarEvidencia(id: string, validadoPor?: string): Promise<void>;
 
@@ -1396,6 +1416,20 @@ export class LocalDataService implements IDataService {
   async mudarEstadoOcorrencia(_id: string, _novoEstado: string, _obs?: string): Promise<ResultadoMudancaEstadoOcorrencia> { throw new Error('mudarEstadoOcorrencia não implementado no modo local.'); }
   async getProntidaoProximoNivel(_colaboradorId: string): Promise<ProjecaoProntidao> { return { semProximoCargo: true, motivo: 'Funcionalidade disponível apenas com backend conectado.' }; }
   async getProntidaoParaCargo(_colaboradorId: string, _cargoAlvoId: string): Promise<ProjecaoProntidao> { return { semMatriz: true, motivo: 'Funcionalidade disponível apenas com backend conectado.' }; }
+  async getEscalasDominio(_setorId?: string): Promise<EscalaDominio[]> { return []; }
+  async getGrausDominio(_escalaId?: string): Promise<GrauDominio[]> { return []; }
+  async saveEscalaDominio(_e: EscalaDominio): Promise<void> {}
+  async saveGrauDominio(_g: GrauDominio): Promise<void> {}
+  async deleteGrauDominio(_id: string): Promise<void> {}
+  async getMatrizVersoes(_setorId?: string): Promise<MatrizVersao[]> { return []; }
+  async getMatrizCapacidadesCargo(_f?: { matrizVersaoId?: string; cargoId?: string }): Promise<MatrizCapacidadeCargo[]> { return []; }
+  async saveMatrizVersao(_v: MatrizVersao): Promise<void> {}
+  async saveMatrizCapacidadeCargo(_i: MatrizCapacidadeCargo): Promise<void> {}
+  async deleteMatrizCapacidadeCargo(_id: string): Promise<void> {}
+  async getTiposEvidencia(_setorId?: string): Promise<TipoEvidenciaCapacidade[]> { return []; }
+  async saveTipoEvidencia(_t: TipoEvidenciaCapacidade): Promise<void> {}
+  async getGravidadesOcorrencia(_setorId?: string): Promise<GravidadeOcorrencia[]> { return []; }
+  async saveGravidadeOcorrencia(_g: GravidadeOcorrencia): Promise<void> {}
   async validarEvidencia(id: string, validadoPor?: string): Promise<void> {
     const evidencia = itensLocalGetArray<Evidencia>('evidencias').find((e) => e.id === id);
     if (evidencia) {
@@ -3749,16 +3783,11 @@ export class GoogleScriptDataService implements IDataService {
   async saveCapacidadeBiblioteca(capacidade: CapacidadeBiblioteca): Promise<void> {
     await this.localFallback.saveCapacidadeBiblioteca(capacidade);
     try {
-      const body = {
-        id: capacidade.id,
-        nome: capacidade.nome,
-        descricao: capacidade.descricao || '',
-        ativo: capacidade.ativo,
-      };
-      await this.request('saveCapacidadeBiblioteca', { data: body });
-    } catch (e) {
-      console.warn('Erro ao salvar capacidade da biblioteca no GoogleScript:', e);
-    }
+      await this.request('saveCapacidadeBiblioteca', { data: {
+        id: capacidade.id, nome: capacidade.nome, descricao: capacidade.descricao || '',
+        ativo: capacidade.ativo, competencia_id: capacidade.competenciaId || '', setor_id: capacidade.setorId || ''
+      } });
+    } catch (e) { console.warn('Erro ao salvar capacidade da biblioteca no GoogleScript:', e); }
   }
   async getCompetenciasBiblioteca(filtro?: { capacidadeId?: string }): Promise<CompetenciaBiblioteca[]> {
     try {
@@ -3781,19 +3810,13 @@ export class GoogleScriptDataService implements IDataService {
   async saveCompetenciaBiblioteca(competencia: CompetenciaBiblioteca): Promise<void> {
     await this.localFallback.saveCompetenciaBiblioteca(competencia);
     try {
-      const body = {
-        id: competencia.id,
-        capacidade_id: competencia.capacidadeId || '',
-        nome: competencia.nome,
-        descricao: competencia.descricao || '',
-        categoria: competencia.categoria || '',
-        niveis: JSON.stringify(competencia.niveis || []),
-        ativo: competencia.ativo,
-      };
-      await this.request('saveCompetenciaBiblioteca', { data: body });
-    } catch (e) {
-      console.warn('Erro ao salvar competência da biblioteca no GoogleScript:', e);
-    }
+      await this.request('saveCompetenciaBiblioteca', { data: {
+        id: competencia.id, capacidade_id: competencia.capacidadeId || '',
+        nome: competencia.nome, descricao: competencia.descricao || '',
+        categoria: competencia.categoria || '', niveis: JSON.stringify(competencia.niveis || []),
+        ativo: competencia.ativo, setor_id: competencia.setorId || ''
+      } });
+    } catch (e) { console.warn('Erro ao salvar competência da biblioteca no GoogleScript:', e); }
   }
   async getMateriaisBiblioteca(filtro?: { tipo?: TipoMaterialBiblioteca }): Promise<MaterialBiblioteca[]> {
     try {
@@ -4403,6 +4426,68 @@ export class GoogleScriptDataService implements IDataService {
     } catch (e) {
       return this.localFallback.getProntidaoParaCargo(colaboradorId, cargoAlvoId);
     }
+  }
+
+  // ── Reconstrução Multi-Departamento — Escalas/Graus/Matriz/Catálogos ───
+  async getEscalasDominio(setorId?: string): Promise<EscalaDominio[]> {
+    try {
+      const raw = await this.request<any[]>('getEscalasDominio', { setorId: setorId || '' });
+      return (raw || []).map((e) => ({ id: e.id, setorId: e.setor_id || undefined, nome: e.nome, ativo: e.ativo === true || e.ativo === 'true' }));
+    } catch { return []; }
+  }
+  async getGrausDominio(escalaId?: string): Promise<GrauDominio[]> {
+    try {
+      const raw = await this.request<any[]>('getGrausDominio', { escalaId: escalaId || '' });
+      return (raw || []).map((g) => ({ id: g.id, escalaId: g.escala_id, ordem: Number(g.ordem), nome: g.nome, cor: g.cor || undefined, ativo: g.ativo === true || g.ativo === 'true' }));
+    } catch { return []; }
+  }
+  async saveEscalaDominio(escala: EscalaDominio): Promise<void> {
+    try { await this.request('saveEscalaDominio', { data: { id: escala.id, setor_id: escala.setorId || '', nome: escala.nome, ativo: escala.ativo } }); } catch (e) { console.warn('saveEscalaDominio falhou:', e); }
+  }
+  async saveGrauDominio(grau: GrauDominio): Promise<void> {
+    try { await this.request('saveGrauDominio', { data: { id: grau.id, escala_id: grau.escalaId, ordem: grau.ordem, nome: grau.nome, cor: grau.cor || '', ativo: grau.ativo } }); } catch (e) { console.warn('saveGrauDominio falhou:', e); }
+  }
+  async deleteGrauDominio(id: string): Promise<void> {
+    try { await this.request('deleteGrauDominio', { data: { id } }); } catch (e) { console.warn('deleteGrauDominio falhou:', e); }
+  }
+  async getMatrizVersoes(setorId?: string): Promise<MatrizVersao[]> {
+    try {
+      const raw = await this.request<any[]>('getMatrizVersoes', { setorId: setorId || '' });
+      return (raw || []).map((v) => ({ id: v.id, setorId: v.setor_id, nome: v.nome, vigenteDesde: v.vigente_desde || undefined, vigenteAte: v.vigente_ate || undefined, ativa: v.ativa === true || v.ativa === 'true' }));
+    } catch { return []; }
+  }
+  async getMatrizCapacidadesCargo(filtro?: { matrizVersaoId?: string; cargoId?: string }): Promise<MatrizCapacidadeCargo[]> {
+    try {
+      const raw = await this.request<any[]>('getMatrizCapacidadesCargo', { matrizVersaoId: filtro?.matrizVersaoId || '', cargoId: filtro?.cargoId || '' });
+      return (raw || []).map((m) => ({ id: m.id, matrizVersaoId: m.matriz_versao_id, cargoId: m.cargo_id, capacidadeId: m.capacidade_id, escalaId: m.escala_id, grauMinimo: m.grau_minimo, obrigatorio: m.obrigatorio === true || m.obrigatorio === 'true' }));
+    } catch { return []; }
+  }
+  async saveMatrizVersao(versao: MatrizVersao): Promise<void> {
+    try { await this.request('saveMatrizVersao', { data: { id: versao.id, setor_id: versao.setorId, nome: versao.nome, vigente_desde: versao.vigenteDesde || '', vigente_ate: versao.vigenteAte || '', ativa: versao.ativa } }); } catch (e) { console.warn('saveMatrizVersao falhou:', e); }
+  }
+  async saveMatrizCapacidadeCargo(item: MatrizCapacidadeCargo): Promise<void> {
+    try { await this.request('saveMatrizCapacidadeCargo', { data: { id: item.id, matriz_versao_id: item.matrizVersaoId, cargo_id: item.cargoId, capacidade_id: item.capacidadeId, escala_id: item.escalaId, grau_minimo: item.grauMinimo, obrigatorio: item.obrigatorio } }); } catch (e) { console.warn('saveMatrizCapacidadeCargo falhou:', e); }
+  }
+  async deleteMatrizCapacidadeCargo(id: string): Promise<void> {
+    try { await this.request('deleteMatrizCapacidadeCargo', { data: { id } }); } catch (e) { console.warn('deleteMatrizCapacidadeCargo falhou:', e); }
+  }
+  async getTiposEvidencia(setorId?: string): Promise<TipoEvidenciaCapacidade[]> {
+    try {
+      const raw = await this.request<any[]>('getTiposEvidencia', { setorId: setorId || '' });
+      return (raw || []).map((t) => ({ id: t.id, setorId: t.setor_id || undefined, nome: t.nome, ativo: t.ativo === true || t.ativo === 'true', contaComoTreinamento: t.conta_como_treinamento === true || t.conta_como_treinamento === 'true' }));
+    } catch { return []; }
+  }
+  async saveTipoEvidencia(tipo: TipoEvidenciaCapacidade): Promise<void> {
+    try { await this.request('saveTipoEvidencia', { data: { id: tipo.id, setor_id: tipo.setorId || '', nome: tipo.nome, ativo: tipo.ativo, conta_como_treinamento: tipo.contaComoTreinamento || false } }); } catch (e) { console.warn('saveTipoEvidencia falhou:', e); }
+  }
+  async getGravidadesOcorrencia(setorId?: string): Promise<GravidadeOcorrencia[]> {
+    try {
+      const raw = await this.request<any[]>('getGravidadesOcorrencia', { setorId: setorId || '' });
+      return (raw || []).map((g) => ({ id: g.id, setorId: g.setor_id || undefined, nome: g.nome, cor: g.cor || undefined, ordem: Number(g.ordem), ativo: g.ativo === true || g.ativo === 'true' }));
+    } catch { return []; }
+  }
+  async saveGravidadeOcorrencia(grav: GravidadeOcorrencia): Promise<void> {
+    try { await this.request('saveGravidadeOcorrencia', { data: { id: grav.id, setor_id: grav.setorId || '', nome: grav.nome, cor: grav.cor || '', ordem: grav.ordem, ativo: grav.ativo } }); } catch (e) { console.warn('saveGravidadeOcorrencia falhou:', e); }
   }
 
   // ── Motor de Desenvolvimento de Colaboradores — Perfil (Aggregate Root) ──
@@ -5152,6 +5237,21 @@ class DynamicDataService implements IDataService {
   async getProntidaoParaCargo(colaboradorId: string, cargoAlvoId: string): Promise<ProjecaoProntidao> {
     return this.getService().getProntidaoParaCargo(colaboradorId, cargoAlvoId);
   }
+  // ── Reconstrução Multi-Departamento — Escalas/Graus/Matriz/Catálogos ───
+  async getEscalasDominio(setorId?: string): Promise<EscalaDominio[]> { return this.getService().getEscalasDominio?.(setorId) ?? []; }
+  async getGrausDominio(escalaId?: string): Promise<GrauDominio[]> { return this.getService().getGrausDominio?.(escalaId) ?? []; }
+  async saveEscalaDominio(escala: EscalaDominio): Promise<void> { await this.getService().saveEscalaDominio?.(escala); }
+  async saveGrauDominio(grau: GrauDominio): Promise<void> { await this.getService().saveGrauDominio?.(grau); }
+  async deleteGrauDominio(id: string): Promise<void> { await this.getService().deleteGrauDominio?.(id); }
+  async getMatrizVersoes(setorId?: string): Promise<MatrizVersao[]> { return this.getService().getMatrizVersoes?.(setorId) ?? []; }
+  async getMatrizCapacidadesCargo(filtro?: { matrizVersaoId?: string; cargoId?: string }): Promise<MatrizCapacidadeCargo[]> { return this.getService().getMatrizCapacidadesCargo?.(filtro) ?? []; }
+  async saveMatrizVersao(versao: MatrizVersao): Promise<void> { await this.getService().saveMatrizVersao?.(versao); }
+  async saveMatrizCapacidadeCargo(item: MatrizCapacidadeCargo): Promise<void> { await this.getService().saveMatrizCapacidadeCargo?.(item); }
+  async deleteMatrizCapacidadeCargo(id: string): Promise<void> { await this.getService().deleteMatrizCapacidadeCargo?.(id); }
+  async getTiposEvidencia(setorId?: string): Promise<TipoEvidenciaCapacidade[]> { return this.getService().getTiposEvidencia?.(setorId) ?? []; }
+  async saveTipoEvidencia(tipo: TipoEvidenciaCapacidade): Promise<void> { await this.getService().saveTipoEvidencia?.(tipo); }
+  async getGravidadesOcorrencia(setorId?: string): Promise<GravidadeOcorrencia[]> { return this.getService().getGravidadesOcorrencia?.(setorId) ?? []; }
+  async saveGravidadeOcorrencia(grav: GravidadeOcorrencia): Promise<void> { await this.getService().saveGravidadeOcorrencia?.(grav); }
 
   // ── Motor de Desenvolvimento de Colaboradores — Perfil (Aggregate Root) ──
   async getPerfilCompetencias(colaboradorId: string): Promise<PerfilCompetencia[]> {

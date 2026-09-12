@@ -1449,6 +1449,63 @@ export interface ResultadoMudancaEstadoOcorrencia {
   estadoAtual: string;
 }
 
+// ── Prontidão para o próximo nível (Etapa 4) ──────────────────────────────
+// Resultado de getProntidaoProximoNivel e getProntidaoParaCargo.
+// Nunca é um número: deliberadamente um enum de três estados para não criar
+// a aparência de precisão que uma nota numérica traria. A lista detalhada
+// de capacidades permite que o frontend mostre o que falta.
+
+export type IndiceProntidao =
+  | 'pronto'               // Todas as obrigatórias no grau mínimo
+  | 'em_desenvolvimento'   // Nenhuma lacuna, mas alguma obrigatória ainda em desenvolvimento (treinado, não demonstrado)
+  | 'com_lacunas'          // Ao menos uma obrigatória com lacuna real
+  | 'sem_requisitos_obrigatorios' // Matriz configurada, mas sem nenhum item obrigatório
+  | 'sem_matriz'           // Setor ainda sem versão ativa de Matriz configurada
+  | 'sem_proximo_cargo'    // Cargo atual não tem próximo definido na trilha (topo)
+  | 'topo_trilha';         // Cache: colaborador no topo da trilha
+
+export interface ComparacaoGrau {
+  gap: boolean;
+  naoAvaliado: boolean;
+  grauAtualOrdem: number;
+  grauMinimoOrdem: number;
+  escalaId: string;
+}
+
+export interface CapacidadeDetalheProntidao {
+  capacidadeId: string;
+  capacidadeNome: string;
+  competenciaId?: string;
+  obrigatorio: boolean;
+  grauMinimo: string;      // GrauDominio.id
+  grauAtual: string | null;
+  treinado: boolean;
+  demonstrado: boolean;
+  estado: 'ok' | 'em_desenvolvimento' | 'lacuna' | 'nao_avaliado';
+  comparacao: ComparacaoGrau | null;
+}
+
+export interface ProjecaoProntidao {
+  colaboradorId?: string;
+  cargoAtualId?: string;
+  cargoAtualNome?: string;
+  cargoAlvoId?: string;
+  cargoAlvoNome?: string;
+  matrizVersaoId?: string;
+  matrizVersaoNome?: string;
+  indiceProntidao?: IndiceProntidao;
+  totalObrigatorias?: number;
+  totalOk?: number;
+  totalEmDesenvolvimento?: number;
+  totalLacunas?: number;
+  capacidades?: CapacidadeDetalheProntidao[];
+  // Presentes quando não há projeção calculável:
+  semProximoCargo?: boolean;
+  semMatriz?: boolean;
+  motivo?: string;
+  erro?: string;
+}
+
 export interface ResultadoConclusaoEtapa {
   id: string;
   etapasLiberadas: string[];

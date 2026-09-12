@@ -1156,6 +1156,11 @@ export interface TipoEvidenciaCapacidade {
   setorId?: string;
   nome: string;
   ativo: boolean;
+  // Decide, na validação de uma Evidência deste tipo, se ela só marca
+  // "treinado" (nunca evolui grau) ou se representa demonstração prática
+  // real (evolui grau de fato). Ver "Princípio Arquitetural", seção 5.
+  // Configurável por tipo, por setor — nunca uma lista fixa no código.
+  contaComoTreinamento?: boolean;
 }
 
 // ── Migração assistida (Competência ↔ Capacidade) ─────────────────────────
@@ -1345,7 +1350,7 @@ export interface ResultadoDecisaoAprovacaoEtapa {
   estadoAprovacao: EstadoAprovacaoEtapa;
 }
 
-export type EntidadeTipoEvidencia = 'item_operacional' | 'etapa' | 'avaliacao' | 'certificacao' | 'mentoria';
+export type EntidadeTipoEvidencia = 'item_operacional' | 'etapa' | 'avaliacao' | 'certificacao' | 'mentoria' | 'capacidade';
 export type TipoEvidencia = 'documento' | 'video' | 'imagem' | 'observacao' | 'formulario' | 'assinatura' | 'aprovacao';
 export type StatusEvidencia = 'pendente' | 'validada' | 'rejeitada';
 
@@ -1365,6 +1370,42 @@ export interface Evidencia {
   status: StatusEvidencia;
   validadoPor?: string;
   dataValidacao?: string;
+  // ── Reconstrução Multi-Departamento — Etapa 2 ──────────────────────────
+  // Preenchidos quando entidadeTipo === "capacidade" (evidência de domínio
+  // prático de uma Capacidade específica de um Colaborador). `entidadeId`
+  // continua igual a `capacidadeId` nesse caso, por compatibilidade.
+  colaboradorId?: string;
+  competenciaId?: string;
+  capacidadeId?: string;
+  // Referencia TipoEvidenciaCapacidade.id — decide, na validação, se esta
+  // evidência só marca "treinado" ou se realmente evolui o grau (ver
+  // TipoEvidenciaCapacidade.contaComoTreinamento).
+  tipoEvidenciaId?: string;
+  escalaId?: string;
+  grauDemonstrado?: string; // referencia GrauDominio.id da escala acima
+  situacaoObservada?: string;
+  observacaoGestor?: string;
+  matrizVersaoId?: string;
+}
+
+// ── Perfil de Capacidade — cache derivado (Etapa 2) ───────────────────────
+// Nunca editado a seco pelo frontend: só muda via validação de Evidência
+// (processarValidacaoEvidenciaCapacidade_) ou avaliação manual explícita
+// (action "avaliarCapacidade"). `treinado`, `avaliado` e `demonstrado` são
+// três booleans independentes — ver "Princípio Arquitetural", seção 5:
+// treinado=true nunca implica demonstrado=true.
+export interface PerfilCapacidade {
+  id: string;
+  colaboradorId: string;
+  capacidadeId: string;
+  escalaId?: string;
+  grauAtual?: string; // referencia GrauDominio.id
+  matrizVersaoId?: string;
+  treinado: boolean;
+  avaliado: boolean;
+  demonstrado: boolean;
+  atualizadoEm?: string;
+  atualizadoPor?: string;
 }
 
 export interface ResultadoConclusaoEtapa {

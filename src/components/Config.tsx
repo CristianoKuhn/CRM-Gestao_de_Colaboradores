@@ -149,6 +149,16 @@ export default function Config({
   const [adminTab, setAdminTab] = useState<'empresas' | 'setores' | 'cargos' | 'lideres' | 'trilha'>('setores');
   // Sub-aba da nova Trilha & Matriz
   const [trilhaSubTab, setTrilhaSubTab] = useState<'competencias' | 'escalas' | 'matriz' | 'catalogo'>('competencias');
+  // Modal inline da Matriz: qual célula (capacidade × cargo) está sendo editada
+  const [matrizModalAberto, setMatrizModalAberto] = useState(false);
+  const [matrizModalCapId, setMatrizModalCapId] = useState('');
+  const [matrizModalCargoId, setMatrizModalCargoId] = useState('');
+  const [matrizModalVersaoId, setMatrizModalVersaoId] = useState('');
+  const [matrizModalSetorId, setMatrizModalSetorId] = useState('');
+  const [matrizModalEscalaId, setMatrizModalEscalaId] = useState('');
+  const [matrizModalGrauId, setMatrizModalGrauId] = useState('');
+  const [matrizModalObrigatorio, setMatrizModalObrigatorio] = useState(true);
+  const [matrizModalSalvando, setMatrizModalSalvando] = useState(false);
   const [isAddingSetor, setIsAddingSetor] = useState(false);
   const [isAddingCargo, setIsAddingCargo] = useState(false);
   const [isAddingLider, setIsAddingLider] = useState(false);
@@ -1031,12 +1041,12 @@ export default function Config({
                       </span>
                     </div>
 
-                    {/* Versões de Matriz por setor */}
                     {setores.map(setor => {
                       const versoesDoSetor = matrizVersoes.filter(v => v.setorId === setor.id);
                       const versaoAtiva = versoesDoSetor.find(v => v.ativa);
                       const cargosDoSetor = cargos.filter(c => c.setorId === setor.id);
                       const itensAtivos = versaoAtiva ? matrizCapacidades.filter(m => m.matrizVersaoId === versaoAtiva.id) : [];
+                      const capsDoSetor = capacidades.filter(c => c.setorId === setor.id || !c.setorId);
 
                       return (
                         <div key={setor.id} className="border border-slate-100 rounded-2xl overflow-hidden">
@@ -1059,48 +1069,62 @@ export default function Config({
                             </button>
                           </div>
 
-                          {versaoAtiva && cargosDoSetor.length > 0 && (
+                          {versaoAtiva && cargosDoSetor.length > 0 && capsDoSetor.length > 0 && (
                             <div className="p-4 overflow-x-auto">
                               <table className="w-full text-xs border-collapse">
                                 <thead>
                                   <tr>
-                                    <th className="text-left text-slate-500 font-bold py-2 pr-4 whitespace-nowrap">Capacidade</th>
+                                    <th className="text-left text-slate-500 font-bold py-2 pr-4 whitespace-nowrap min-w-[180px]">Capacidade</th>
                                     {cargosDoSetor.map(cargo => (
-                                      <th key={cargo.id} className="text-center text-slate-500 font-bold py-2 px-2 whitespace-nowrap">{cargo.nome}</th>
+                                      <th key={cargo.id} className="text-center text-slate-500 font-bold py-2 px-3 whitespace-nowrap max-w-[140px] text-[11px] leading-tight">{cargo.nome}</th>
                                     ))}
                                   </tr>
                                 </thead>
                                 <tbody>
-                                  {capacidades.filter(c => c.setorId === setor.id || !c.setorId).map(cap => (
+                                  {capsDoSetor.map(cap => (
                                     <tr key={cap.id} className="border-t border-slate-50 hover:bg-slate-50">
-                                      <td className="py-2 pr-4 font-semibold text-slate-700 whitespace-nowrap">{cap.nome}</td>
+                                      <td className="py-2 pr-4 font-semibold text-slate-700 whitespace-nowrap text-xs">{cap.nome}</td>
                                       {cargosDoSetor.map(cargo => {
                                         const item = itensAtivos.find(m => m.capacidadeId === cap.id && m.cargoId === cargo.id);
+                                        const grauItem = item ? graus.find(g => g.id === item.grauMinimo) : null;
                                         return (
-                                          <td key={cargo.id} className="text-center py-2 px-2">
+                                          <td key={cargo.id} className="text-center py-2 px-3">
                                             {item ? (
                                               <div className="flex flex-col items-center gap-0.5">
-                                                <span className="font-bold text-teal-700">{graus.find(g => g.id === item.grauMinimo)?.nome || '—'}</span>
+                                                <div className="flex items-center gap-1">
+                                                  {grauItem && <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: grauItem.cor || '#94a3b8' }} />}
+                                                  <span className="font-bold text-teal-700 text-[11px]">{grauItem?.nome || '—'}</span>
+                                                </div>
                                                 {item.obrigatorio && <span className="text-[9px] text-rose-500 font-bold">OBR</span>}
-                                                <button onClick={() => onDeleteMatrizCapacidadeCargo?.(item.id)} className="text-slate-300 hover:text-rose-500 cursor-pointer mt-0.5"><X size={10} /></button>
+                                                <button
+                                                  onClick={() => onDeleteMatrizCapacidadeCargo?.(item.id)}
+                                                  className="text-slate-300 hover:text-rose-500 cursor-pointer mt-0.5"
+                                                  title="Remover"
+                                                >
+                                                  <X size={10} />
+                                                </button>
                                               </div>
                                             ) : (
                                               <button
                                                 onClick={() => {
-                                                  const escalasDoCargo = escalas.filter(e => !e.setorId || e.setorId === setor.id);
-                                                  if (escalasDoCargo.length === 0) { alert('Nenhuma Escala de Domínio configurada para este setor. Configure uma primeiro.'); return; }
-                                                  const escalaEscolhida = escalasDoCargo[0];
-                                                  const grausDaEscala = graus.filter(g => g.escalaId === escalaEscolhida.id).sort((a, b) => a.ordem - b.ordem);
-                                                  if (grausDaEscala.length === 0) { alert('A escala ainda não tem graus configurados.'); return; }
-                                                  const nomeGrau = prompt(`Grau mínimo para "${cap.nome}" no cargo "${cargo.nome}"?\nOpções: ${grausDaEscala.map(g => g.nome).join(', ')}`);
-                                                  const grauEscolhido = grausDaEscala.find(g => g.nome.toLowerCase() === (nomeGrau || '').toLowerCase());
-                                                  if (!grauEscolhido) return;
-                                                  const obr = confirm('Este item é OBRIGATÓRIO para o cargo?');
-                                                  onSaveMatrizCapacidadeCargo?.({ id: `mc-${Date.now()}`, matrizVersaoId: versaoAtiva.id, cargoId: cargo.id, capacidadeId: cap.id, escalaId: escalaEscolhida.id, grauMinimo: grauEscolhido.id, obrigatorio: obr });
+                                                  const escalasDisp = escalas.filter(e => !e.setorId || e.setorId === setor.id);
+                                                  if (escalasDisp.length === 0) { alert('Nenhuma Escala de Domínio configurada para este setor. Vá em "Escalas de Domínio" e crie uma primeiro.'); return; }
+                                                  const primeiraEscala = escalasDisp[0];
+                                                  const primeiroGrau = graus.filter(g => g.escalaId === primeiraEscala.id).sort((a, b) => a.ordem - b.ordem)[0];
+                                                  if (!primeiroGrau) { alert('A escala não tem graus configurados ainda. Vá em "Escalas de Domínio" e adicione os graus.'); return; }
+                                                  setMatrizModalCapId(cap.id);
+                                                  setMatrizModalCargoId(cargo.id);
+                                                  setMatrizModalVersaoId(versaoAtiva.id);
+                                                  setMatrizModalSetorId(setor.id);
+                                                  setMatrizModalEscalaId(primeiraEscala.id);
+                                                  setMatrizModalGrauId(primeiroGrau.id);
+                                                  setMatrizModalObrigatorio(true);
+                                                  setMatrizModalAberto(true);
                                                 }}
-                                                className="text-slate-300 hover:text-teal-500 cursor-pointer"
+                                                className="text-slate-300 hover:text-teal-500 cursor-pointer transition"
+                                                title="Definir grau mínimo"
                                               >
-                                                <PlusCircle size={14} />
+                                                <PlusCircle size={15} />
                                               </button>
                                             )}
                                           </td>
@@ -1113,15 +1137,114 @@ export default function Config({
                             </div>
                           )}
 
-                          {!versaoAtiva && (
-                            <div className="p-4 text-center text-xs text-slate-400">Crie uma versão de Matriz para este setor antes de configurar os requisitos por cargo.</div>
-                          )}
-                          {versaoAtiva && cargosDoSetor.length === 0 && (
-                            <div className="p-4 text-center text-xs text-slate-400">Nenhum cargo vinculado a este setor ainda. Configure cargos na aba "Cargos".</div>
-                          )}
+                          {!versaoAtiva && <div className="p-4 text-center text-xs text-slate-400">Crie uma versão de Matriz para este setor antes de configurar os requisitos por cargo.</div>}
+                          {versaoAtiva && cargosDoSetor.length === 0 && <div className="p-4 text-center text-xs text-slate-400">Nenhum cargo vinculado a este setor ainda. Configure cargos na aba "Cargos".</div>}
+                          {versaoAtiva && cargosDoSetor.length > 0 && capsDoSetor.length === 0 && <div className="p-4 text-center text-xs text-slate-400">Nenhuma capacidade cadastrada para este setor. Configure capacidades na aba "Competências &amp; Capacidades".</div>}
                         </div>
                       );
                     })}
+
+                    {/* MODAL INLINE: Definir grau mínimo da célula da Matriz */}
+                    {matrizModalAberto && (() => {
+                      const escalasDisp2 = escalas.filter(e => !e.setorId || e.setorId === matrizModalSetorId);
+                      const grausModal = graus.filter(g => g.escalaId === matrizModalEscalaId).sort((a, b) => a.ordem - b.ordem);
+                      const capNome = capacidades.find(c => c.id === matrizModalCapId)?.nome || '';
+                      const cargoNome = cargos.find(c => c.id === matrizModalCargoId)?.nome || '';
+                      return (
+                        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+                          <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-6 border border-slate-100 space-y-5">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <h3 className="font-extrabold text-slate-900">Definir Grau Mínimo</h3>
+                                <p className="text-xs text-slate-400 mt-0.5">
+                                  <span className="font-semibold text-slate-600">{capNome}</span>
+                                  {' → '}
+                                  <span className="font-semibold text-slate-600">{cargoNome}</span>
+                                </p>
+                              </div>
+                              <button onClick={() => setMatrizModalAberto(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer font-bold text-2xl">&times;</button>
+                            </div>
+
+                            <div className="space-y-4">
+                              {escalasDisp2.length > 1 && (
+                                <div>
+                                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Escala de Domínio</label>
+                                  <select
+                                    value={matrizModalEscalaId}
+                                    onChange={e => {
+                                      const nova = e.target.value;
+                                      setMatrizModalEscalaId(nova);
+                                      const primeiro = graus.filter(g => g.escalaId === nova).sort((a, b) => a.ordem - b.ordem)[0];
+                                      if (primeiro) setMatrizModalGrauId(primeiro.id);
+                                    }}
+                                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-1 focus:ring-teal-500 cursor-pointer"
+                                  >
+                                    {escalasDisp2.map(e => <option key={e.id} value={e.id}>{e.nome}</option>)}
+                                  </select>
+                                </div>
+                              )}
+
+                              <div>
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Grau Mínimo Exigido</label>
+                                <div className="grid grid-cols-2 gap-2">
+                                  {grausModal.map(grau => (
+                                    <button
+                                      key={grau.id}
+                                      type="button"
+                                      onClick={() => setMatrizModalGrauId(grau.id)}
+                                      className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border text-xs font-semibold cursor-pointer transition ${
+                                        matrizModalGrauId === grau.id
+                                          ? 'border-teal-500 bg-teal-50 text-teal-700 ring-1 ring-teal-300'
+                                          : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                                      }`}
+                                    >
+                                      <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: grau.cor || '#94a3b8' }} />
+                                      {grau.nome}
+                                    </button>
+                                  ))}
+                                </div>
+                                {grausModal.length === 0 && <p className="text-xs text-amber-600 mt-1">Esta escala não tem graus configurados.</p>}
+                              </div>
+
+                              <div className="flex items-start gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-100">
+                                <input
+                                  type="checkbox"
+                                  id="mmc-obr"
+                                  checked={matrizModalObrigatorio}
+                                  onChange={e => setMatrizModalObrigatorio(e.target.checked)}
+                                  className="w-4 h-4 text-teal-600 border-slate-300 rounded cursor-pointer mt-0.5"
+                                />
+                                <label htmlFor="mmc-obr" className="text-xs font-semibold text-slate-700 cursor-pointer">
+                                  Capacidade <strong>obrigatória</strong> para o cargo
+                                  <span className="block font-normal text-slate-400 mt-0.5">Obrigatórias impactam o índice de Prontidão (🟢🟡🔴).</span>
+                                </label>
+                              </div>
+                            </div>
+
+                            <div className="flex gap-3 pt-1 border-t border-slate-100">
+                              <button type="button" onClick={() => setMatrizModalAberto(false)} className="flex-1 px-4 py-2.5 border border-slate-200 text-slate-600 bg-slate-50 rounded-xl text-sm font-semibold hover:bg-slate-100 cursor-pointer">Cancelar</button>
+                              <button
+                                type="button"
+                                disabled={!matrizModalGrauId || matrizModalSalvando}
+                                onClick={async () => {
+                                  if (!matrizModalGrauId) return;
+                                  setMatrizModalSalvando(true);
+                                  try {
+                                    await onSaveMatrizCapacidadeCargo?.({ id: `mc-${Date.now()}`, matrizVersaoId: matrizModalVersaoId, cargoId: matrizModalCargoId, capacidadeId: matrizModalCapId, escalaId: matrizModalEscalaId, grauMinimo: matrizModalGrauId, obrigatorio: matrizModalObrigatorio });
+                                    setMatrizModalAberto(false);
+                                  } finally {
+                                    setMatrizModalSalvando(false);
+                                  }
+                                }}
+                                className="flex-1 px-4 py-2.5 bg-teal-500 text-slate-950 font-bold rounded-xl text-sm hover:bg-teal-400 cursor-pointer disabled:opacity-50"
+                              >
+                                {matrizModalSalvando ? 'Salvando...' : 'Salvar'}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
 

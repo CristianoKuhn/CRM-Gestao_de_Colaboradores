@@ -1408,6 +1408,47 @@ export interface PerfilCapacidade {
   atualizadoPor?: string;
 }
 
+// ── Ocorrências / Pontos de Desenvolvimento (Etapa 3) ─────────────────────
+// Nunca são apagadas (Princípio 6) — só mudam de estado ao longo do tempo,
+// via a action `mudarEstadoOcorrencia`. `gravidadeId` referencia um
+// catálogo configurável (GravidadeOcorrencia), nunca uma lista fixa no
+// código. `estadoWorkflow` reaproveita o motor de Workflow já existente
+// (WorkflowDefinicoes) — cada setor pode ter seu próprio fluxo de status,
+// em vez de uma sequência fixa embutida.
+export interface GravidadeOcorrencia {
+  id: string;
+  setorId?: string;
+  nome: string;
+  cor?: string;
+  ordem: number;
+  ativo: boolean;
+}
+
+export interface Ocorrencia {
+  id: string;
+  colaboradorId: string;
+  competenciaId?: string;
+  capacidadeId?: string;
+  data: string;
+  avaliadorId?: string;
+  titulo: string;
+  descricao?: string;
+  gravidadeId?: string;
+  workflowId: string;
+  estadoWorkflow: string;
+  // Preenchido automaticamente ao criar uma nova Ocorrência quando já existe
+  // uma anterior, para a mesma Capacidade, num estado final — rastreia a
+  // cadeia de recorrência sem decidir sozinho o estado inicial da nova
+  // Ocorrência (isso continua sendo decisão humana).
+  ocorrenciaOrigemId?: string;
+}
+
+export interface ResultadoMudancaEstadoOcorrencia {
+  id: string;
+  estadoAnterior: string;
+  estadoAtual: string;
+}
+
 export interface ResultadoConclusaoEtapa {
   id: string;
   etapasLiberadas: string[];
@@ -1451,10 +1492,20 @@ export interface AvaliacaoCompetenciaResultado {
   peso?: number;
 }
 
-export type StatusObjetivo = 'aberto' | 'alcancado' | 'expirado';
+export type StatusObjetivo = 'aberto' | 'alcancado' | 'expirado' | 'em_acompanhamento' | 'recorrente';
 
 // Meta nomeada e com prazo — pode (ou não) estar ligada a uma Competência
 // (Glossário da Especificação v2: "nem todo Objetivo é uma Competência").
+// Aditivo (Etapa 3): "em_acompanhamento" e "recorrente" no status acima —
+// nenhum valor é validado como enum fechado no backend; a UI decide o que
+// mostrar.
+
+// PerfilObjetivo é, na prática, o "PDI" completo do documento de requisitos
+// (Problema → PDI → Ação → Acompanhamento → Reavaliação → Resultado), sem
+// precisar duplicar tabela. `ocorrenciaId` é opcional — a maioria nasce de
+// uma Ocorrência, mas um PDI proativo (sem problema associado) também é
+// válido. Acompanhamentos/notas de progresso reaproveitam ItensComentario
+// (itemTipo = 'pdi', itemId = este PDI) — sem tabela nova.
 export interface PerfilObjetivo {
   id: string;
   colaboradorId: string;
@@ -1464,6 +1515,11 @@ export interface PerfilObjetivo {
   prazo?: string;
   status: StatusObjetivo;
   dataConclusao?: string;
+  ocorrenciaId?: string;
+  capacidadeId?: string;
+  acaoDesenvolvimento?: string;
+  evidenciaEsperada?: string;
+  resultado?: string;
 }
 
 export interface CompetenciaResumoPerfil {

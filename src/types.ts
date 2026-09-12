@@ -1028,11 +1028,26 @@ export interface ItemComentario {
 // do Roadmap do Domínio.
 // ═══════════════════════════════════════════════════════════════════
 
+// ═══════════════════════════════════════════════════════════════════
+// RECONSTRUÇÃO MULTI-DEPARTAMENTO — Fundação corrigida (Etapa 1)
+// Ver "Princípio Arquitetural — Suporte como Referência, Não como Regra".
+// Direção corrigida: uma Capacidade pertence a uma Competência (não mais o
+// inverso). `setorId` ausente/vazio em qualquer entidade de biblioteca
+// significa "compartilhada entre todos os setores"; preenchido significa
+// "exclusiva daquele setor" — nunca uma imposição, sempre uma opção.
+// ═══════════════════════════════════════════════════════════════════
+
 export interface CapacidadeBiblioteca {
   id: string;
   nome: string;
   descricao?: string;
   ativo: boolean;
+  // Direção correta (Etapa 1): a Capacidade pertence a uma Competência.
+  // Opcional só durante a janela de migração assistida — uma Capacidade
+  // ainda não migrada aparece no relatório de pendências (ver
+  // getMapeamentoLegadoCapacidades) até isso ser preenchido.
+  competenciaId?: string;
+  setorId?: string;
 }
 
 // Competência nunca é deletada, só inativada (Princípio 6 da Especificação
@@ -1041,12 +1056,21 @@ export interface CapacidadeBiblioteca {
 // nenhuma camada, nem aqui nem no backend.
 export interface CompetenciaBiblioteca {
   id: string;
-  capacidadeId?: string; // opcional — hierarquia aditiva, nunca obrigatória (Princípio 24)
+  // LEGADO — direção antiga (Capacidade "pertencia" a uma Competência).
+  // Nunca apagado (Princípio 6); só serve de insumo para a migração
+  // assistida. Nenhuma tela nova deve preencher este campo — a direção
+  // correta é CapacidadeBiblioteca.competenciaId.
+  capacidadeId?: string;
+  // Marca que esta Competência já foi revisada na migração assistida (ver
+  // aplicarMigracaoCapacidade) — usado só para o relatório parar de listá-la
+  // como pendente.
+  migradoDirecao?: boolean;
   nome: string;
   descricao?: string;
   categoria?: string;
   niveis: string[]; // escala ordenada e própria desta competência (ex.: ["Não iniciado", ..., "Especialista"])
   ativo: boolean;
+  setorId?: string;
 }
 
 export type TipoMaterialBiblioteca = 'material' | 'curso' | 'modelo' | 'documento' | 'video' | 'playbook';
@@ -1062,12 +1086,88 @@ export interface MaterialBiblioteca {
   ativo: boolean;
 }
 
+// LEGADO — mantida só para não perder dado já existente (Princípio 6).
+// Nenhuma tela nova deve escrever aqui; a matriz de verdade, granular por
+// Capacidade e sempre vinculada a um Setor, é MatrizCapacidadeCargo abaixo.
 export interface MatrizCompetenciaCargo {
   id: string;
   cargoId: string;
   competenciaId: string;
   nivelAlvo: string;
   obrigatorio: boolean;
+}
+
+// ── Escalas e Graus de Domínio ("Princípio Arquitetural", seção 3.2) ──────
+// Substituem uma escala 0-4 global única. `setorId` ausente = escala
+// compartilhada entre todos os setores (ex.: a escala padrão sugerida do
+// Suporte, disponível como ponto de partida); preenchida = exclusiva daquele
+// setor. Cada Escala tem seus próprios Graus, com nome/ordem/cor livres —
+// nenhum departamento é obrigado a usar 5 graus nem os nomes do Suporte.
+export interface EscalaDominio {
+  id: string;
+  setorId?: string;
+  nome: string;
+  ativo: boolean;
+}
+
+export interface GrauDominio {
+  id: string;
+  escalaId: string;
+  ordem: number;
+  nome: string;
+  cor?: string;
+  ativo: boolean;
+}
+
+// ── Matriz por Setor, versionada ("Princípio Arquitetural", seções 3.1/4/5) ──
+// Uma MatrizVersao pertence sempre a um Setor (nunca "matriz global"). Uma
+// vez que uma versão tenha avaliações/evidências/PDIs/ocorrências vinculados
+// (a partir da Etapa 2), ela se torna imutável — nenhuma alteração ou nova
+// versão pode modificar retroativamente o que já foi registrado sob a
+// versão vigente no momento da avaliação; só uma nova versão pode ser
+// criada.
+export interface MatrizVersao {
+  id: string;
+  setorId: string;
+  nome: string; // ex.: "2026.1"
+  vigenteDesde?: string;
+  vigenteAte?: string;
+  ativa: boolean;
+}
+
+export interface MatrizCapacidadeCargo {
+  id: string;
+  matrizVersaoId: string;
+  cargoId: string;
+  capacidadeId: string;
+  escalaId: string;
+  grauMinimo: string; // referencia GrauDominio.id da escala vinculada
+  obrigatorio: boolean;
+}
+
+// ── Tipos de Evidência de Capacidade, configuráveis ("Princípio Arquitetural", seção 3.3) ──
+// Catálogo editável por setor (ou compartilhado), no lugar de uma lista
+// fixa de tipos do Suporte ("Atendimento observado", "Auditoria"...). Não
+// confundir com `TipoEvidencia` (mais abaixo), que descreve o FORMATO do
+// arquivo anexado (documento/vídeo/imagem) — esta aqui descreve a CATEGORIA
+// situacional da evidência.
+export interface TipoEvidenciaCapacidade {
+  id: string;
+  setorId?: string;
+  nome: string;
+  ativo: boolean;
+}
+
+// ── Migração assistida (Competência ↔ Capacidade) ─────────────────────────
+// Ver "Princípio Arquitetural", riscos de migração: nunca um script cego. A
+// action getMapeamentoLegadoCapacidades devolve um item deste formato por
+// Competência antiga ainda pendente de revisão.
+export interface ItemMigracaoLegadoCapacidade {
+  competenciaId: string;
+  competenciaNome: string;
+  capacidadeLegadaId: string;
+  capacidadeLegadaNome: string;
+  capacidadeJaTemDirecaoNova: boolean;
 }
 
 // Recursiva via areaPaiId — puramente organizacional/de navegação, nunca

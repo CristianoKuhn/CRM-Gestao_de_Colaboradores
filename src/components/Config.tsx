@@ -1070,25 +1070,27 @@ export default function Config({
                           </div>
 
                           {versaoAtiva && cargosDoSetor.length > 0 && capsDoSetor.length > 0 && (
-                            <div className="p-4 overflow-x-auto">
-                              <table className="w-full text-xs border-collapse">
+                            <div className="p-4 overflow-x-auto"><div style={{ minWidth: 'max-content' }}>
+                              <table className="text-xs border-collapse" style={{ borderSpacing: 0 }}>
                                 <thead>
                                   <tr>
-                                    <th className="text-left text-slate-500 font-bold py-2 pr-4 whitespace-nowrap min-w-[180px]">Capacidade</th>
+                                    <th className="text-left text-slate-500 font-bold py-2 px-3 bg-slate-50 border-r border-slate-100 whitespace-nowrap" style={{ minWidth: 180, position: 'sticky', left: 0, zIndex: 1 }}>Capacidade</th>
                                     {cargosDoSetor.map(cargo => (
-                                      <th key={cargo.id} className="text-center text-slate-500 font-bold py-2 px-3 whitespace-nowrap max-w-[140px] text-[11px] leading-tight">{cargo.nome}</th>
+                                      <th key={cargo.id} style={{ width: 80, minWidth: 80 }} className="text-center text-slate-500 font-bold pb-2 pt-1 px-2 bg-slate-50">
+                                        <div style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)', whiteSpace: 'nowrap', fontSize: 10, maxHeight: 120, overflow: 'hidden', textOverflow: 'ellipsis' }} title={cargo.nome}>{cargo.nome}</div>
+                                      </th>
                                     ))}
                                   </tr>
                                 </thead>
                                 <tbody>
                                   {capsDoSetor.map(cap => (
                                     <tr key={cap.id} className="border-t border-slate-50 hover:bg-slate-50">
-                                      <td className="py-2 pr-4 font-semibold text-slate-700 whitespace-nowrap text-xs">{cap.nome}</td>
+                                      <td className="py-2 px-3 font-semibold text-slate-700 whitespace-nowrap text-xs bg-white border-r border-slate-100" style={{ position: 'sticky', left: 0, zIndex: 1 }}>{cap.nome}</td>
                                       {cargosDoSetor.map(cargo => {
                                         const item = itensAtivos.find(m => m.capacidadeId === cap.id && m.cargoId === cargo.id);
                                         const grauItem = item ? graus.find(g => g.id === item.grauMinimo) : null;
                                         return (
-                                          <td key={cargo.id} className="text-center py-2 px-3">
+                                          <td key={cargo.id} className="text-center py-2 px-1 border-l border-slate-50" style={{ width: 80, minWidth: 80 }}>
                                             {item ? (
                                               <div className="flex flex-col items-center gap-0.5">
                                                 <div className="flex items-center gap-1">
@@ -1134,6 +1136,7 @@ export default function Config({
                                   ))}
                                 </tbody>
                               </table>
+</div>
                             </div>
                           )}
 

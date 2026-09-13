@@ -270,10 +270,11 @@ export default function App() {
       setReconhecimentos(recsData);
 
       // Reconstrução Multi-Departamento — carrega dados de desenvolvimento em
-      // paralelo, sem bloquear o carregamento principal (catch individual para
-      // que uma falha não derrube o resto — backends sem as novas abas ainda
-      // respondem com array vazio via fallback do DataService).
-      Promise.allSettled([
+      // paralelo. AWAIT aqui para garantir que o estado seja atualizado antes
+      // de retornar do loadAllData — especialmente importante quando chamado
+      // pelos handlers de save (handleSaveMatrizCapacidadeCargo etc.) para que
+      // a tela reflita o que acabou de ser salvo no banco.
+      await Promise.allSettled([
         DataService.getEscalasDominio?.() || Promise.resolve([]),
         DataService.getCapacidadesBiblioteca?.() || Promise.resolve([]),
         DataService.getCompetenciasBiblioteca?.() || Promise.resolve([]),

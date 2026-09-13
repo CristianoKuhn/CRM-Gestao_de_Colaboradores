@@ -1076,8 +1076,8 @@ export default function Config({
                                   <tr>
                                     <th className="text-left text-slate-500 font-bold py-2 px-3 bg-slate-50 border-r border-slate-100 whitespace-nowrap" style={{ minWidth: 180, position: 'sticky', left: 0, zIndex: 1 }}>Capacidade</th>
                                     {cargosDoSetor.map(cargo => (
-                                      <th key={cargo.id} style={{ width: 80, minWidth: 80 }} className="text-center text-slate-500 font-bold pb-2 pt-1 px-2 bg-slate-50">
-                                        <div style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)', whiteSpace: 'nowrap', fontSize: 10, maxHeight: 120, overflow: 'hidden', textOverflow: 'ellipsis' }} title={cargo.nome}>{cargo.nome}</div>
+                                      <th key={cargo.id} style={{ minWidth: 110, maxWidth: 150 }} className="text-center text-slate-500 font-bold pb-2 pt-2 px-2 bg-slate-50 align-bottom">
+                                        <div style={{ fontSize: 10, lineHeight: 1.3, wordBreak: 'break-word', maxWidth: 140 }} title={cargo.nome}>{cargo.nome}</div>
                                       </th>
                                     ))}
                                   </tr>
@@ -1090,7 +1090,7 @@ export default function Config({
                                         const item = itensAtivos.find(m => m.capacidadeId === cap.id && m.cargoId === cargo.id);
                                         const grauItem = item ? graus.find(g => g.id === item.grauMinimo) : null;
                                         return (
-                                          <td key={cargo.id} className="text-center py-2 px-1 border-l border-slate-50" style={{ width: 80, minWidth: 80 }}>
+                                          <td key={cargo.id} className="text-center py-2 px-2 border-l border-slate-50" style={{ minWidth: 110, maxWidth: 150 }}>
                                             {item ? (
                                               <div className="flex flex-col items-center gap-0.5">
                                                 <div className="flex items-center gap-1">

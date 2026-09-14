@@ -176,6 +176,7 @@ export default function Config({
   const [editSetorNome, setEditSetorNome] = useState('');
   const [editCargoNome, setEditCargoNome] = useState('');
   const [editCargoSetorId, setEditCargoSetorId] = useState('');
+  const [editCargoProximoId, setEditCargoProximoId] = useState('');
   const [editLiderNome, setEditLiderNome] = useState('');
   const [editLiderEmail, setEditLiderEmail] = useState('');
 
@@ -268,7 +269,7 @@ export default function Config({
     if (!editingCargo || !editCargoNome.trim() || !editCargoSetorId || !onUpdateCargo) return;
     const cargo = cargos.find(c => c.id === editingCargo);
     if (cargo) {
-      onUpdateCargo({ ...cargo, nome: editCargoNome.trim(), setorId: editCargoSetorId });
+      onUpdateCargo({ ...cargo, nome: editCargoNome.trim(), setorId: editCargoSetorId, proximoCargoId: editCargoProximoId || undefined });
     }
     setEditingCargo(null);
   };
@@ -584,6 +585,20 @@ export default function Config({
                               <option key={setor.id} value={setor.id}>{setor.nome}</option>
                             ))}
                           </select>
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Próximo Cargo na Trilha</label>
+                            <select
+                              value={editCargoProximoId}
+                              onChange={(e) => setEditCargoProximoId(e.target.value)}
+                              className="w-full px-3 py-2 bg-white border border-teal-200 rounded-lg text-xs focus:outline-none cursor-pointer"
+                            >
+                              <option value="">(topo da trilha — sem próximo)</option>
+                              {cargos.filter(c => c.id !== editingCargo && c.setorId === editCargoSetorId).map(c => (
+                                <option key={c.id} value={c.id}>{c.nome}</option>
+                              ))}
+                            </select>
+                            <p className="text-[10px] text-slate-400 mt-1">Define qual cargo o colaborador evolui a seguir. Usado pelo Card de Prontidão (🟢🟡🔴).</p>
+                          </div>
                           <div className="flex gap-2">
                             <button
                               onClick={handleSaveEditCargo}
@@ -616,9 +631,16 @@ export default function Config({
                               <p className="text-xs text-slate-400 mt-1">
                                 {colaboradores.filter(c => c.cargoId === cargo.id).length} colaboradores
                               </p>
+                              {cargo.proximoCargoId ? (
+                                <p className="text-[10px] text-teal-600 mt-1 font-medium">
+                                  → {cargos.find(c => c.id === cargo.proximoCargoId)?.nome || 'Próximo não encontrado'}
+                                </p>
+                              ) : (
+                                <p className="text-[10px] text-slate-300 mt-1">Topo da trilha</p>
+                              )}
                             </div>
                             <button
-                              onClick={() => { setEditingCargo(cargo.id); setEditCargoNome(cargo.nome); setEditCargoSetorId(cargo.setorId || ''); }}
+                              onClick={() => { setEditingCargo(cargo.id); setEditCargoNome(cargo.nome); setEditCargoSetorId(cargo.setorId || ''); setEditCargoProximoId(cargo.proximoCargoId || ''); }}
                               className="p-1.5 text-slate-300 hover:text-teal-500 opacity-0 group-hover:opacity-100 transition cursor-pointer"
                             >
                               <Edit2 size={14} />

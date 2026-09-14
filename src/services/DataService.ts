@@ -1414,8 +1414,8 @@ export class LocalDataService implements IDataService {
   async getOcorrencias(_colaboradorId: string): Promise<Ocorrencia[]> { return []; }
   async criarOcorrencia(_dados: Partial<Ocorrencia>): Promise<Ocorrencia> { throw new Error('criarOcorrencia não implementado no modo local.'); }
   async mudarEstadoOcorrencia(_id: string, _novoEstado: string, _obs?: string): Promise<ResultadoMudancaEstadoOcorrencia> { throw new Error('mudarEstadoOcorrencia não implementado no modo local.'); }
-  async getProntidaoProximoNivel(_colaboradorId: string): Promise<ProjecaoProntidao> { return { semProximoCargo: true, motivo: 'Funcionalidade disponível apenas com backend conectado.' }; }
-  async getProntidaoParaCargo(_colaboradorId: string, _cargoAlvoId: string): Promise<ProjecaoProntidao> { return { semMatriz: true, motivo: 'Funcionalidade disponível apenas com backend conectado.' }; }
+  async getProntidaoProximoNivel(_colaboradorId: string): Promise<ProjecaoProntidao> { return { semProximoCargo: true, motivo: 'Trilha de carreira não configurada para este cargo. Configure o "Próximo Cargo" em Configurações → Cargos, ou registre o colaborador em um cargo com trilha definida.' }; }
+  async getProntidaoParaCargo(_colaboradorId: string, _cargoAlvoId: string): Promise<ProjecaoProntidao> { return { semMatriz: true, motivo: 'Matriz de capacidades não configurada para o cargo alvo. Configure em Configurações → Trilha & Matriz.' }; }
   async getEscalasDominio(_setorId?: string): Promise<EscalaDominio[]> { return []; }
   async getGrausDominio(_escalaId?: string): Promise<GrauDominio[]> { return []; }
   async saveEscalaDominio(_e: EscalaDominio): Promise<void> {}

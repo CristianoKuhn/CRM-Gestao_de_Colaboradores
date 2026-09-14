@@ -355,18 +355,45 @@ function ModalPDI({ colaborador, capacidades, competencias, ocorrencias, onSalva
 function CardProntidao({ prontidao, graus }: { prontidao: ProjecaoProntidao; graus: GrauDominio[] }) {
   const [expandido, setExpandido] = useState(false);
 
-  if (prontidao.semProximoCargo || prontidao.erro) {
+  if (prontidao.erro) {
     return (
-      <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4">
-        <p className="text-xs text-slate-400 text-center">{prontidao.motivo || prontidao.erro || 'Topo da trilha de carreira atual.'}</p>
+      <div className="bg-rose-50 border border-rose-100 rounded-2xl p-4 flex items-start gap-2">
+        <AlertTriangle size={14} className="text-rose-500 shrink-0 mt-0.5" />
+        <p className="text-xs text-rose-700">{prontidao.erro}</p>
+      </div>
+    );
+  }
+  if (prontidao.semProximoCargo) {
+    return (
+      <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 space-y-2">
+        <div className="flex items-start gap-2">
+          <TrendingUp size={16} className="text-slate-400 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-xs font-bold text-slate-600">Trilha de carreira não configurada</p>
+            <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
+              {prontidao.motivo || 'Este cargo não tem um próximo nível definido na trilha.'}
+            </p>
+            <p className="text-[11px] text-teal-600 font-semibold mt-2">
+              → Configure em: Configurações Gerais → Cargos → edite o cargo e defina o "Próximo Cargo na Trilha"
+            </p>
+          </div>
+        </div>
       </div>
     );
   }
   if (prontidao.semMatriz) {
     return (
-      <div className="bg-amber-50 border border-amber-100 rounded-2xl p-4 flex items-center gap-2">
-        <AlertTriangle size={14} className="text-amber-500 shrink-0" />
-        <p className="text-xs text-amber-700">{prontidao.motivo}</p>
+      <div className="bg-amber-50 border border-amber-100 rounded-2xl p-4 space-y-2">
+        <div className="flex items-start gap-2">
+          <AlertTriangle size={14} className="text-amber-500 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-xs font-bold text-amber-700">Matriz de capacidades não configurada</p>
+            <p className="text-[11px] text-amber-700/80 mt-1 leading-relaxed">{prontidao.motivo}</p>
+            <p className="text-[11px] text-teal-600 font-semibold mt-2">
+              → Configure em: Configurações Gerais → Trilha & Matriz → Matriz por Cargo
+            </p>
+          </div>
+        </div>
       </div>
     );
   }

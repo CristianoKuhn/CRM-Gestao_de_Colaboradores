@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Tarefa, Colaborador, Lider, TipoRegistro, Cargo } from '../types';
 import {
   CheckSquare,
@@ -50,6 +50,9 @@ export default function Tarefas({
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingTarefaId, setEditingTarefaId] = useState<string | null>(null);
   const [taskTitulo, setTaskTitulo] = useState('');
+  // Ref do container do formulário — usado para scroll automático ao abrir edição,
+  // evitando que o gestor tenha que subir a página manualmente para ver o form.
+  const formTarefaRef = useRef<HTMLDivElement>(null);
   const [taskDescricao, setTaskDescricao] = useState('');
   const [taskVencimento, setTaskVencimento] = useState(() => {
     const amanha = new Date();
@@ -90,6 +93,11 @@ export default function Tarefas({
     setTaskLiderId(task.responsavelId);
     setTaskOrigem(task.tipoOrigem);
     setIsFormOpen(true);
+    // Scroll suave até o formulário — o setTimeout garante que o React
+    // já renderizou o elemento antes de tentar rolar até ele.
+    setTimeout(() => {
+      formTarefaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 50);
   };
 
   const handleExcluirTarefa = (task: Tarefa) => {
@@ -163,7 +171,7 @@ export default function Tarefas({
 
       {/* FORM: NOVA TAREFA OU EDIÇÃO DE TAREFA */}
       {isFormOpen && (
-        <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-md animate-slide-down max-w-2xl mx-auto">
+        <div ref={formTarefaRef} className="bg-white border border-slate-100 rounded-3xl p-6 shadow-md animate-slide-down max-w-2xl mx-auto">
           <div className="flex justify-between items-center border-b border-slate-100 pb-3 mb-4">
             <h3 className="text-md font-bold text-slate-950">
               {editingTarefaId ? 'Editar Tarefa de Liderança' : 'Adicionar Tarefa de Liderança'}

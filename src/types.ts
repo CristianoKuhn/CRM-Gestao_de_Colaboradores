@@ -249,7 +249,15 @@ export type TipoAlerta =
   // Gerado por marcarEtapasAtrasadas_ (Code.gs) — Etapa de um Programa de
   // Desenvolvimento (PDI, capacitação, carreira etc.) cuja data prevista já
   // passou sem conclusão.
-  | 'etapa_desenvolvimento_atrasada';
+  | 'etapa_desenvolvimento_atrasada'
+  // Gerado por gerarAlertasAvaliacaoEvidencias_ — colaborador com 5 meses
+  // no cargo sem evidências validadas para o próximo nível. Persistente até
+  // 6 meses ou até o gestor clicar "Ignorar por hora". Link direto para a
+  // aba Desenvolvimento do perfil do colaborador.
+  | 'avaliar_evidencias_prontidao'
+  // Gerado por dispararAlertasProntidao_ — colaborador atingiu todos os
+  // requisitos obrigatórios do próximo cargo (índice 🟢 Pronto).
+  | 'prontidao_proximo_nivel';
 
 export type StatusAlerta = 'pendente' | 'reconhecido' | 'resolvido';
 

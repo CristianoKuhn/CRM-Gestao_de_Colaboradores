@@ -105,6 +105,12 @@ export default function App() {
         if (usuarioValidado) {
           setCurrentUser(usuarioValidado);
           localStorage.setItem('gc_logged_in_user', JSON.stringify(usuarioValidado));
+          // Se for Administrador, recarregar a lista de usuários agora que a sessão
+          // foi confirmada — o loadAllData inicial pode ter sido chamado antes da
+          // validação terminar, retornando [] para getUsuarios.
+          if (usuarioValidado.perfil === 'Administrador') {
+            DataService.getUsuarios().then(u => { if (u.length > 0) setUsuarios(u); }).catch(() => {});
+          }
         } else {
           handleLogout();
         }
@@ -228,30 +234,48 @@ export default function App() {
   // Carregar dados de forma reativa do serviço ativo
   const loadAllData = async () => {
     try {
-      const [cols, timelineData, tarefasData, setoresData, cargosData, lideresData, empresasData, usuariosData, avaliacoesExpData, docsData, recsData, configRecData, metasLidData, metasSetData, acompData] = await Promise.all([
-        DataService.getColaboradores(),
-        DataService.getTimeline(),
-        DataService.getTarefas(),
-        DataService.getSetores(),
-        DataService.getCargos(),
-        DataService.getLideres(),
-        DataService.getEmpresas(),
-        DataService.getUsuarios(),
-        // Avaliações de Experiência
-        DataService.getAvaliacoesExperiencia(),
-        // P3: Documentos
-        DataService.getDocumentos(),
-        // P4: Reconhecimento
-        DataService.getReconhecimentos(),
-        DataService.getConfiguracaoReconhecimento(),
-        // P5: Metas
-        DataService.getMetasLideranca(),
-        DataService.getMetasSetor(),
-        DataService.getAcompanhamentos(),
-        // Sistema de Notificações
-        DataService.getAlertasInteligentes(),
-        DataService.getConfiguracaoAlertas(),
+      // Promise.allSettled garante que um erro em qualquer item (ex.: getUsuarios
+      // sendo chamado antes da sessão estar validada) não derruba todo o carregamento.
+      const resultados = await Promise.allSettled([
+        DataService.getColaboradores(),        // 0
+        DataService.getTimeline(),             // 1
+        DataService.getTarefas(),              // 2
+        DataService.getSetores(),              // 3
+        DataService.getCargos(),               // 4
+        DataService.getLideres(),              // 5
+        DataService.getEmpresas(),             // 6
+        DataService.getUsuarios(),             // 7 — exige Administrador; pode retornar [] se sessão ainda não validada
+        DataService.getAvaliacoesExperiencia(), // 8
+        DataService.getDocumentos(),           // 9
+        DataService.getReconhecimentos(),      // 10
+        DataService.getConfiguracaoReconhecimento(), // 11
+        DataService.getMetasLideranca(),       // 12
+        DataService.getMetasSetor(),           // 13
+        DataService.getAcompanhamentos(),      // 14
+        DataService.getAlertasInteligentes(),  // 15
+        DataService.getConfiguracaoAlertas(),  // 16
       ]);
+
+      const ok = <T,>(r: PromiseSettledResult<T>, fallback: T): T =>
+        r.status === 'fulfilled' ? r.value : fallback;
+
+      const cols            = ok(resultados[0], [] as any[]);
+      const timelineData    = ok(resultados[1], [] as any[]);
+      const tarefasData     = ok(resultados[2], [] as any[]);
+      const setoresData     = ok(resultados[3], [] as any[]);
+      const cargosData      = ok(resultados[4], [] as any[]);
+      const lideresData     = ok(resultados[5], [] as any[]);
+      const empresasData    = ok(resultados[6], [] as any[]);
+      const usuariosData    = ok(resultados[7], [] as any[]);
+      const avaliacoesExpData = ok(resultados[8], [] as any[]);
+      const docsData        = ok(resultados[9], [] as any[]);
+      const recsData        = ok(resultados[10], [] as any[]);
+      const configRecData   = ok(resultados[11], null as any);
+      const metasLidData    = ok(resultados[12], [] as any[]);
+      const metasSetData    = ok(resultados[13], [] as any[]);
+      const acompData       = ok(resultados[14], [] as any[]);
+      const alertasData     = ok(resultados[15], [] as any[]);
+      const configAlertasData = ok(resultados[16], null as any);
 
       setColaboradores(cols);
       setTimeline(timelineData);
@@ -268,6 +292,9 @@ export default function App() {
 
       // P4: Reconhecimento
       setReconhecimentos(recsData);
+      // Alertas e config — antes eram ignorados por falta de desestruturação
+      if (alertasData && alertasData.length !== undefined) setAlertas(alertasData);
+      if (configAlertasData) setConfigAlertas(configAlertasData);
 
       // Reconstrução Multi-Departamento — carrega dados de desenvolvimento em
       // paralelo. AWAIT aqui para garantir que o estado seja atualizado antes
@@ -1083,6 +1110,15 @@ export default function App() {
               onResolverAlerta={handleResolverAlerta}
               onIgnorarAlerta={handleIgnorarAlerta}
               onLimparResolvidos={handleLimparAlertasResolvidos}
+              onVerEvidencias={(colaboradorId) => {
+                setSelectedColaboradorId(colaboradorId);
+                setActiveTab('colaboradores');
+                // Sinaliza ao ColaboradorProfile para abrir direto na aba Desenvolvimento
+                setTimeout(() => {
+                  const devBtn = document.querySelector<HTMLButtonElement>('[data-secao="desenvolvimento"]');
+                  if (devBtn) devBtn.click();
+                }, 300);
+              }}
             />
             
             <div className="text-right">

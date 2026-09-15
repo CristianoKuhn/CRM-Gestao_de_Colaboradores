@@ -52,8 +52,6 @@ export default function Sidebar({
     { id: 'reconhecimento', label: 'Reconhecimento', icon: Trophy },
     { id: 'metas', label: 'Metas Liderança', icon: Target },
     { id: 'analytics', label: 'Analytics & PDIs', icon: BarChart3 },
-    { id: 'desenvolvimento-biblioteca', label: 'Biblioteca de Desenvolvimento', icon: GraduationCap },
-    { id: 'desenvolvimento-programas', label: 'Programas de Desenvolvimento', icon: ClipboardList },
     { id: 'desenvolvimento-indicadores', label: 'Indicadores de Desenvolvimento', icon: BarChart3Dev },
     { id: 'config', label: 'Configurações Gerais', icon: Settings },
   ].filter((item) => dashboardVisivelParaUsuario(item.id, currentUser?.dashboardsHabilitados, currentUser?.perfil));

@@ -877,6 +877,7 @@ export default function ColaboradorProfile({
             </button>
             <button
               onClick={() => setSecaoPerfil('desenvolvimento')}
+              data-secao="desenvolvimento"
               className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
                 secaoPerfil === 'desenvolvimento' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
               }`}

@@ -21,6 +21,7 @@ import {
   ChevronRight,
   Trash2,
   CheckCircle2,
+  TrendingUp,
 } from 'lucide-react';
 
 interface SistemaNotificacoesProps {
@@ -32,6 +33,10 @@ interface SistemaNotificacoesProps {
   onResolverAlerta: (id: string) => void;
   onIgnorarAlerta: (id: string) => void;
   onLimparResolvidos: () => void;
+  // Abre o perfil do colaborador na aba Desenvolvimento — usado pelo alerta
+  // de avaliação de evidências (tipo: 'avaliar_evidencias_prontidao') para
+  // levar o gestor direto para onde ele precisa agir.
+  onVerEvidencias?: (colaboradorId: string) => void;
 }
 
 interface Notificacao {
@@ -52,6 +57,7 @@ export default function SistemaNotificacoes({
   onResolverAlerta,
   onIgnorarAlerta,
   onLimparResolvidos,
+  onVerEvidencias,
 }: SistemaNotificacoesProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [notificacoes, setNotificacoes] = useState<Notificacao[]>([]);
@@ -96,6 +102,8 @@ export default function SistemaNotificacoes({
         return 'error';
       case 'etapa_desenvolvimento_atrasada':
         return 'warning';
+      case 'avaliar_evidencias_prontidao':
+        return 'warning';
       default:
         return 'info';
     }
@@ -113,6 +121,8 @@ export default function SistemaNotificacoes({
         return <AlertTriangle size={16} />;
       case 'etapa_desenvolvimento_atrasada':
         return <Clock size={16} />;
+      case 'avaliar_evidencias_prontidao':
+        return <TrendingUp size={16} />;
       default:
         return <Bell size={16} />;
     }
@@ -234,6 +244,8 @@ export default function SistemaNotificacoes({
                                   ? 'bg-rose-100 text-rose-600'
                                   : alerta.tipo === 'avaliacao_180'
                                   ? 'bg-amber-100 text-amber-600'
+                                  : alerta.tipo === 'avaliar_evidencias_prontidao'
+                                  ? 'bg-teal-100 text-teal-600'
                                   : 'bg-blue-100 text-blue-600'
                               }`}>
                                 {getIconePorTipo(alerta.tipo)}
@@ -255,20 +267,44 @@ export default function SistemaNotificacoes({
                               </div>
                             </div>
                             <div className="flex items-center gap-2 mt-3 opacity-0 group-hover:opacity-100 transition">
-                              <button
-                                onClick={() => onReconhecerAlerta(alerta.id)}
-                                className="flex-1 flex items-center justify-center gap-1 px-3 py-1.5 bg-amber-100 text-amber-700 rounded-lg text-xs font-semibold hover:bg-amber-200 transition cursor-pointer"
-                              >
-                                <Check size={12} />
-                                Reconhecer
-                              </button>
-                              <button
-                                onClick={() => onIgnorarAlerta(alerta.id)}
-                                className="flex-1 flex items-center justify-center gap-1 px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-xs font-semibold hover:bg-slate-200 transition cursor-pointer"
-                              >
-                                <X size={12} />
-                                Ignorar
-                              </button>
+                              {alerta.tipo === 'avaliar_evidencias_prontidao' ? (
+                                <>
+                                  <button
+                                    onClick={() => {
+                                      if (onVerEvidencias) onVerEvidencias(alerta.colaboradorId);
+                                      setIsOpen(false);
+                                    }}
+                                    className="flex-1 flex items-center justify-center gap-1 px-3 py-1.5 bg-teal-500 text-white rounded-lg text-xs font-bold hover:bg-teal-600 transition cursor-pointer"
+                                  >
+                                    <TrendingUp size={12} />
+                                    Ver Evidências
+                                  </button>
+                                  <button
+                                    onClick={() => onIgnorarAlerta(alerta.id)}
+                                    className="flex items-center justify-center gap-1 px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-xs font-semibold hover:bg-slate-200 transition cursor-pointer whitespace-nowrap"
+                                  >
+                                    <X size={12} />
+                                    Ignorar por hora
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <button
+                                    onClick={() => onReconhecerAlerta(alerta.id)}
+                                    className="flex-1 flex items-center justify-center gap-1 px-3 py-1.5 bg-amber-100 text-amber-700 rounded-lg text-xs font-semibold hover:bg-amber-200 transition cursor-pointer"
+                                  >
+                                    <Check size={12} />
+                                    Reconhecer
+                                  </button>
+                                  <button
+                                    onClick={() => onIgnorarAlerta(alerta.id)}
+                                    className="flex-1 flex items-center justify-center gap-1 px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-xs font-semibold hover:bg-slate-200 transition cursor-pointer"
+                                  >
+                                    <X size={12} />
+                                    Ignorar
+                                  </button>
+                                </>
+                              )}
                             </div>
                           </div>
                         );

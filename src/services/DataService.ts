@@ -488,6 +488,7 @@ export interface IDataService {
   getAcompanhamentos(): Promise<AcompanhamentoRealizado[]>;
   saveAcompanhamento(acomp: AcompanhamentoRealizado): Promise<void>;
   deleteAcompanhamento(id: string): Promise<void>;
+  limparMetasSeedAntigas?(): Promise<void>;
 
   // P6: Gestão de Pessoas
   getFerias(): Promise<Ferias[]>;
@@ -2906,32 +2907,80 @@ export class GoogleScriptDataService implements IDataService {
   }
 
   // P5: Metas
+  // ── Metas de Liderança/Setor e Acompanhamentos ──────────────────────────
+  // CORRIGIDO: antes, estas três entidades viviam só no localStorage do
+  // navegador — nunca sincronizavam entre dispositivos nem entre usuários
+  // diferentes (cada líder via só o que foi criado no seu próprio
+  // navegador). Passam a persistir de verdade na planilha, seguindo o
+  // mesmo padrão defensivo do resto do app: tenta o backend, cai para o
+  // fallback local só se a rede falhar de verdade.
   async getMetasLideranca(): Promise<MetaLideranca[]> {
-    return this.localFallback.getMetasLideranca();
+    try {
+      const raw = await this.request<any[]>('getMetasLideranca');
+      return (raw || []).map((m) => ({
+        id: m.id, liderId: m.lider_id, tipoInteracao: m.tipo_interacao,
+        grupoId: m.grupo_id || undefined, titulo: m.titulo, descricao: m.descricao || '',
+        quantidadeMinima: Number(m.quantidade_minima) || 0, periodo: m.periodo, ativo: m.ativo === true || m.ativo === 'true',
+      }));
+    } catch (e) { return this.localFallback.getMetasLideranca(); }
   }
   async saveMetaLideranca(meta: MetaLideranca): Promise<void> {
-    await this.localFallback.saveMetaLideranca(meta);
+    try {
+      await this.request('saveMetaLideranca', { data: {
+        id: meta.id, lider_id: meta.liderId, tipo_interacao: meta.tipoInteracao, grupo_id: meta.grupoId || '',
+        titulo: meta.titulo, descricao: meta.descricao || '', quantidade_minima: meta.quantidadeMinima, periodo: meta.periodo, ativo: meta.ativo,
+      } });
+    } catch (e) { console.warn('saveMetaLideranca falhou, usando fallback local:', e); await this.localFallback.saveMetaLideranca(meta); }
   }
   async deleteMetaLideranca(id: string): Promise<void> {
-    await this.localFallback.deleteMetaLideranca(id);
+    try { await this.request('deleteMetaLideranca', { data: { id } }); } catch (e) { console.warn('deleteMetaLideranca falhou:', e); await this.localFallback.deleteMetaLideranca(id); }
   }
   async getMetasSetor(): Promise<MetaSetor[]> {
-    return this.localFallback.getMetasSetor();
+    try {
+      const raw = await this.request<any[]>('getMetasSetor');
+      return (raw || []).map((m) => ({
+        id: m.id, setorId: m.setor_id, tipoInteracao: m.tipo_interacao,
+        grupoId: m.grupo_id || undefined, titulo: m.titulo, descricao: m.descricao || '',
+        quantidadeMinima: Number(m.quantidade_minima) || 0, periodo: m.periodo, ativo: m.ativo === true || m.ativo === 'true',
+      }));
+    } catch (e) { return this.localFallback.getMetasSetor(); }
   }
   async saveMetaSetor(meta: MetaSetor): Promise<void> {
-    await this.localFallback.saveMetaSetor(meta);
+    try {
+      await this.request('saveMetaSetor', { data: {
+        id: meta.id, setor_id: meta.setorId, tipo_interacao: meta.tipoInteracao, grupo_id: meta.grupoId || '',
+        titulo: meta.titulo, descricao: meta.descricao || '', quantidade_minima: meta.quantidadeMinima, periodo: meta.periodo, ativo: meta.ativo,
+      } });
+    } catch (e) { console.warn('saveMetaSetor falhou, usando fallback local:', e); await this.localFallback.saveMetaSetor(meta); }
   }
   async deleteMetaSetor(id: string): Promise<void> {
-    await this.localFallback.deleteMetaSetor(id);
+    try { await this.request('deleteMetaSetor', { data: { id } }); } catch (e) { console.warn('deleteMetaSetor falhou:', e); await this.localFallback.deleteMetaSetor(id); }
   }
   async getAcompanhamentos(): Promise<AcompanhamentoRealizado[]> {
-    return this.localFallback.getAcompanhamentos();
+    try {
+      const raw = await this.request<any[]>('getAcompanhamentos');
+      return (raw || []).map((a) => ({
+        id: a.id, tipoInteracao: a.tipo_interacao, colaboradorId: a.colaborador_id,
+        liderId: a.lider_id, setorId: a.setor_id, data: a.data, descricao: a.descricao || undefined, documentoId: a.documento_id || undefined,
+      }));
+    } catch (e) { return this.localFallback.getAcompanhamentos(); }
   }
   async saveAcompanhamento(acomp: AcompanhamentoRealizado): Promise<void> {
-    await this.localFallback.saveAcompanhamento(acomp);
+    try {
+      await this.request('saveAcompanhamento', { data: {
+        id: acomp.id, tipo_interacao: acomp.tipoInteracao, colaborador_id: acomp.colaboradorId,
+        lider_id: acomp.liderId, setor_id: acomp.setorId, data: acomp.data, descricao: acomp.descricao || '', documento_id: acomp.documentoId || '',
+      } });
+    } catch (e) { console.warn('saveAcompanhamento falhou, usando fallback local:', e); await this.localFallback.saveAcompanhamento(acomp); }
   }
   async deleteAcompanhamento(id: string): Promise<void> {
-    await this.localFallback.deleteAcompanhamento(id);
+    try { await this.request('deleteAcompanhamento', { data: { id } }); } catch (e) { console.warn('deleteAcompanhamento falhou:', e); await this.localFallback.deleteAcompanhamento(id); }
+  }
+  // Remove os 5 registros de exemplo/seed que vinham no protótipo inicial
+  // (ids fixos, nunca usados por dado real) — chamada uma única vez pelo
+  // App.tsx ao carregar a tela de Metas.
+  async limparMetasSeedAntigas(): Promise<void> {
+    try { await this.request('limparMetasSeedAntigas'); } catch (e) { /* best-effort, sem problema se falhar */ }
   }
 
   async uploadFile(
@@ -4503,6 +4552,29 @@ export class GoogleScriptDataService implements IDataService {
   async saveGravidadeOcorrencia(grav: GravidadeOcorrencia): Promise<void> {
     try { await this.request('saveGravidadeOcorrencia', { data: { id: grav.id, setor_id: grav.setorId || '', nome: grav.nome, cor: grav.cor || '', ordem: grav.ordem, ativo: grav.ativo } }); } catch (e) { console.warn('saveGravidadeOcorrencia falhou:', e); }
   }
+  // ── Grupos de Meta ──────────────────────────────────────────────────────
+  // CORREÇÃO: esta classe (a que realmente fala com o Google Apps Script)
+  // nunca tinha estes três métodos implementados — só existiam a interface,
+  // o stub local e a fachada. Como a interface os declara como opcionais
+  // (?), o TypeScript nunca acusava a ausência, e a chamada virava um
+  // no-op silencioso (o "?." simplesmente não fazia nada). Por isso "Novo
+  // Grupo de Meta" nunca salvava de verdade — não era um erro de rede, o
+  // método nem existia. Erros aqui SEMPRE propagam (nunca engolidos em um
+  // catch mudo) para que a tela consiga mostrar o problema real.
+  async getGruposMeta(): Promise<GrupoMeta[]> {
+    const raw = await this.request<any[]>('getGruposMeta');
+    return (raw || []).map((g) => ({
+      id: g.id, nome: g.nome, cor: g.cor || '#0d9488',
+      tiposInteracao: Array.isArray(g.tipos_interacao) ? g.tipos_interacao : (g.tipos_interacao ? JSON.parse(g.tipos_interacao) : []),
+      ativo: g.ativo === true || g.ativo === 'true',
+    }));
+  }
+  async saveGrupoMeta(grupo: GrupoMeta): Promise<void> {
+    await this.request('saveGrupoMeta', { data: { id: grupo.id, nome: grupo.nome, cor: grupo.cor, tipos_interacao: JSON.stringify(grupo.tiposInteracao), ativo: grupo.ativo } });
+  }
+  async deleteGrupoMeta(id: string): Promise<void> {
+    await this.request('deleteGrupoMeta', { data: { id } });
+  }
 
   // ── Motor de Desenvolvimento de Colaboradores — Perfil (Aggregate Root) ──
   async getPerfilCompetencias(colaboradorId: string): Promise<PerfilCompetencia[]> {
@@ -4959,6 +5031,9 @@ class DynamicDataService implements IDataService {
   }
   async deleteAcompanhamento(id: string): Promise<void> {
     await this.getService().deleteAcompanhamento(id);
+  }
+  async limparMetasSeedAntigas(): Promise<void> {
+    await this.getService().limparMetasSeedAntigas?.();
   }
 
   // P6: Gestão de Pessoas

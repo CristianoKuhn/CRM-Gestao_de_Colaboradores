@@ -38,6 +38,7 @@ import {
   GrupoMeta,
 } from './types';
 import Sidebar from './components/Sidebar';
+import { dashboardVisivelParaUsuario } from './utils/dashboards';
 import DashboardExecutiva from './components/DashboardExecutiva';
 import Colaboradores from './components/Colaboradores';
 import ColaboradorProfile from './components/ColaboradorProfile';
@@ -54,7 +55,6 @@ import SistemaNotificacoes from './components/SistemaNotificacoes';
 import GestaoPessoas from './components/GestaoPessoas';
 import BibliotecaDesenvolvimento from './features/desenvolvimento-colaboradores/BibliotecaDesenvolvimento';
 import ProgramasDesenvolvimento from './features/desenvolvimento-colaboradores/ProgramasDesenvolvimento';
-import DashboardIndicadoresDesenvolvimento from './features/desenvolvimento-colaboradores/DashboardIndicadoresDesenvolvimento';
 import LisaWidget, { ResultadoNavegacaoLisa, ResumoDiarioLisa } from './components/lisa/LisaWidget';
 import { LisaAcaoNavegar } from './services/LisaService';
 import { Users2, X, PlusCircle } from 'lucide-react';
@@ -91,6 +91,11 @@ export default function App() {
   useEffect(() => {
     initializeStorage();
     loadAllData();
+    // Remove, uma única vez, os 5 registros de exemplo de Metas de
+    // Liderança/Setor que vinham no protótipo inicial (ex.: "Feedbacks
+    // Mensais", "Check-ins Informais") — best-effort, nunca bloqueia o
+    // carregamento do app se falhar (ex.: backend ainda não implantado).
+    DataService.limparMetasSeedAntigas?.().catch(() => {});
 
     (async () => {
       const temToken = DataService.temSessaoAtiva();
@@ -442,7 +447,7 @@ export default function App() {
   };
   const handleSaveGrupoMeta = async (grupo: GrupoMeta) => {
     await DataService.saveGrupoMeta?.(grupo);
-    loadAllData();
+    await loadAllData();
   };
   const handleDeleteGrupoMeta = async (id: string) => {
     await DataService.deleteGrupoMeta?.(id);
@@ -1308,11 +1313,15 @@ export default function App() {
           {/* Security Audit (Fase 1, V07): mesma trava de defesa em profundidade
               do item "usuarios" acima — esta tela contém o botão de Reset de
               Dados (V04) e a gestão de Empresas/Setores/Cargos, então também
-              passa a exigir Administrador. Se alguma equipe não-admin
-              legitimamente precisava só da parte de Empresas/Setores/Cargos
-              (sem o Reset), isso é uma decisão de produto a revisar — hoje a
-              tela mistura os dois no mesmo componente. */}
-          {activeTab === 'config' && currentUser.perfil === 'Administrador' && (
+              passa a exigir Administrador para as AÇÕES sensíveis — o
+              backend continua recusando essas ações via exigirAdministrador_
+              independente do que a UI mostrar. A VISIBILIDADE da tela em si
+              agora segue dashboardsHabilitados (mesma regra de qualquer
+              outro item de menu), permitindo que um Administrador dê acesso
+              de leitura/configuração de Trilha & Matriz a um Coordenador de
+              setor específico, por exemplo, sem precisar torná-lo
+              Administrador do sistema inteiro. */}
+          {activeTab === 'config' && dashboardVisivelParaUsuario('config', currentUser.dashboardsHabilitados, currentUser.perfil) && (
             <Config
               config={supabaseConfig}
               onSaveConfig={setSupabaseConfig}
@@ -1376,10 +1385,6 @@ export default function App() {
 
           {activeTab === 'desenvolvimento-programas' && currentUser && (
             <ProgramasDesenvolvimento currentUser={currentUser} setores={setoresVisiveis} />
-          )}
-
-          {activeTab === 'desenvolvimento-indicadores' && currentUser && (
-            <DashboardIndicadoresDesenvolvimento currentUser={currentUser} setores={setoresVisiveis} cargos={cargos} />
           )}
         </div>
       </main>

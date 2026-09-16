@@ -67,6 +67,14 @@ const PerfilCompetenciasPanel: React.FC<PerfilCompetenciasPanelProps> = ({
   const podeGerir = !!currentUser;
 
   const carregar = useCallback(async () => {
+    // Guarda defensiva: nunca chama a API sem um colaboradorId real — evita
+    // o erro "getPerfilConsolidado requer colaboradorId" que aparecia no
+    // console em transições de tela (ex.: colaboradorId momentaneamente
+    // vazio durante uma troca de colaborador selecionado).
+    if (!colaboradorId) {
+      setCarregando(false);
+      return;
+    }
     setCarregando(true);
     try {
       const [perfilConsolidado, listaCompetencias] = await Promise.all([

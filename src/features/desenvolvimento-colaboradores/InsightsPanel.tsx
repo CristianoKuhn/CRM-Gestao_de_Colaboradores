@@ -48,8 +48,6 @@ const COR_POR_TIPO: Record<string, string> = {
 const InsightsPanel: React.FC<InsightsPanelProps> = ({
   colaboradorId,
   currentUser,
-  onFocarCompetencia,
-  onFocarJornada,
 }) => {
   const [carregando, setCarregando] = useState(true);
   const [insights, setInsights] = useState<Insight[]>([]);
@@ -89,9 +87,7 @@ const InsightsPanel: React.FC<InsightsPanelProps> = ({
           setMensagemEfeito('Um novo Objetivo de desenvolvimento foi criado a partir desta recomendação.');
         }
         if (competenciaId) {
-          onFocarCompetencia?.(competenciaId);
         } else {
-          onFocarJornada?.();
         }
       }
     } catch {

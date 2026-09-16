@@ -35,6 +35,7 @@ import {
   CompetenciaBiblioteca,
   TipoEvidenciaCapacidade,
   GravidadeOcorrencia,
+  GrupoMeta,
 } from './types';
 import Sidebar from './components/Sidebar';
 import DashboardExecutiva from './components/DashboardExecutiva';
@@ -177,6 +178,7 @@ export default function App() {
   const [competencias, setCompetencias] = useState<CompetenciaBiblioteca[]>([]);
   const [tiposEvidencia, setTiposEvidencia] = useState<TipoEvidenciaCapacidade[]>([]);
   const [gravidadesOcorrencia, setGravidadesOcorrencia] = useState<GravidadeOcorrencia[]>([]);
+  const [gruposMeta, setGruposMeta] = useState<GrupoMeta[]>([]);
   const [supabaseConfig, setSupabaseConfig] = useState<SupabaseConfig>({
     supabaseUrl: '',
     supabaseAnonKey: '',
@@ -310,7 +312,8 @@ export default function App() {
         DataService.getTiposEvidencia?.() || Promise.resolve([]),
         DataService.getGravidadesOcorrencia?.() || Promise.resolve([]),
         DataService.getGrausDominio?.() || Promise.resolve([]),
-      ]).then(([escalasRes, capsRes, compsRes, versRes, matrizRes, tiposRes, gravsRes, grausRes]) => {
+        DataService.getGruposMeta?.() || Promise.resolve([]),
+      ]).then(([escalasRes, capsRes, compsRes, versRes, matrizRes, tiposRes, gravsRes, grausRes, gruposMetaRes]) => {
         if (escalasRes.status === 'fulfilled') setEscalas(escalasRes.value as EscalaDominio[]);
         if (capsRes.status === 'fulfilled') setCapacidades(capsRes.value as CapacidadeBiblioteca[]);
         if (compsRes.status === 'fulfilled') setCompetencias(compsRes.value as CompetenciaBiblioteca[]);
@@ -319,6 +322,7 @@ export default function App() {
         if (tiposRes.status === 'fulfilled') setTiposEvidencia(tiposRes.value as TipoEvidenciaCapacidade[]);
         if (gravsRes.status === 'fulfilled') setGravidadesOcorrencia(gravsRes.value as GravidadeOcorrencia[]);
         if (grausRes.status === 'fulfilled') setGraus(grausRes.value as GrauDominio[]);
+        if (gruposMetaRes && gruposMetaRes.status === 'fulfilled') setGruposMeta(gruposMetaRes.value as GrupoMeta[]);
       }).catch(() => {/* dados de desenvolvimento não disponíveis — UI fica funcional com arrays vazios */});
       setConfigReconhecimento(configRecData);
 
@@ -434,6 +438,14 @@ export default function App() {
   };
   const handleSaveGravidadeOcorrencia = async (grav: GravidadeOcorrencia) => {
     await DataService.saveGravidadeOcorrencia?.(grav);
+    loadAllData();
+  };
+  const handleSaveGrupoMeta = async (grupo: GrupoMeta) => {
+    await DataService.saveGrupoMeta?.(grupo);
+    loadAllData();
+  };
+  const handleDeleteGrupoMeta = async (id: string) => {
+    await DataService.deleteGrupoMeta?.(id);
     loadAllData();
   };
 
@@ -1284,6 +1296,7 @@ export default function App() {
               setores={setores}
               colaboradores={colaboradores}
               currentUserId={currentUser?.id || ''}
+              gruposMeta={gruposMeta}
               onSaveMetaLideranca={handleSaveMetaLideranca}
               onDeleteMetaLideranca={handleDeleteMetaLideranca}
               onSaveMetaSetor={handleSaveMetaSetor}
@@ -1338,6 +1351,9 @@ export default function App() {
               onSaveCompetencia={handleSaveCompetencia}
               onSaveTipoEvidencia={handleSaveTipoEvidencia}
               onSaveGravidadeOcorrencia={handleSaveGravidadeOcorrencia}
+              gruposMeta={gruposMeta}
+              onSaveGrupoMeta={handleSaveGrupoMeta}
+              onDeleteGrupoMeta={handleDeleteGrupoMeta}
             />
           )}
 

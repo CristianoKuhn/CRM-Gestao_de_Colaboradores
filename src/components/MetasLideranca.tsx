@@ -9,6 +9,7 @@ import {
   MetaSetor,
   AcompanhamentoRealizado,
   TipoInteracao,
+  GrupoMeta,
   Lider,
   Setor,
   Colaborador,
@@ -43,6 +44,10 @@ interface MetasLiderancaProps {
   setores: Setor[];
   colaboradores: Colaborador[];
   currentUserId: string;
+  // Grupos de Meta — configuráveis em Configurações Gerais → Grupos de Meta.
+  // Cada grupo agrupa múltiplos TipoInteracao sob um nome de negócio
+  // (ex.: "Feedback Positivo" engloba feedback + conversa_reconhecimento).
+  gruposMeta?: GrupoMeta[];
   onSaveMetaLideranca: (meta: MetaLideranca) => void;
   onDeleteMetaLideranca: (id: string) => void;
   onSaveMetaSetor: (meta: MetaSetor) => void;
@@ -80,6 +85,7 @@ export default function MetasLideranca({
   setores,
   colaboradores,
   currentUserId,
+  gruposMeta = [],
   onSaveMetaLideranca,
   onDeleteMetaLideranca,
   onSaveMetaSetor,
@@ -95,6 +101,8 @@ export default function MetasLideranca({
   const [editMeta, setEditMeta] = useState<MetaLideranca | MetaSetor | null>(null);
   const [formData, setFormData] = useState({
     tipoInteracao: 'feedback' as TipoInteracao,
+    // grupoId: quando configurado, a meta usa um grupo (múltiplos tipos) em vez de um único tipo
+    grupoId: '' as string,
     titulo: '',
     descricao: '',
     quantidadeMinima: 4,
@@ -111,8 +119,12 @@ export default function MetasLideranca({
     return metasAtivas.map((meta) => {
       const isMetaLider = 'liderId' in meta;
       const tipoId = isMetaLider ? (meta as MetaLideranca).liderId : (meta as MetaSetor).setorId;
+      // Se a meta tem um grupoId, contar todos os acompanhamentos cujo tipoInteracao
+      // esteja na lista do grupo. Caso contrário, usar o tipoInteracao individual.
+      const grupoAtivo = meta.grupoId ? gruposMeta.find(g => g.id === meta.grupoId) : null;
+      const tiposValidos = grupoAtivo ? grupoAtivo.tiposInteracao : [meta.tipoInteracao];
       const realizado = acompPeriodo.filter((a) => {
-        if (a.tipoInteracao !== meta.tipoInteracao) return false;
+        if (!tiposValidos.includes(a.tipoInteracao)) return false;
         if (isMetaLider) {
           return a.liderId === tipoId;
         } else {
@@ -144,6 +156,7 @@ export default function MetasLideranca({
     setEditMeta(null);
     setFormData({
       tipoInteracao: 'feedback',
+      grupoId: '',
       titulo: '',
       descricao: '',
       quantidadeMinima: 4,
@@ -159,6 +172,7 @@ export default function MetasLideranca({
     setEditMeta(meta);
     setFormData({
       tipoInteracao: meta.tipoInteracao,
+      grupoId: meta.grupoId || '',
       titulo: meta.titulo,
       descricao: meta.descricao,
       quantidadeMinima: meta.quantidadeMinima,
@@ -177,6 +191,7 @@ export default function MetasLideranca({
         id: editMeta?.id || `meta-lid-${Date.now()}`,
         liderId: formData.liderId,
         tipoInteracao: formData.tipoInteracao,
+        grupoId: formData.grupoId || undefined,
         titulo: formData.titulo,
         descricao: formData.descricao,
         quantidadeMinima: formData.quantidadeMinima,
@@ -189,6 +204,7 @@ export default function MetasLideranca({
         id: editMeta?.id || `meta-set-${Date.now()}`,
         setorId: formData.setorId,
         tipoInteracao: formData.tipoInteracao,
+        grupoId: formData.grupoId || undefined,
         titulo: formData.titulo,
         descricao: formData.descricao,
         quantidadeMinima: formData.quantidadeMinima,
@@ -421,22 +437,70 @@ export default function MetasLideranca({
                 </div>
               )}
 
-              {/* Tipo de Interação */}
+              {/* Grupo ou Tipo de Interação */}
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                  Tipo de Interação
+                  {gruposMeta.length > 0 ? 'Grupo de Interações' : 'Tipo de Interação'}
                 </label>
-                <select
-                  value={formData.tipoInteracao}
-                  onChange={(e) => setFormData((prev) => ({ ...prev, tipoInteracao: e.target.value as TipoInteracao }))}
-                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none cursor-pointer"
-                >
-                  {TIPOS_INTERACAO.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.nome}
-                    </option>
-                  ))}
-                </select>
+                {gruposMeta.length > 0 ? (
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-1 gap-1.5">
+                      {gruposMeta.filter(g => g.ativo).map(g => (
+                        <button
+                          key={g.id}
+                          type="button"
+                          onClick={() => setFormData(prev => ({ ...prev, grupoId: g.id === prev.grupoId ? '' : g.id }))}
+                          className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border text-xs font-semibold text-left cursor-pointer transition ${
+                            formData.grupoId === g.id
+                              ? 'border-teal-500 bg-teal-50 text-teal-700 ring-1 ring-teal-300'
+                              : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                          }`}
+                        >
+                          <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: g.cor }} />
+                          <div className="flex-1">
+                            <span className="font-bold">{g.nome}</span>
+                            <span className="text-slate-400 font-normal ml-2">({g.tiposInteracao.length} tipos)</span>
+                          </div>
+                          {formData.grupoId === g.id && <span className="text-teal-600">✓</span>}
+                        </button>
+                      ))}
+                    </div>
+                    {!formData.grupoId && (
+                      <div>
+                        <p className="text-[10px] text-slate-400 mb-1.5">Ou escolha um tipo específico:</p>
+                        <select
+                          value={formData.tipoInteracao}
+                          onChange={(e) => setFormData((prev) => ({ ...prev, tipoInteracao: e.target.value as TipoInteracao, grupoId: '' }))}
+                          className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none cursor-pointer"
+                        >
+                          {TIPOS_INTERACAO.map((t) => (
+                            <option key={t.id} value={t.id}>{t.nome}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                    {!formData.grupoId && (
+                      <p className="text-[10px] text-amber-600">
+                        💡 Configure Grupos de Meta em Configurações Gerais → Grupos de Meta para metas transversais.
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-1.5">
+                    <select
+                      value={formData.tipoInteracao}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, tipoInteracao: e.target.value as TipoInteracao }))}
+                      className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none cursor-pointer"
+                    >
+                      {TIPOS_INTERACAO.map((t) => (
+                        <option key={t.id} value={t.id}>{t.nome}</option>
+                      ))}
+                    </select>
+                    <p className="text-[10px] text-slate-400">
+                      💡 Configure Grupos em <strong>Configurações Gerais → Grupos de Meta</strong> para criar metas que abrangem múltiplos tipos de interação.
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* Título */}

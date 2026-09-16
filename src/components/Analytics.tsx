@@ -116,9 +116,12 @@ export default function Analytics({
     { mes: 'Jul/26', Feedbacks: 14, PDIs: 6, Incidentes: 3 }, // Mês atual concentrado
   ];
 
-  // --- 5. Rankings ---
+  // --- 5. Rankings — exclui Desligados: não faz sentido rankear
+  // quem já saiu da empresa, e pode distorcer métricas de equipes ativas.
+  const colaboradoresAtivosRanking = colaboradores.filter(c => c.situacao !== 'Desligado');
+
   // Ranking de Reconhecimento/Elogio de Cliente
-  const rankingReconhecimento = colaboradores.map((col) => {
+  const rankingReconhecimento = colaboradoresAtivosRanking.map((col) => {
     const elogios = timelineFiltrada.filter(
       (r) => r.colaboradorId === col.id && (r.tipo === 'Reconhecimento' || r.tipo === 'Elogio de Cliente')
     ).length;
@@ -126,7 +129,7 @@ export default function Analytics({
   }).sort((a, b) => b.count - a.count).slice(0, 5);
 
   // Ranking de Advertências/Suspensões
-  const rankingAdvertencias = colaboradores.map((col) => {
+  const rankingAdvertencias = colaboradoresAtivosRanking.map((col) => {
     const incidentes = timelineFiltrada.filter(
       (r) => r.colaboradorId === col.id && (r.tipo === 'Advertência' || r.tipo === 'Suspensão')
     ).length;

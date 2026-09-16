@@ -71,7 +71,7 @@ export default function Colaboradores({
   const [searchTerm, setSearchTerm] = useState('');
   const [filterSetor, setFilterSetor] = useState(preselectedFilters.setorId || '');
   const [filterCargo, setFilterCargo] = useState('');
-  const [filterSituacao, setFilterSituacao] = useState<string>(preselectedFilters.situacao || '');
+  const [filterSituacao, setFilterSituacao] = useState<string>(preselectedFilters.situacao || 'Ativo');
 
   // Modais de Cadastro
   const [isColModalOpen, setIsColModalOpen] = useState(false);
@@ -398,8 +398,6 @@ export default function Colaboradores({
           >
             <option value="">Todas as Situações</option>
             <option value="Ativo">Ativo</option>
-            <option value="Em Acompanhamento">Em Acompanhamento</option>
-            <option value="Suspenso">Suspenso</option>
             <option value="Desligado">Desligado</option>
           </select>
         </div>
@@ -434,11 +432,9 @@ export default function Colaboradores({
                   const setor = setores.find((s) => s.id === col.setorId)?.nome || 'Setor Não Especificado';
                   const lider = lideres.find((l) => l.id === col.liderId);
 
-                  // Definir cores para a situação
+                  // Definir cores para a situação — só existem dois estados: Ativo ou Desligado.
                   let badgeClass = 'bg-slate-100 text-slate-700';
                   if (col.situacao === 'Ativo') badgeClass = 'bg-teal-50 text-teal-700 font-semibold';
-                  else if (col.situacao === 'Em Acompanhamento') badgeClass = 'bg-orange-50 text-orange-700 font-semibold';
-                  else if (col.situacao === 'Suspenso') badgeClass = 'bg-rose-50 text-rose-700 font-semibold';
                   else if (col.situacao === 'Desligado') badgeClass = 'bg-slate-100 text-slate-500';
 
                   return (
@@ -783,9 +779,7 @@ export default function Colaboradores({
                     className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 cursor-pointer"
                   >
                     <option value="Ativo">Ativo</option>
-                    <option value="Em Acompanhamento">Em Acompanhamento</option>
-                    <option value="Suspenso">Suspenso</option>
-                    <option value="Desligado">Desligado</option>
+                                    <option value="Desligado">Desligado</option>
                   </select>
                 </div>
               </div>

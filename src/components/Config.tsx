@@ -97,7 +97,7 @@ interface ConfigProps {
   onSaveTipoEvidencia?: (tipo: TipoEvidenciaCapacidade) => void;
   onSaveGravidadeOcorrencia?: (grav: GravidadeOcorrencia) => void;
   gruposMeta?: GrupoMeta[];
-  onSaveGrupoMeta?: (grupo: GrupoMeta) => void;
+  onSaveGrupoMeta?: (grupo: GrupoMeta) => Promise<void>;
   onDeleteGrupoMeta?: (id: string) => void;
 }
 
@@ -174,6 +174,8 @@ export default function Config({
   const [grupoNome, setGrupoNome] = useState('');
   const [grupoCor, setGrupoCor] = useState('#0d9488');
   const [grupoTipos, setGrupoTipos] = useState<TipoInteracao[]>([]);
+  const [grupoSalvando, setGrupoSalvando] = useState(false);
+  const [grupoErro, setGrupoErro] = useState<string | null>(null);
 
   // Paleta de cores pré-definidas para grupos/gravidades — evita que leigos
   // precisem digitar código hex. As cores cobrem espectro suficiente para
@@ -1539,25 +1541,43 @@ export default function Config({
                         )}
                       </div>
 
+                      {grupoErro && (
+                        <div className="bg-rose-50 border border-rose-100 rounded-xl px-3 py-2.5 text-xs text-rose-700">
+                          {grupoErro}
+                        </div>
+                      )}
+
                       <div className="flex gap-3 pt-1 border-t border-slate-100">
-                        <button type="button" onClick={() => setGrupoModalAberto(false)} className="flex-1 px-4 py-2.5 border border-slate-200 text-slate-600 bg-slate-50 rounded-xl text-sm font-semibold cursor-pointer hover:bg-slate-100">Cancelar</button>
+                        <button type="button" onClick={() => { setGrupoModalAberto(false); setGrupoErro(null); }} className="flex-1 px-4 py-2.5 border border-slate-200 text-slate-600 bg-slate-50 rounded-xl text-sm font-semibold cursor-pointer hover:bg-slate-100">Cancelar</button>
                         <button
                           type="button"
-                          disabled={!grupoNome.trim() || grupoTipos.length === 0}
-                          onClick={() => {
+                          disabled={!grupoNome.trim() || grupoTipos.length === 0 || grupoSalvando}
+                          onClick={async () => {
                             if (!grupoNome.trim() || grupoTipos.length === 0) return;
-                            onSaveGrupoMeta?.({
-                              id: grupoEditando?.id || `grupo-meta-${Date.now()}`,
-                              nome: grupoNome.trim(),
-                              cor: grupoCor,
-                              tiposInteracao: grupoTipos,
-                              ativo: true,
-                            });
-                            setGrupoModalAberto(false);
+                            setGrupoSalvando(true);
+                            setGrupoErro(null);
+                            try {
+                              await onSaveGrupoMeta?.({
+                                id: grupoEditando?.id || `grupo-meta-${Date.now()}`,
+                                nome: grupoNome.trim(),
+                                cor: grupoCor,
+                                tiposInteracao: grupoTipos,
+                                ativo: true,
+                              });
+                              setGrupoModalAberto(false);
+                            } catch (erro) {
+                              setGrupoErro(
+                                erro instanceof Error
+                                  ? `Não foi possível salvar: ${erro.message}`
+                                  : 'Não foi possível salvar o Grupo de Meta. Verifique se o backend foi implantado com a versão mais recente.'
+                              );
+                            } finally {
+                              setGrupoSalvando(false);
+                            }
                           }}
                           className="flex-1 px-4 py-2.5 bg-teal-500 text-slate-950 font-bold rounded-xl text-sm cursor-pointer hover:bg-teal-400 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                          {grupoEditando ? 'Salvar Alterações' : 'Criar Grupo'}
+                          {grupoSalvando ? 'Salvando...' : grupoEditando ? 'Salvar Alterações' : 'Criar Grupo'}
                         </button>
                       </div>
                     </div>

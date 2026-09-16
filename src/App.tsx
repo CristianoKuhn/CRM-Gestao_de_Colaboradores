@@ -53,8 +53,6 @@ import SistemaReconhecimento from './components/SistemaReconhecimento';
 import MetasLideranca from './components/MetasLideranca';
 import SistemaNotificacoes from './components/SistemaNotificacoes';
 import GestaoPessoas from './components/GestaoPessoas';
-import BibliotecaDesenvolvimento from './features/desenvolvimento-colaboradores/BibliotecaDesenvolvimento';
-import ProgramasDesenvolvimento from './features/desenvolvimento-colaboradores/ProgramasDesenvolvimento';
 import LisaWidget, { ResultadoNavegacaoLisa, ResumoDiarioLisa } from './components/lisa/LisaWidget';
 import { LisaAcaoNavegar } from './services/LisaService';
 import { Users2, X, PlusCircle } from 'lucide-react';
@@ -1379,13 +1377,6 @@ export default function App() {
             />
           )}
 
-          {activeTab === 'desenvolvimento-biblioteca' && currentUser && (
-            <BibliotecaDesenvolvimento currentUser={currentUser} cargos={cargos} />
-          )}
-
-          {activeTab === 'desenvolvimento-programas' && currentUser && (
-            <ProgramasDesenvolvimento currentUser={currentUser} setores={setoresVisiveis} />
-          )}
         </div>
       </main>
 

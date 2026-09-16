@@ -23,6 +23,8 @@ import {
   CompetenciaBiblioteca,
   TipoEvidenciaCapacidade,
   GravidadeOcorrencia,
+  GrupoMeta,
+  TipoInteracao,
 } from '../types';
 import {
   Key,
@@ -51,6 +53,7 @@ import {
   Layers,
   Award,
   ChevronRight,
+  Target,
 } from 'lucide-react';
 
 interface ConfigProps {
@@ -93,6 +96,9 @@ interface ConfigProps {
   onSaveCompetencia?: (comp: CompetenciaBiblioteca) => void;
   onSaveTipoEvidencia?: (tipo: TipoEvidenciaCapacidade) => void;
   onSaveGravidadeOcorrencia?: (grav: GravidadeOcorrencia) => void;
+  gruposMeta?: GrupoMeta[];
+  onSaveGrupoMeta?: (grupo: GrupoMeta) => void;
+  onDeleteGrupoMeta?: (id: string) => void;
 }
 
 export default function Config({
@@ -133,6 +139,9 @@ export default function Config({
   onSaveCompetencia,
   onSaveTipoEvidencia,
   onSaveGravidadeOcorrencia,
+  gruposMeta = [],
+  onSaveGrupoMeta,
+  onDeleteGrupoMeta,
 }: ConfigProps) {
   const [webAppUrl, setWebAppUrl] = useState(googleConfig.webAppUrl || '');
 
@@ -148,7 +157,7 @@ export default function Config({
   // Estado para Dashboard Admin
   const [adminTab, setAdminTab] = useState<'empresas' | 'setores' | 'cargos' | 'lideres' | 'trilha'>('setores');
   // Sub-aba da nova Trilha & Matriz
-  const [trilhaSubTab, setTrilhaSubTab] = useState<'competencias' | 'escalas' | 'matriz' | 'catalogo'>('competencias');
+  const [trilhaSubTab, setTrilhaSubTab] = useState<'competencias' | 'escalas' | 'matriz' | 'catalogo' | 'grupos-meta'>('competencias');
   // Modal inline da Matriz: qual célula (capacidade × cargo) está sendo editada
   const [matrizModalAberto, setMatrizModalAberto] = useState(false);
   const [matrizModalCapId, setMatrizModalCapId] = useState('');
@@ -159,6 +168,21 @@ export default function Config({
   const [matrizModalGrauId, setMatrizModalGrauId] = useState('');
   const [matrizModalObrigatorio, setMatrizModalObrigatorio] = useState(true);
   const [matrizModalSalvando, setMatrizModalSalvando] = useState(false);
+  // Modal de Grupos de Meta
+  const [grupoModalAberto, setGrupoModalAberto] = useState(false);
+  const [grupoEditando, setGrupoEditando] = useState<GrupoMeta | null>(null);
+  const [grupoNome, setGrupoNome] = useState('');
+  const [grupoCor, setGrupoCor] = useState('#0d9488');
+  const [grupoTipos, setGrupoTipos] = useState<TipoInteracao[]>([]);
+
+  // Paleta de cores pré-definidas para grupos/gravidades — evita que leigos
+  // precisem digitar código hex. As cores cobrem espectro suficiente para
+  // diferenciar facilmente até 12 itens lado a lado.
+  const PALETA_CORES = [
+    '#0d9488','#0891b2','#2563eb','#7c3aed','#db2777',
+    '#e11d48','#f97316','#eab308','#16a34a','#64748b',
+    '#1e293b','#94a3b8',
+  ];
   const [isAddingSetor, setIsAddingSetor] = useState(false);
   const [isAddingCargo, setIsAddingCargo] = useState(false);
   const [isAddingLider, setIsAddingLider] = useState(false);
@@ -858,12 +882,13 @@ export default function Config({
                   </p>
                   {/* Sub-abas */}
                   <div className="flex flex-wrap gap-1">
-                    {(['competencias', 'escalas', 'matriz', 'catalogo'] as const).map((tab) => {
+                    {(['competencias', 'escalas', 'matriz', 'catalogo', 'grupos-meta'] as const).map((tab) => {
                       const labels: Record<string, string> = {
                         competencias: 'Competências & Capacidades',
                         escalas: 'Escalas de Domínio',
                         matriz: 'Matriz por Cargo',
-                        catalogo: 'Catálogos'
+                        catalogo: 'Catálogos',
+                        'grupos-meta': 'Grupos de Meta',
                       };
                       return (
                         <button
@@ -1031,7 +1056,11 @@ export default function Config({
                                 onClick={() => {
                                   const nome = prompt('Nome do novo grau (ex.: "Especialista"):');
                                   if (!nome?.trim()) return;
-                                  const cor = prompt('Cor hex (ex.: #0d9488 — deixe em branco para padrão):') || '#94a3b8';
+                                  // Paleta de cores: nenhum usuário precisa digitar hex
+                                  const cores = ['#0d9488','#0891b2','#2563eb','#7c3aed','#db2777','#e11d48','#f97316','#eab308','#16a34a','#64748b','#1e293b','#94a3b8'];
+                                  const nomeCor = prompt(`Cor para o grau "${nome.trim()}"?\nOpções: teal, ciano, azul, violeta, rosa, vermelho, laranja, amarelo, verde, cinza-escuro, preto, cinza\n(ou deixe em branco para cinza)`);
+                                  const mapaCores: Record<string,string> = { teal:'#0d9488',ciano:'#0891b2',azul:'#2563eb',violeta:'#7c3aed',rosa:'#db2777',vermelho:'#e11d48',laranja:'#f97316',amarelo:'#eab308',verde:'#16a34a','cinza-escuro':'#1e293b',preto:'#1e293b',cinza:'#94a3b8' };
+                                  const cor = (nomeCor && mapaCores[nomeCor.toLowerCase().trim()]) || '#94a3b8';
                                   onSaveGrau?.({ id: `grau-${Date.now()}`, escalaId: escala.id, ordem: grausDaEscala.length, nome: nome.trim(), cor, ativo: true });
                                 }}
                                 className="flex items-center gap-1 text-[11px] font-semibold text-teal-600 hover:text-teal-700 cursor-pointer bg-white border border-dashed border-teal-200 rounded-lg px-3 py-1.5"
@@ -1325,7 +1354,9 @@ export default function Config({
                           onClick={() => {
                             const nome = prompt('Nome da nova gravidade (ex.: "Alta"):');
                             if (!nome?.trim()) return;
-                            const cor = prompt('Cor hex (ex.: #ef4444):') || '#94a3b8';
+                            const nomeCor = prompt(`Cor para "${nome.trim()}"?\nOpções: teal, ciano, azul, violeta, rosa, vermelho, laranja, amarelo, verde, cinza`);
+                            const mapaCoresGrav: Record<string,string> = { teal:'#0d9488',ciano:'#0891b2',azul:'#2563eb',violeta:'#7c3aed',rosa:'#db2777',vermelho:'#e11d48',laranja:'#f97316',amarelo:'#eab308',verde:'#16a34a',cinza:'#94a3b8' };
+                            const cor = (nomeCor && mapaCoresGrav[nomeCor.toLowerCase().trim()]) || '#94a3b8';
                             const setorEscolhido = prompt('Setor vinculado (vazio = compartilhada):');
                             const setor = setores.find(s => s.nome.toLowerCase() === (setorEscolhido || '').toLowerCase());
                             onSaveGravidadeOcorrencia?.({ id: `grav-${Date.now()}`, nome: nome.trim(), cor, ordem: gravidadesOcorrencia.length, ativo: true, setorId: setor?.id });
@@ -1344,6 +1375,190 @@ export default function Config({
                           </div>
                         ))}
                         {gravidadesOcorrencia.length === 0 && <p className="text-xs text-slate-400 text-center py-4 border-2 border-dashed border-slate-200 rounded-xl">Nenhuma gravidade cadastrada.</p>}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Sub-aba: Grupos de Meta */}
+                {trilhaSubTab === 'grupos-meta' && (
+                  <div className="space-y-4">
+                    <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-xs text-blue-700 flex items-start gap-2">
+                      <AlertCircle size={14} className="shrink-0 mt-0.5" />
+                      <span>
+                        Grupos de Meta permitem criar metas que englobam múltiplos tipos de interação.
+                        Ex.: "Feedback Positivo" pode contar Feedback + Conversa de Reconhecimento + Avaliação 180º ao mesmo tempo.
+                        Os grupos ficam disponíveis ao criar uma Meta de Liderança ou Meta por Setor.
+                      </span>
+                    </div>
+
+                    <div className="flex justify-end">
+                      <button
+                        onClick={() => {
+                          setGrupoEditando(null);
+                          setGrupoNome('');
+                          setGrupoCor(PALETA_CORES[0]);
+                          setGrupoTipos([]);
+                          setGrupoModalAberto(true);
+                        }}
+                        className="flex items-center gap-1.5 px-4 py-2 bg-teal-500 text-white rounded-xl text-xs font-bold hover:bg-teal-600 cursor-pointer"
+                      >
+                        <PlusCircle size={14} /> Novo Grupo de Meta
+                      </button>
+                    </div>
+
+                    <div className="space-y-2">
+                      {gruposMeta.map(grupo => (
+                        <div key={grupo.id} className="bg-white border border-slate-100 rounded-2xl p-4">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-4 h-4 rounded-full shrink-0" style={{ backgroundColor: grupo.cor }} />
+                              <div>
+                                <p className="font-bold text-slate-800 text-sm">{grupo.nome}</p>
+                                <p className="text-[11px] text-slate-400 mt-0.5">
+                                  {grupo.tiposInteracao.length} tipo(s) incluído(s)
+                                  {!grupo.ativo && <span className="ml-2 text-rose-500 font-bold">Inativo</span>}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={() => {
+                                  setGrupoEditando(grupo);
+                                  setGrupoNome(grupo.nome);
+                                  setGrupoCor(grupo.cor);
+                                  setGrupoTipos([...grupo.tiposInteracao]);
+                                  setGrupoModalAberto(true);
+                                }}
+                                className="text-slate-400 hover:text-teal-600 cursor-pointer p-1"
+                              >
+                                <Edit2 size={13} />
+                              </button>
+                              <button
+                                onClick={() => onDeleteGrupoMeta?.(grupo.id)}
+                                className="text-slate-400 hover:text-rose-500 cursor-pointer p-1"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap gap-1.5 mt-3">
+                            {grupo.tiposInteracao.map(tipo => (
+                              <span key={tipo} className="text-[10px] font-semibold px-2 py-1 rounded-lg" style={{ backgroundColor: grupo.cor + '20', color: grupo.cor }}>
+                                {tipo.replace(/_/g, ' ')}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                      {gruposMeta.length === 0 && (
+                        <div className="text-center py-10 border-2 border-dashed border-slate-200 rounded-2xl">
+                          <Target size={28} className="mx-auto text-slate-300 mb-2" />
+                          <p className="text-sm font-semibold text-slate-500">Nenhum Grupo de Meta criado ainda</p>
+                          <p className="text-xs text-slate-400 mt-1">Crie grupos para usar em Metas Liderança com múltiplos tipos de interação.</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* MODAL: Criar/Editar Grupo de Meta */}
+                {grupoModalAberto && (
+                  <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-3xl shadow-2xl max-w-lg w-full p-6 border border-slate-100 space-y-5 max-h-[90vh] overflow-y-auto">
+                      <div className="flex items-center justify-between">
+                        <h3 className="font-extrabold text-slate-900">{grupoEditando ? 'Editar Grupo de Meta' : 'Novo Grupo de Meta'}</h3>
+                        <button onClick={() => setGrupoModalAberto(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer font-bold text-2xl">&times;</button>
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Nome do Grupo *</label>
+                        <input
+                          value={grupoNome}
+                          onChange={e => setGrupoNome(e.target.value)}
+                          placeholder="Ex.: Feedback Positivo, Reconhecimento, Desenvolvimento..."
+                          className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Cor do Grupo</label>
+                        <div className="flex flex-wrap gap-2">
+                          {PALETA_CORES.map(cor => (
+                            <button
+                              key={cor}
+                              type="button"
+                              onClick={() => setGrupoCor(cor)}
+                              className={`w-8 h-8 rounded-full cursor-pointer transition-transform ${grupoCor === cor ? 'scale-125 ring-2 ring-offset-2 ring-slate-400' : 'hover:scale-110'}`}
+                              style={{ backgroundColor: cor }}
+                              title={cor}
+                            />
+                          ))}
+                        </div>
+                        <div className="flex items-center gap-2 mt-2">
+                          <div className="w-5 h-5 rounded-full" style={{ backgroundColor: grupoCor }} />
+                          <span className="text-xs text-slate-500">Cor selecionada: <strong>{grupoCor}</strong></span>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">
+                          Tipos de Interação incluídos *
+                        </label>
+                        <p className="text-[11px] text-slate-400 mb-2">Marque os tipos que devem contar para esta meta:</p>
+                        <div className="grid grid-cols-1 gap-1.5 max-h-52 overflow-y-auto pr-1">
+                          {([
+                            { id: 'feedback', nome: 'Feedback' },
+                            { id: 'avaliacao_180', nome: 'Avaliação 180°' },
+                            { id: 'avaliacao_bem_estar', nome: 'Avaliação Bem-estar' },
+                            { id: 'avaliacao_experiencia', nome: 'Avaliação Experiência' },
+                            { id: 'conversa_alinhamento', nome: 'Conversa de Alinhamento' },
+                            { id: 'conversa_disciplinar', nome: 'Conversa Disciplinar' },
+                            { id: 'conversa_informal', nome: 'Conversa Informal' },
+                            { id: 'conversa_desenvolvimento', nome: 'Conversa de Desenvolvimento' },
+                            { id: 'conversa_reconhecimento', nome: 'Conversa de Reconhecimento' },
+                            { id: 'onboarding', nome: 'Onboarding' },
+                            { id: 'pdiavaliacao_360', nome: 'PDI / Avaliação 360°' },
+                          ] as { id: TipoInteracao; nome: string }[]).map((tipo: { id: TipoInteracao; nome: string }) => {
+                            const marcado = grupoTipos.includes(tipo.id);
+                            return (
+                              <label key={tipo.id} className="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-slate-50 cursor-pointer text-xs font-medium text-slate-700">
+                                <input
+                                  type="checkbox"
+                                  checked={marcado}
+                                  onChange={() => setGrupoTipos(prev => marcado ? prev.filter(t => t !== tipo.id) : [...prev, tipo.id])}
+                                  className="w-4 h-4 text-teal-600 border-slate-300 rounded cursor-pointer"
+                                />
+                                {tipo.nome}
+                              </label>
+                            );
+                          })}
+                        </div>
+                        {grupoTipos.length > 0 && (
+                          <p className="text-[10px] text-teal-600 font-semibold mt-2">{grupoTipos.length} tipo(s) selecionado(s)</p>
+                        )}
+                      </div>
+
+                      <div className="flex gap-3 pt-1 border-t border-slate-100">
+                        <button type="button" onClick={() => setGrupoModalAberto(false)} className="flex-1 px-4 py-2.5 border border-slate-200 text-slate-600 bg-slate-50 rounded-xl text-sm font-semibold cursor-pointer hover:bg-slate-100">Cancelar</button>
+                        <button
+                          type="button"
+                          disabled={!grupoNome.trim() || grupoTipos.length === 0}
+                          onClick={() => {
+                            if (!grupoNome.trim() || grupoTipos.length === 0) return;
+                            onSaveGrupoMeta?.({
+                              id: grupoEditando?.id || `grupo-meta-${Date.now()}`,
+                              nome: grupoNome.trim(),
+                              cor: grupoCor,
+                              tiposInteracao: grupoTipos,
+                              ativo: true,
+                            });
+                            setGrupoModalAberto(false);
+                          }}
+                          className="flex-1 px-4 py-2.5 bg-teal-500 text-slate-950 font-bold rounded-xl text-sm cursor-pointer hover:bg-teal-400 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {grupoEditando ? 'Salvar Alterações' : 'Criar Grupo'}
+                        </button>
                       </div>
                     </div>
                   </div>

@@ -72,7 +72,6 @@ export default function Dashboard({
   const [avaliacaoAberta, setAvaliacaoAberta] = useState<LembreteAvaliacao | null>(null);
 
   const colaboradoresAtivos = colaboradores.filter((c) => c.situacao !== 'Desligado');
-  const colAcompanhamento = colaboradores.filter((c) => c.situacao === 'Em Acompanhamento');
   const tarefasPendentes = tarefas.filter((t) => !t.concluida);
   const tarefasAtrasadas = tarefasPendentes.filter((t) => new Date(t.vencimento) < HOJE);
 
@@ -140,11 +139,6 @@ export default function Dashboard({
             Tarefas pendentes {tarefasAtrasadas.length > 0 && `(${tarefasAtrasadas.length} atrasadas)`}
           </p>
         </button>
-        <div className="bg-white border border-slate-100 rounded-2xl p-4">
-          <AlertTriangle size={18} className="text-amber-500 mb-2" />
-          <p className="text-2xl font-extrabold text-slate-900">{colAcompanhamento.length}</p>
-          <p className="text-xs text-slate-400 font-semibold">Em acompanhamento</p>
-        </div>
         <div className="bg-white border border-slate-100 rounded-2xl p-4">
           <ClipboardCheck size={18} className="text-rose-500 mb-2" />
           <p className="text-2xl font-extrabold text-slate-900">{todosOsLembretes.length}</p>
@@ -239,32 +233,6 @@ export default function Dashboard({
                   </div>
                 );
               })}
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 gap-6">
-        {/* Colaboradores em acompanhamento */}
-        <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm">
-          <div className="flex items-center gap-2 mb-4">
-            <AlertTriangle size={18} className="text-amber-500" />
-            <h2 className="text-sm font-bold text-slate-800">Em acompanhamento</h2>
-          </div>
-          {colAcompanhamento.length === 0 ? (
-            <p className="text-xs text-slate-400">Nenhum colaborador em acompanhamento.</p>
-          ) : (
-            <div className="flex flex-col gap-2">
-              {colAcompanhamento.map((c) => (
-                <button
-                  key={c.id}
-                  onClick={() => onSelectColaborador(c.id)}
-                  className="flex items-center justify-between bg-amber-50/50 rounded-xl px-3 py-2.5 text-left hover:bg-amber-50 transition"
-                >
-                  <span className="text-xs font-bold text-slate-700">{c.nome}</span>
-                  <ArrowRight size={12} className="text-amber-500" />
-                </button>
-              ))}
             </div>
           )}
         </div>

@@ -390,6 +390,10 @@ export interface MetaLideranca {
   id: string;
   liderId: string;
   tipoInteracao: TipoInteracao;
+  // Se grupoId estiver preenchido, a meta conta todos os tiposInteracao do grupo
+  // (ver GrupoMeta). tipoInteracao é mantido por retrocompatibilidade mas pode
+  // ser ignorado quando grupoId está presente.
+  grupoId?: string;
   titulo: string;
   descricao: string;
   quantidadeMinima: number; // Meta mensal
@@ -401,6 +405,7 @@ export interface MetaSetor {
   id: string;
   setorId: string;
   tipoInteracao: TipoInteracao;
+  grupoId?: string;
   titulo: string;
   descricao: string;
   quantidadeMinima: number; // Meta mensal
@@ -417,6 +422,22 @@ export interface AcompanhamentoRealizado {
   data: string;
   descricao?: string;
   documentoId?: string; // Link para documento gerado
+}
+
+
+// ── Grupos de Meta (configurável em Configurações Gerais) ─────────────────
+// Um GrupoMeta agrupa múltiplos TipoInteracao sob um único nome de negócio
+// (ex.: "Feedback Positivo" engloba feedback, conversa_reconhecimento e
+// avaliacao_180). Ao criar uma meta, o gestor escolhe o Grupo — o sistema
+// conta todos os acompanhamentos cujo tipoInteracao esteja na lista do grupo.
+// Isso permite metas transversais sem precisar associar a um único tipo fixo.
+export interface GrupoMeta {
+  id: string;
+  nome: string;
+  cor: string; // código hex — escolhido via paleta no Config, nunca digitado
+  icone?: string; // nome de ícone Lucide (opcional — fallback para 'Target')
+  tiposInteracao: TipoInteracao[]; // lista dos tipos que contam para esta meta
+  ativo: boolean;
 }
 
 export interface ResumoMetas {

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-export type SituacaoColaborador = 'Ativo' | 'Em Acompanhamento' | 'Suspenso' | 'Desligado';
+export type SituacaoColaborador = 'Ativo' | 'Desligado';
 
 export interface Empresa {
   id: string;

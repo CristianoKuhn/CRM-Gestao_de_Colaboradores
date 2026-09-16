@@ -66,16 +66,25 @@ function ModalEvidencia({ colaborador, capacidades, competencias, tiposEvidencia
   const [situacaoObservada, setSituacaoObservada] = useState('');
   const [observacaoGestor, setObservacaoGestor] = useState('');
   const [data, setData] = useState(new Date().toISOString().split('T')[0]);
+  // Modo Certificado/Curso
+  const [isCertificado, setIsCertificado] = useState(false);
+  const [certCursoNome, setCertCursoNome] = useState('');
+  const [certInstituicao, setCertInstituicao] = useState('');
+  const [certCargaHoraria, setCertCargaHoraria] = useState<number | ''>('');
+  const [certDataConclusao, setCertDataConclusao] = useState('');
+  const [certUrl, setCertUrl] = useState('');
 
   const capsDaCompetencia = capacidades.filter(c => c.competenciaId === competenciaId);
   const grausDaEscala = graus.filter(g => g.escalaId === escalaId).sort((a, b) => a.ordem - b.ordem);
   const tipoSelecionado = tiposEvidencia.find(t => t.id === tipoEvidenciaId);
-  const ehTreinamento = tipoSelecionado?.contaComoTreinamento;
+  const ehTreinamento = isCertificado ? true : tipoSelecionado?.contaComoTreinamento;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!capacidadeId || !tipoEvidenciaId) return;
-    if (!ehTreinamento && !grauDemonstrado) return;
+    if (!capacidadeId) return;
+    if (!isCertificado && !tipoEvidenciaId) return;
+    if (!isCertificado && !ehTreinamento && !grauDemonstrado) return;
+    if (isCertificado && !certCursoNome.trim()) return;
     onSalvar({
       id: `ev-${Date.now()}`,
       entidadeTipo: 'capacidade',
@@ -83,16 +92,21 @@ function ModalEvidencia({ colaborador, capacidades, competencias, tiposEvidencia
       colaboradorId: colaborador.id,
       competenciaId: competenciaId || undefined,
       capacidadeId,
-      tipoEvidenciaId,
-      escalaId: escalaId || undefined,
-      grauDemonstrado: grauDemonstrado || undefined,
-      situacaoObservada: situacaoObservada || undefined,
-      observacaoGestor: observacaoGestor || undefined,
+      tipoEvidenciaId: isCertificado ? 'certificado' : tipoEvidenciaId,
+      escalaId: isCertificado ? undefined : (escalaId || undefined),
+      grauDemonstrado: isCertificado ? undefined : (grauDemonstrado || undefined),
+      situacaoObservada: isCertificado ? certCursoNome : (situacaoObservada || undefined),
+      observacaoGestor: isCertificado ? certInstituicao : (observacaoGestor || undefined),
       matrizVersaoId: versaoAtiva?.id,
-      data,
-      tipo: 'observacao',
+      data: isCertificado ? (certDataConclusao || data) : data,
+      tipo: isCertificado ? 'documento' : 'observacao',
+      url: isCertificado ? (certUrl || undefined) : undefined,
       status: 'pendente',
       anexadoPor: currentUserId,
+      certificadoCursoNome: isCertificado ? certCursoNome : undefined,
+      certificadoInstituicao: isCertificado ? (certInstituicao || undefined) : undefined,
+      certificadoCargaHoraria: isCertificado && certCargaHoraria !== '' ? Number(certCargaHoraria) : undefined,
+      certificadoDataConclusao: isCertificado ? (certDataConclusao || undefined) : undefined,
     });
   };
 
@@ -105,6 +119,24 @@ function ModalEvidencia({ colaborador, capacidades, competencias, tiposEvidencia
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Toggle: Observação ou Certificado/Curso */}
+          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
+            <button
+              type="button"
+              onClick={() => setIsCertificado(false)}
+              className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${!isCertificado ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+              Observação
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsCertificado(true)}
+              className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${isCertificado ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+              📄 Certificado / Curso
+            </button>
+          </div>
+
           {/* Competência → Capacidade */}
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -156,22 +188,59 @@ function ModalEvidencia({ colaborador, capacidades, competencias, tiposEvidencia
             </div>
           )}
 
+          {!isCertificado && (
           <div>
             <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Situação Observada</label>
             <textarea value={situacaoObservada} onChange={e => setSituacaoObservada(e.target.value)} rows={2} placeholder="Descreva a situação real observada..." className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-1 focus:ring-teal-500 resize-none" />
           </div>
+          )}
+          {!isCertificado && (
           <div>
             <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Observação do Gestor</label>
             <textarea value={observacaoGestor} onChange={e => setObservacaoGestor(e.target.value)} rows={2} placeholder="Contexto adicional (opcional)..." className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-1 focus:ring-teal-500 resize-none" />
           </div>
+          )}
+
+          {/* Campos de Certificado/Curso */}
+          {isCertificado && (
+            <div className="space-y-3 bg-blue-50 border border-blue-100 rounded-xl p-4">
+              <p className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">Dados do Certificado / Curso</p>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Nome do Curso / Certificação *</label>
+                <input required={isCertificado} value={certCursoNome} onChange={e => setCertCursoNome(e.target.value)} placeholder="Ex.: AWS Cloud Practitioner, CCNA, Curso de Fibra Óptica..." className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-1 focus:ring-teal-500 bg-white" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Instituição Emissora</label>
+                  <input value={certInstituicao} onChange={e => setCertInstituicao(e.target.value)} placeholder="Ex.: Udemy, Alura, Cisco..." className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-1 focus:ring-teal-500 bg-white" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Carga Horária (h)</label>
+                  <input type="number" min={1} value={certCargaHoraria} onChange={e => setCertCargaHoraria(e.target.value === '' ? '' : Number(e.target.value))} placeholder="Ex.: 40" className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-1 focus:ring-teal-500 bg-white" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Data de Conclusão</label>
+                  <input type="date" value={certDataConclusao} onChange={e => setCertDataConclusao(e.target.value)} className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-1 focus:ring-teal-500 bg-white" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Link do Certificado (URL)</label>
+                  <input type="url" value={certUrl} onChange={e => setCertUrl(e.target.value)} placeholder="https://..." className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-1 focus:ring-teal-500 bg-white" />
+                </div>
+              </div>
+              <p className="text-[10px] text-blue-600">→ Este certificado será marcado como "Treinado" na capacidade e ficará no histórico do colaborador.</p>
+            </div>
+          )}
+
           <div>
-            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Data</label>
-            <input type="date" value={data} onChange={e => setData(e.target.value)} className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-1 focus:ring-teal-500" />
+            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">{isCertificado ? 'Data de Conclusão do Curso' : 'Data'}</label>
+            <input type="date" value={isCertificado ? (certDataConclusao || data) : data} onChange={e => isCertificado ? setCertDataConclusao(e.target.value) : setData(e.target.value)} className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-1 focus:ring-teal-500" />
           </div>
 
           <div className="flex justify-end gap-3 pt-2 border-t border-slate-100">
             <button type="button" onClick={onFechar} className="px-4 py-2 border border-slate-200 text-slate-600 bg-slate-50 rounded-xl text-xs font-semibold cursor-pointer">Cancelar</button>
-            <button type="submit" className="px-5 py-2 bg-teal-500 text-slate-950 font-bold rounded-xl text-xs cursor-pointer hover:bg-teal-400">Registrar Evidência</button>
+            <button type="submit" className="px-5 py-2 bg-teal-500 text-slate-950 font-bold rounded-xl text-xs cursor-pointer hover:bg-teal-400">{isCertificado ? '📄 Registrar Certificado' : 'Registrar Evidência'}</button>
           </div>
         </form>
       </div>

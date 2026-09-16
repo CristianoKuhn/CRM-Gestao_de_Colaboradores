@@ -43,7 +43,7 @@ export default function Tarefas({
   const HOJE = new Date();
 
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterStatus, setFilterStatus] = useState<'Todas' | 'Pendentes' | 'Concluídas' | 'Atrasadas'>('Todas');
+  const [filterStatus, setFilterStatus] = useState<'Todas' | 'Pendentes' | 'Concluídas' | 'Atrasadas'>('Pendentes');
 
   // Form de Nova Tarefa / Edição de Tarefa (o mesmo formulário serve para os
   // dois casos — "editingTarefaId" preenchido indica que estamos editando).

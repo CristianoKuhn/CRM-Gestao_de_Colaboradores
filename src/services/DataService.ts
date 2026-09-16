@@ -81,6 +81,7 @@ import {
   PerfilCapacidade,
   Ocorrencia,
   GravidadeOcorrencia,
+  GrupoMeta,
   ProjecaoProntidao,
   ResultadoMudancaEstadoOcorrencia,
   EscalaDominio,
@@ -642,6 +643,9 @@ export interface IDataService {
   saveTipoEvidencia?(tipo: TipoEvidenciaCapacidade): Promise<void>;
   getGravidadesOcorrencia?(setorId?: string): Promise<GravidadeOcorrencia[]>;
   saveGravidadeOcorrencia?(grav: GravidadeOcorrencia): Promise<void>;
+  getGruposMeta?(): Promise<GrupoMeta[]>;
+  saveGrupoMeta?(grupo: GrupoMeta): Promise<void>;
+  deleteGrupoMeta?(id: string): Promise<void>;
   validarEvidencia(id: string, validadoPor?: string): Promise<void>;
   rejeitarEvidencia(id: string, validadoPor?: string): Promise<void>;
 
@@ -1430,6 +1434,9 @@ export class LocalDataService implements IDataService {
   async saveTipoEvidencia(_t: TipoEvidenciaCapacidade): Promise<void> {}
   async getGravidadesOcorrencia(_setorId?: string): Promise<GravidadeOcorrencia[]> { return []; }
   async saveGravidadeOcorrencia(_g: GravidadeOcorrencia): Promise<void> {}
+  async getGruposMeta(): Promise<GrupoMeta[]> { return []; }
+  async saveGrupoMeta(_g: GrupoMeta): Promise<void> {}
+  async deleteGrupoMeta(_id: string): Promise<void> {}
   async validarEvidencia(id: string, validadoPor?: string): Promise<void> {
     const evidencia = itensLocalGetArray<Evidencia>('evidencias').find((e) => e.id === id);
     if (evidencia) {
@@ -5259,6 +5266,9 @@ class DynamicDataService implements IDataService {
   async saveTipoEvidencia(tipo: TipoEvidenciaCapacidade): Promise<void> { await this.getService().saveTipoEvidencia?.(tipo); }
   async getGravidadesOcorrencia(setorId?: string): Promise<GravidadeOcorrencia[]> { return this.getService().getGravidadesOcorrencia?.(setorId) ?? []; }
   async saveGravidadeOcorrencia(grav: GravidadeOcorrencia): Promise<void> { await this.getService().saveGravidadeOcorrencia?.(grav); }
+  async getGruposMeta(): Promise<GrupoMeta[]> { return this.getService().getGruposMeta?.() ?? []; }
+  async saveGrupoMeta(grupo: GrupoMeta): Promise<void> { await this.getService().saveGrupoMeta?.(grupo); }
+  async deleteGrupoMeta(id: string): Promise<void> { await this.getService().deleteGrupoMeta?.(id); }
 
   // ── Motor de Desenvolvimento de Colaboradores — Perfil (Aggregate Root) ──
   async getPerfilCompetencias(colaboradorId: string): Promise<PerfilCompetencia[]> {

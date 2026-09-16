@@ -37,8 +37,6 @@ import LinhaDoTempoInteligente from './LinhaDoTempoInteligente';
 import HistoricoInstancias from '../features/formularios/components/HistoricoInstancias';
 import CentralDocumentos from './CentralDocumentos';
 import AnexoPreviewModal, { ArquivoParaPreview } from './AnexoPreviewModal';
-import JornadaColaboradorPanel from '../features/desenvolvimento-colaboradores/JornadaColaboradorPanel';
-import PerfilCompetenciasPanel from '../features/desenvolvimento-colaboradores/PerfilCompetenciasPanel';
 import InsightsPanel from '../features/desenvolvimento-colaboradores/InsightsPanel';
 import PainelDesenvolvimento from '../features/desenvolvimento-colaboradores/PainelDesenvolvimento';
 import {
@@ -203,25 +201,11 @@ export default function ColaboradorProfile({
   // Referências para "levar até" a seção certa quando um Insight é aceito
   // (ver InsightsPanel) — evita que aceitar/recusar um Insight seja uma ação
   // sem efeito visível para quem está usando o sistema.
-  const perfilCompetenciasRef = useRef<HTMLDivElement>(null);
-  const jornadaRef = useRef<HTMLDivElement>(null);
-  const [highlightCompetenciaId, setHighlightCompetenciaId] = useState<string | undefined>(undefined);
 
   // Preview de anexos/documentos sem sair da plataforma (imagem inline ou
   // PDF/documento embutido via Drive) — usado tanto pelos anexos da timeline
   // quanto pela Central de Documentos deste colaborador, logo abaixo.
   const [anexoEmPreview, setAnexoEmPreview] = useState<ArquivoParaPreview | null>(null);
-
-  const handleFocarCompetencia = (competenciaId?: string) => {
-    if (!competenciaId) return;
-    setHighlightCompetenciaId(competenciaId);
-    perfilCompetenciasRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    window.setTimeout(() => setHighlightCompetenciaId(undefined), 4000);
-  };
-
-  const handleFocarJornada = () => {
-    jornadaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  };
 
   // Conclusão de Tarefa com relato obrigatório: quando chegamos aqui vindos
   // de "Tarefas de Liderança" com uma tarefa para concluir, abre o formulário
@@ -907,19 +891,7 @@ export default function ColaboradorProfile({
           <InsightsPanel
             colaboradorId={colaborador.id}
             currentUser={currentUser}
-            onFocarCompetencia={handleFocarCompetencia}
-            onFocarJornada={handleFocarJornada}
           />
-          <div ref={jornadaRef}>
-            <JornadaColaboradorPanel colaboradorId={colaborador.id} currentUser={currentUser} />
-          </div>
-          <div ref={perfilCompetenciasRef}>
-            <PerfilCompetenciasPanel
-              colaboradorId={colaborador.id}
-              currentUser={currentUser}
-              highlightCompetenciaId={highlightCompetenciaId}
-            />
-          </div>
 
           {/* Timeline Action Bar */}
           <div className="bg-white border border-slate-100 p-4 rounded-2xl shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">

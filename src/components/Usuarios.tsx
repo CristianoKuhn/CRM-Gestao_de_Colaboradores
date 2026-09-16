@@ -37,9 +37,16 @@ import {
 // delas hoje é sempre "só Administrador", independente do que for marcado
 // aqui. Mantê-las no checklist deixaria o Administrador achando que está
 // controlando algo que na verdade não tem mais efeito nenhum.
+// Dashboards que aparecem no checklist de "habilitar/desabilitar" no cadastro de usuário.
+// 'usuarios' fica fora pois já é controlado pelo perfil (Administrador only).
+// 'config' entra — um Administrador pode querer dar acesso a Configurações para outro Administrador,
+// ou ocultar de coordenadores que não precisam ver essa tela.
 const DASHBOARDS_CONFIGURAVEIS = DASHBOARDS_SELECIONAVEIS.filter(
-  (d) => d.id !== 'usuarios' && d.id !== 'config'
+  (d) => d.id !== 'usuarios' && d.id !== 'desenvolvimento-biblioteca' && d.id !== 'desenvolvimento-programas'
 );
+
+// Dashboards marcados por padrão para Administradores (tudo, incluindo Config)
+const DASHBOARDS_ADMINISTRADOR_PADRAO = DASHBOARDS_CONFIGURAVEIS.map(d => d.id);
 
 // Extrai uma mensagem de erro legível tanto de um Error "de verdade" quanto de
 // qualquer outra coisa lançada — o backend agora recusa ações de propósito
@@ -668,7 +675,14 @@ export default function Usuarios({
                   <select
                     disabled={isSaving}
                     value={perfil}
-                    onChange={(e) => setPerfil(e.target.value as Usuario['perfil'])}
+                    onChange={(e) => {
+                      const novoPerfil = e.target.value as Usuario['perfil'];
+                      setPerfil(novoPerfil);
+                      // Ao selecionar Administrador, habilitar automaticamente todos os dashboards
+                      if (novoPerfil === 'Administrador') {
+                        setDashboardsHabilitados(DASHBOARDS_ADMINISTRADOR_PADRAO);
+                      }
+                    }}
                     className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 focus:bg-white focus:ring-2 focus:ring-teal-500/15 focus:border-teal-500 outline-none rounded-2xl text-xs transition cursor-pointer disabled:opacity-50"
                   >
                     <option value="Administrador">Administrador</option>

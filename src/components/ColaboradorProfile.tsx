@@ -760,9 +760,7 @@ export default function ColaboradorProfile({
                 className="px-2.5 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 cursor-pointer focus:outline-none focus:ring-1 focus:ring-teal-500"
               >
                 <option value="Ativo">Ativo</option>
-                <option value="Em Acompanhamento">Em Acompanhamento</option>
-                <option value="Suspenso">Suspenso</option>
-                <option value="Desligado">Desligado</option>
+                        <option value="Desligado">Desligado</option>
               </select>
             </div>
           </div>

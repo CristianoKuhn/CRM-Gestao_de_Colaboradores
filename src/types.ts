@@ -1415,6 +1415,15 @@ export interface Evidencia {
   situacaoObservada?: string;
   observacaoGestor?: string;
   matrizVersaoId?: string;
+  // ── Certificado / Curso ───────────────────────────────────────────────
+  // Quando a evidência é um certificado de conclusão de curso, estes campos
+  // ficam preenchidos. O arquivo em si é armazenado como driveFileId (link
+  // do Drive ou URL pública do certificado). Ficam visíveis no histórico
+  // do colaborador junto com todas as outras evidências registradas.
+  certificadoCursoNome?: string;   // nome do curso/certificação
+  certificadoInstituicao?: string; // instituição emissora
+  certificadoCargaHoraria?: number; // carga horária em horas
+  certificadoDataConclusao?: string; // data de conclusão (ISO)
 }
 
 // ── Perfil de Capacidade — cache derivado (Etapa 2) ───────────────────────

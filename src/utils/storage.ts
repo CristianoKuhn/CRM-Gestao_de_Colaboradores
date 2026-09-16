@@ -413,16 +413,10 @@ const DEFAULT_CONFIG_RECONHECIMENTO: ConfiguracaoReconhecimento = {
 const SEED_RECONHECIMENTOS: Reconhecimento[] = [];
 
 // ========== P5: METAS SEED ==========
-const SEED_METAS_LIDERANCA: MetaLideranca[] = [
-  { id: 'meta-lid-1', liderId: 'lid-1', tipoInteracao: 'feedback', titulo: 'Feedbacks Mensais', descricao: 'Realizar no mínimo 4 feedbacks por mês', quantidadeMinima: 4, periodo: 'mensal', ativo: true },
-  { id: 'meta-lid-2', liderId: 'lid-1', tipoInteracao: 'conversa_alinhamento', titulo: 'Conversas de Alinhamento', descricao: 'No mínimo 2 conversas de alinhamento por mês', quantidadeMinima: 2, periodo: 'mensal', ativo: true },
-  { id: 'meta-lid-3', liderId: 'lid-2', tipoInteracao: 'conversa_desenvolvimento', titulo: 'Conversas de Desenvolvimento', descricao: 'Realizar 2 conversas de desenvolvimento por mês', quantidadeMinima: 2, periodo: 'mensal', ativo: true },
-];
+// Seeds de metas removidas — as metas são criadas pelo gestor, não pré-preenchidas.
+const SEED_METAS_LIDERANCA: MetaLideranca[] = [];
 
-const SEED_METAS_SETOR: MetaSetor[] = [
-  { id: 'meta-set-1', setorId: 'set-1', tipoInteracao: 'feedback', titulo: 'Feedbacks por Setor Tech', descricao: 'Mínimo de 8 feedbacks no setor de TI por mês', quantidadeMinima: 8, periodo: 'mensal', ativo: true },
-  { id: 'meta-set-2', setorId: 'set-2', tipoInteracao: 'conversa_informal', titulo: 'Check-ins Informais', descricao: 'Mínimo de 12 check-ins informais por setor por mês', quantidadeMinima: 12, periodo: 'mensal', ativo: true },
-];
+const SEED_METAS_SETOR: MetaSetor[] = [];
 
 const SEED_ACOMPANHAMENTOS: AcompanhamentoRealizado[] = [];
 

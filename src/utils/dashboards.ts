@@ -25,8 +25,6 @@ export const DASHBOARDS_SELECIONAVEIS: DashboardSelecionavel[] = [
   { id: 'reconhecimento', label: 'Reconhecimento' },
   { id: 'metas', label: 'Metas Liderança' },
   { id: 'analytics', label: 'Analytics & PDIs' },
-  { id: 'desenvolvimento-biblioteca', label: 'Biblioteca de Desenvolvimento' },
-  { id: 'desenvolvimento-programas', label: 'Programas de Desenvolvimento' },
   { id: 'desenvolvimento-indicadores', label: 'Indicadores de Desenvolvimento' },
   { id: 'config', label: 'Configurações Gerais' },
 ];

@@ -25,23 +25,21 @@ export const DASHBOARDS_SELECIONAVEIS: DashboardSelecionavel[] = [
   { id: 'reconhecimento', label: 'Reconhecimento' },
   { id: 'metas', label: 'Metas Liderança' },
   { id: 'analytics', label: 'Analytics & PDIs' },
-  { id: 'desenvolvimento-indicadores', label: 'Indicadores de Desenvolvimento' },
   { id: 'config', label: 'Configurações Gerais' },
 ];
 
 // ── Security Audit (Fase 1, V07) ────────────────────────────────────────
-// "usuarios" (Gerenciar Usuários) e "config" (Configurações Gerais, que
-// inclui o botão de Reset de Dados) são telas ADMINISTRATIVAS, não
-// dashboards de conteúdo — nunca deveriam entrar na mesma lista "opt-out"
-// abaixo, cujo padrão é "tudo visível se nada foi configurado". Isso
-// permitia que qualquer usuário recém-criado, sem nenhuma configuração
-// explícita, enxergasse essas telas por padrão. Elas agora exigem perfil
-// Administrador SEMPRE, independente de `dashboardsHabilitados`.
-//
-// IMPORTANTE: isto é só uma trava de UI (esconder o item de menu). A
-// autorização de verdade tem que estar no backend (ver Security Audit,
-// seção E) — esconder o botão nunca é suficiente sozinho.
-const DASHBOARDS_SOMENTE_ADMINISTRADOR = new Set(['usuarios', 'config']);
+// "usuarios" (Gerenciar Usuários) continua SEMPRE exclusivo de Administrador
+// — gerenciar outras contas e permissões é sensível demais para ser
+// delegável. "config" (Configurações Gerais) NÃO é mais admin-only: o
+// próprio Administrador decide, pelo checklist de "Dashboards Habilitados"
+// em Gerenciar Usuários, se um Coordenador/Líder específico pode acessar
+// Configurações Gerais (útil para quem administra a Trilha & Matriz do
+// próprio setor, por exemplo, sem precisar virar Administrador do sistema
+// inteiro). As ações realmente sensíveis dentro de Config (reset de dados,
+// gerenciar Empresas/Setores/Cargos) continuam exigindo Administrador no
+// backend mesmo assim — esta liberação é só de VISIBILIDADE da tela.
+const DASHBOARDS_SOMENTE_ADMINISTRADOR = new Set(['usuarios']);
 
 // Regra central de visibilidade: "dashboard" é sempre visível; os itens
 // administrativos exigem perfil Administrador; os demais dependem da lista

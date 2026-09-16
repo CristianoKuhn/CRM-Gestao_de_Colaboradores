@@ -11,16 +11,11 @@ import {
   CheckSquare,
   BarChart3,
   Settings,
-  RefreshCw,
   TrendingUp,
   UserCog,
   FolderOpen,
   Trophy,
   Target,
-  Award,
-  GraduationCap,
-  ClipboardList,
-  BarChart3 as BarChart3Dev,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -32,6 +27,15 @@ interface SidebarProps {
   currentUser: Usuario | null;
   onLogout: () => void;
 }
+
+// IDs de dashboards que foram removidos do produto mas podem ainda estar
+// gravados no campo dashboardsHabilitados de usuários existentes no banco.
+// Garantimos que NUNCA aparecem no menu, independente do que estiver salvo.
+const IDS_REMOVIDOS = new Set([
+  'desenvolvimento-biblioteca',
+  'desenvolvimento-programas',
+  'desenvolvimento-indicadores',
+]);
 
 export default function Sidebar({
   activeTab,
@@ -52,9 +56,15 @@ export default function Sidebar({
     { id: 'reconhecimento', label: 'Reconhecimento', icon: Trophy },
     { id: 'metas', label: 'Metas Liderança', icon: Target },
     { id: 'analytics', label: 'Analytics & PDIs', icon: BarChart3 },
-    { id: 'desenvolvimento-indicadores', label: 'Indicadores de Desenvolvimento', icon: BarChart3Dev },
     { id: 'config', label: 'Configurações Gerais', icon: Settings },
-  ].filter((item) => dashboardVisivelParaUsuario(item.id, currentUser?.dashboardsHabilitados, currentUser?.perfil));
+  ].filter(
+    (item) =>
+      // Bloqueia explicitamente ids removidos antes de qualquer outra checagem —
+      // assim, mesmo que o campo dashboardsHabilitados do usuário no banco ainda
+      // contenha esses ids antigos, eles nunca vão aparecer no menu.
+      !IDS_REMOVIDOS.has(item.id) &&
+      dashboardVisivelParaUsuario(item.id, currentUser?.dashboardsHabilitados, currentUser?.perfil)
+  );
 
   return (
     <aside id="sidebar-container" className="w-64 bg-slate-900 text-slate-100 flex flex-col border-r border-slate-800 shrink-0 h-screen sticky top-0">

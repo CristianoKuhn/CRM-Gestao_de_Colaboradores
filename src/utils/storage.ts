@@ -152,7 +152,7 @@ const SEED_COLABORADORES: Colaborador[] = [
     setorId: 'set-3',
     liderId: 'lid-3',
     dataAdmissao: '2025-05-20',
-    situacao: 'Em Acompanhamento',
+    situacao: 'Ativo',
     empresaId: 'emp-1',
     telefone: '(11) 98888-3333',
     cidadeBase: 'Rio de Janeiro - RJ',

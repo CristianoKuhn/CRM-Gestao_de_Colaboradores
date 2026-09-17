@@ -946,8 +946,22 @@ export default function App() {
   const lideresSupervisionados = currentUser?.lideresSupervisionados || [];
   const temHierarquiaConfigurada = lideresSupervisionados.length > 0;
 
+  // Acesso global de DADOS (colaboradores, timeline, tarefas, alertas, documentos):
+  //   • Administrador SEM setoresPermitidos configurados → enxerga tudo (comportamento anterior).
+  //   • Administrador COM setoresPermitidos → vê apenas os setores marcados (novo comportamento,
+  //     permite que um Admin de departamento não enxergue dados de outros departamentos).
+  //   • Supervisor → sempre global (papel de auditoria/segurança).
+  //   • Coordenador sem hierarquia → global; com hierarquia → restrito à hierarquia.
+  //
+  // IMPORTANTE: o acesso global de DADOS é independente das AÇÕES administrativas
+  // (gerenciar usuários, reset, configurações) — essas continuam exigindo perfil
+  // Administrador no backend, independente do escopo de visibilidade configurado aqui.
+  const admSemRestricao =
+    currentUser?.perfil === 'Administrador' &&
+    !currentUser?.setoresPermitidos?.length;
+
   const acessoGlobal =
-    currentUser?.perfil === 'Administrador' ||
+    admSemRestricao ||
     currentUser?.perfil === 'Supervisor' ||
     (currentUser?.perfil === 'Coordenador' && !temHierarquiaConfigurada);
 

@@ -425,7 +425,9 @@ export interface MetaLideranca {
 
 export interface MetaSetor {
   id: string;
-  setorId: string;
+  setorId: string;     // mantido por retrocompatibilidade — primeiro setor da lista
+  setorIds?: string[]; // múltiplos setores: a meta cobre todos simultaneamente.
+                       // Quando preenchido, setorId = setorIds[0] (o principal).
   tipoInteracao: TipoInteracao;
   grupoId?: string;
   titulo: string;

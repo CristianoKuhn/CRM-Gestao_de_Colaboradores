@@ -136,7 +136,12 @@ export default function Usuarios({
     setEditingUsuario(usuario);
     setNome(usuario.nome);
     setEmail(usuario.email);
-    setSenhaHash(usuario.senha_hash || '');
+    // NUNCA pré-preencher o campo de senha ao editar — o backend nunca retorna
+    // o hash real (sanitizarUsuario_ o omite por segurança), então o campo
+    // deve ficar vazio. O admin só preenche se quiser REDEFINIR a senha.
+    // Quando o campo permanece vazio ao salvar, o backend preserva a senha
+    // existente (ver saveUsuario no Codigo.gs).
+    setSenhaHash('');
     setPerfil(usuario.perfil);
     setSetoresPermitidos(
       usuario.setoresPermitidos?.length
@@ -164,18 +169,24 @@ export default function Usuarios({
     setIsSaving(true);
     setFormError(null);
     try {
-      const senhaFoiAlteradaPeloAdmin = senhaHash.trim().length > 0 && senhaHash.trim() !== (editingUsuario?.senha_hash || '');
+      // Admin digitou algo no campo de senha → quer redefinir.
+      // Campo vazio → não mexeu na senha, backend deve preservar a existente.
+      const adminRedefinindoSenha = senhaHash.trim().length > 0;
+
       const userData: Usuario = {
         id: editingUsuario ? editingUsuario.id : `usu-${Date.now()}`,
         nome: nome.trim(),
         email: email.trim().toLowerCase(),
-        senha_hash: senhaHash.trim(),
-        // Usuário novo, ou senha alterada/definida pelo Administrador nesta
-        // edição: força a troca no próximo login. Se o admin editou o
-        // cadastro sem mexer na senha, preserva o valor que já existia.
+        // Só envia senha_hash se o admin digitou algo novo.
+        // Quando vazio, o backend (saveUsuario no Codigo.gs) detecta o campo
+        // ausente/vazio e preserva o hash+salt já gravados na planilha.
+        senha_hash: adminRedefinindoSenha ? senhaHash.trim() : '',
+        // Força troca no 1º login apenas para usuário novo OU quando o admin
+        // redefiniu a senha explicitamente. Edições de perfil/setor/dashboards
+        // sem tocar na senha NÃO devem forçar troca.
         senha_provisoria: !editingUsuario
           ? true
-          : senhaFoiAlteradaPeloAdmin
+          : adminRedefinindoSenha
             ? true
             : editingUsuario.senha_provisoria ?? false,
         perfil,
@@ -662,7 +673,9 @@ export default function Usuarios({
                     disabled={isSaving}
                     value={senhaHash}
                     onChange={(e) => setSenhaHash(e.target.value)}
-                    placeholder={editingUsuario ? '••••••••' : 'Inserir senha'}
+                    placeholder={editingUsuario
+                      ? 'Deixe vazio para manter a senha atual'
+                      : 'Inserir senha inicial'}
                     className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 focus:bg-white focus:ring-2 focus:ring-teal-500/15 focus:border-teal-500 outline-none rounded-2xl text-xs transition disabled:opacity-50"
                   />
                 </div>

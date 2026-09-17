@@ -2938,18 +2938,42 @@ export class GoogleScriptDataService implements IDataService {
   async getMetasSetor(): Promise<MetaSetor[]> {
     try {
       const raw = await this.request<any[]>('getMetasSetor');
-      return (raw || []).map((m) => ({
-        id: m.id, setorId: m.setor_id, tipoInteracao: m.tipo_interacao,
-        grupoId: m.grupo_id || undefined, titulo: m.titulo, descricao: m.descricao || '',
-        quantidadeMinima: Number(m.quantidade_minima) || 0, periodo: m.periodo, ativo: m.ativo === true || m.ativo === 'true',
-      }));
+      return (raw || []).map((m) => {
+        // Ler setorIds do banco (campo setor_ids, serializado como JSON)
+        let setorIds: string[] | undefined;
+        try {
+          setorIds = m.setor_ids ? JSON.parse(m.setor_ids) : undefined;
+        } catch { setorIds = undefined; }
+        return {
+          id: m.id,
+          setorId: m.setor_id,
+          setorIds: setorIds || undefined,
+          tipoInteracao: m.tipo_interacao,
+          grupoId: m.grupo_id || undefined,
+          titulo: m.titulo,
+          descricao: m.descricao || '',
+          quantidadeMinima: Number(m.quantidade_minima) || 0,
+          periodo: m.periodo,
+          ativo: m.ativo === true || m.ativo === 'true',
+        };
+      });
     } catch (e) { return this.localFallback.getMetasSetor(); }
   }
   async saveMetaSetor(meta: MetaSetor): Promise<void> {
+    // setorId = primeiro setor (retrocompatibilidade); setor_ids = JSON dos múltiplos
+    const setorIdPrincipal = meta.setorIds?.length ? meta.setorIds[0] : meta.setorId;
     try {
       await this.request('saveMetaSetor', { data: {
-        id: meta.id, setor_id: meta.setorId, tipo_interacao: meta.tipoInteracao, grupo_id: meta.grupoId || '',
-        titulo: meta.titulo, descricao: meta.descricao || '', quantidade_minima: meta.quantidadeMinima, periodo: meta.periodo, ativo: meta.ativo,
+        id: meta.id,
+        setor_id: setorIdPrincipal,
+        setor_ids: meta.setorIds ? JSON.stringify(meta.setorIds) : '',
+        tipo_interacao: meta.tipoInteracao,
+        grupo_id: meta.grupoId || '',
+        titulo: meta.titulo,
+        descricao: meta.descricao || '',
+        quantidade_minima: meta.quantidadeMinima,
+        periodo: meta.periodo,
+        ativo: meta.ativo,
       } });
     } catch (e) { console.warn('saveMetaSetor falhou, usando fallback local:', e); await this.localFallback.saveMetaSetor(meta); }
   }

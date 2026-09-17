@@ -1295,9 +1295,11 @@ export default function App() {
               metasLideranca={metasLideranca}
               metasSetor={metasSetor}
               acompanhamentos={acompanhamentos}
+              timeline={timelineVisivel}
+              tarefas={tarefasVisiveis}
               lideres={lideres}
-              setores={setores}
-              colaboradores={colaboradores}
+              setores={setoresVisiveis}
+              colaboradores={colaboradoresVisiveis}
               currentUserId={currentUser?.id || ''}
               gruposMeta={gruposMeta}
               onSaveMetaLideranca={handleSaveMetaLideranca}

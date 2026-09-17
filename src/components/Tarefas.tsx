@@ -44,6 +44,17 @@ export default function Tarefas({
 
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<'Todas' | 'Pendentes' | 'Concluídas' | 'Atrasadas'>('Pendentes');
+  const [filterCidade, setFilterCidade] = useState('');
+
+  // Cidades únicas derivadas dos colaboradores vinculados — aparece o filtro
+  // apenas quando há mais de uma cidade distinta (comportamento igual a Colaboradores).
+  const cidadesUnicas = Array.from(
+    new Set(
+      colaboradores
+        .map((c) => c.cidadeBase?.trim())
+        .filter((c): c is string => !!c)
+    )
+  ).sort((a, b) => a.localeCompare(b, 'pt-BR'));
 
   // Form de Nova Tarefa / Edição de Tarefa (o mesmo formulário serve para os
   // dois casos — "editingTarefaId" preenchido indica que estamos editando).
@@ -124,7 +135,12 @@ export default function Tarefas({
       matchesStatus = isAtrasada;
     }
 
-    return matchesSearch && matchesStatus;
+    // Filtro por Cidade Base: encontra o colaborador da tarefa e compara a cidade.
+    const matchesCidade = filterCidade
+      ? colaboradores.find((c) => c.id === task.colaboradorId)?.cidadeBase?.trim().toLowerCase() === filterCidade.toLowerCase()
+      : true;
+
+    return matchesSearch && matchesStatus && matchesCidade;
   });
 
   const handleSubmitTarefa = (e: React.FormEvent) => {
@@ -310,20 +326,35 @@ export default function Tarefas({
         </div>
 
         {/* Filter categories tabs */}
-        <div className="flex bg-slate-100 p-1 rounded-xl">
-          {(['Todas', 'Pendentes', 'Atrasadas', 'Concluídas'] as const).map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setFilterStatus(tab)}
-              className={`px-4 py-1.5 rounded-lg text-xs font-bold cursor-pointer transition ${
-                filterStatus === tab
-                  ? 'bg-white text-slate-950 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-850'
-              }`}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex bg-slate-100 p-1 rounded-xl">
+            {(['Todas', 'Pendentes', 'Atrasadas', 'Concluídas'] as const).map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setFilterStatus(tab)}
+                className={`px-4 py-1.5 rounded-lg text-xs font-bold cursor-pointer transition ${
+                  filterStatus === tab
+                    ? 'bg-white text-slate-950 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-850'
+                }`}
+              >
+                {tab}
+              </button>
+            ))}
+          </div>
+
+          {cidadesUnicas.length > 1 && (
+            <select
+              value={filterCidade}
+              onChange={(e) => setFilterCidade(e.target.value)}
+              className="px-3 py-1.5 bg-slate-100 border-0 rounded-xl text-xs font-semibold text-slate-600 focus:outline-none focus:ring-2 focus:ring-teal-500/20 cursor-pointer"
             >
-              {tab}
-            </button>
-          ))}
+              <option value="">Todas as Cidades</option>
+              {cidadesUnicas.map((cidade) => (
+                <option key={cidade} value={cidade}>{cidade}</option>
+              ))}
+            </select>
+          )}
         </div>
       </div>
 
@@ -407,7 +438,12 @@ export default function Tarefas({
                               alt={col.nome}
                               className="w-6 h-6 rounded-full object-cover border border-slate-100"
                             />
-                            <p className="font-semibold text-slate-700 truncate max-w-[120px]">{col.nome}</p>
+                            <div>
+                              <p className="font-semibold text-slate-700 truncate max-w-[140px]">{col.nome}</p>
+                              {col.cidadeBase && (
+                                <p className="text-[10px] text-slate-400 truncate max-w-[140px]">{col.cidadeBase}</p>
+                              )}
+                            </div>
                           </div>
                         )}
                       </td>

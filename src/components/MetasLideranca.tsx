@@ -108,7 +108,6 @@ export default function MetasLideranca({
   const [editMeta, setEditMeta] = useState<MetaLideranca | MetaSetor | null>(null);
   const [formData, setFormData] = useState({
     tipoInteracao: 'feedback' as TipoInteracao,
-    // grupoId: quando configurado, a meta usa um grupo (múltiplos tipos) em vez de um único tipo
     grupoId: '' as string,
     titulo: '',
     descricao: '',
@@ -116,6 +115,7 @@ export default function MetasLideranca({
     periodo: 'mensal' as 'mensal' | 'trimestral' | 'semestral',
     liderId: '',
     setorId: '',
+    setorIds: [] as string[], // múltiplos setores para Meta por Setor
   });
 
   // ─── Núcleo do Motor de Metas ────────────────────────────────────────────
@@ -212,11 +212,14 @@ export default function MetasLideranca({
       const realizado = interacoesDoPeriodo.filter((i) => {
         if (!tiposValidos.includes(i.tipoInteracao)) return false;
         if (isMetaLider) {
-          // Meta por líder: conta APENAS interações onde o responsável é esse líder
           return i.liderId === tipoId;
         } else {
-          // Meta por setor: conta TODAS as interações com colaboradores desse setor
-          return i.setorId === tipoId;
+          // Meta por setor: conta interações em QUALQUER dos setores da lista
+          const metaSetor = meta as MetaSetor;
+          const setoresAlvo: string[] = metaSetor.setorIds?.length
+            ? metaSetor.setorIds
+            : [metaSetor.setorId];
+          return setoresAlvo.includes(i.setorId);
         }
       }).length;
 
@@ -251,6 +254,7 @@ export default function MetasLideranca({
       periodo: 'mensal',
       liderId: tipo === 'lider' ? lideres[0]?.id || '' : '',
       setorId: tipo === 'setor' ? setores[0]?.id || '' : '',
+      setorIds: tipo === 'setor' ? (setores[0] ? [setores[0].id] : []) : [],
     });
     setShowMetaModal(true);
   };
@@ -267,6 +271,9 @@ export default function MetasLideranca({
       periodo: meta.periodo,
       liderId: 'liderId' in meta ? meta.liderId : '',
       setorId: 'setorId' in meta ? meta.setorId : '',
+      setorIds: 'setorIds' in meta && (meta as any).setorIds?.length
+        ? (meta as any).setorIds
+        : 'setorId' in meta && meta.setorId ? [meta.setorId] : [],
     });
     setShowMetaModal(true);
   };
@@ -288,9 +295,11 @@ export default function MetasLideranca({
       };
       onSaveMetaLideranca(meta);
     } else {
+      const setorIdPrincipal = formData.setorIds.length > 0 ? formData.setorIds[0] : formData.setorId;
       const meta: MetaSetor = {
         id: editMeta?.id || `meta-set-${Date.now()}`,
-        setorId: formData.setorId,
+        setorId: setorIdPrincipal,
+        setorIds: formData.setorIds.length > 0 ? formData.setorIds : undefined,
         tipoInteracao: formData.tipoInteracao,
         grupoId: formData.grupoId || undefined,
         titulo: formData.titulo,
@@ -405,12 +414,16 @@ export default function MetasLideranca({
               const isLider = 'liderId' in item.meta;
               const responsavel = isLider
                 ? lideres.find((l) => l.id === (item.meta as MetaLideranca).liderId)?.nome
-                : setores.find((s) => s.id === (item.meta as MetaSetor).setorId)?.nome;
+                : (() => {
+                    const ms = item.meta as MetaSetor;
+                    const ids = ms.setorIds?.length ? ms.setorIds : [ms.setorId];
+                    return ids.map(id => setores.find(s => s.id === id)?.nome).filter(Boolean).join(', ');
+                  })();
 
               return (
                 <div
                   key={item.meta.id}
-                  className={`p-4 rounded-xl border transition ${
+                  className={`group p-4 rounded-xl border transition ${
                     item.status === 'concluido'
                       ? 'bg-emerald-50 border-emerald-200'
                       : item.status === 'parcial'
@@ -419,8 +432,8 @@ export default function MetasLideranca({
                   }`}
                 >
                   <div className="flex items-start justify-between gap-4">
-                    <div className="flex items-start gap-3">
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                    <div className="flex items-start gap-3 flex-1 min-w-0">
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
                         item.status === 'concluido'
                           ? 'bg-emerald-100'
                           : item.status === 'parcial'
@@ -429,8 +442,32 @@ export default function MetasLideranca({
                       }`}>
                         {getIconeInteracao(item.meta.tipoInteracao)}
                       </div>
-                      <div>
-                        <h5 className="font-bold text-slate-800">{item.meta.titulo}</h5>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <h5 className="font-bold text-slate-800 truncate">{item.meta.titulo}</h5>
+                          {/* Botões Editar e Deletar */}
+                          <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button
+                              onClick={() => abrirModalEditarMeta(item.meta)}
+                              className="p-1 text-slate-400 hover:text-teal-600 cursor-pointer transition rounded"
+                              title="Editar meta"
+                            >
+                              <Edit2 size={13} />
+                            </button>
+                            <button
+                              onClick={() => {
+                                if (!window.confirm(`Excluir a meta "${item.meta.titulo}"? Esta ação não pode ser desfeita.`)) return;
+                                isLider
+                                  ? onDeleteMetaLideranca(item.meta.id)
+                                  : onDeleteMetaSetor(item.meta.id);
+                              }}
+                              className="p-1 text-slate-400 hover:text-rose-500 cursor-pointer transition rounded"
+                              title="Excluir meta"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        </div>
                         <p className="text-xs text-slate-500 mt-0.5">
                           {isLider ? 'Líder' : 'Setor'}: {responsavel} • {
                             item.meta.grupoId
@@ -513,19 +550,43 @@ export default function MetasLideranca({
               ) : (
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                    Setor Responsável
+                    Setores Responsáveis
                   </label>
-                  <select
-                    value={formData.setorId}
-                    onChange={(e) => setFormData((prev) => ({ ...prev, setorId: e.target.value }))}
-                    className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none cursor-pointer"
-                  >
-                    {setores.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.nome}
-                      </option>
-                    ))}
-                  </select>
+                  <p className="text-[10px] text-slate-400 mb-2">
+                    Selecione um ou mais setores. A meta contabilizará todas as interações com colaboradores de qualquer setor marcado.
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-44 overflow-y-auto p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                    {setores.map((s) => {
+                      const marcado = formData.setorIds.includes(s.id);
+                      return (
+                        <label key={s.id} className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer px-2 py-1.5 rounded-lg hover:bg-white transition">
+                          <input
+                            type="checkbox"
+                            checked={marcado}
+                            onChange={() =>
+                              setFormData((prev) => ({
+                                ...prev,
+                                setorIds: marcado
+                                  ? prev.setorIds.filter((id) => id !== s.id)
+                                  : [...prev.setorIds, s.id],
+                                setorId: marcado
+                                  ? (prev.setorIds.filter((id) => id !== s.id)[0] || '')
+                                  : prev.setorIds.length === 0 ? s.id : prev.setorId,
+                              }))
+                            }
+                            className="w-4 h-4 text-teal-600 border-slate-300 rounded cursor-pointer"
+                          />
+                          {s.nome}
+                        </label>
+                      );
+                    })}
+                  </div>
+                  {formData.setorIds.length === 0 && (
+                    <p className="text-[10px] text-rose-500 mt-1.5">Selecione ao menos um setor.</p>
+                  )}
+                  {formData.setorIds.length > 0 && (
+                    <p className="text-[10px] text-teal-600 font-semibold mt-1.5">{formData.setorIds.length} setor(es) selecionado(s)</p>
+                  )}
                 </div>
               )}
 

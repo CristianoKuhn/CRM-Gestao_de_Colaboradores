@@ -13,6 +13,9 @@ import {
   Lider,
   Setor,
   Colaborador,
+  TimelineRegistro,
+  Tarefa,
+  MAPA_TIPO_PARA_INTERACAO,
 } from '../types';
 import { DataService } from '../services/DataService';
 import {
@@ -40,13 +43,15 @@ interface MetasLiderancaProps {
   metasLideranca: MetaLideranca[];
   metasSetor: MetaSetor[];
   acompanhamentos: AcompanhamentoRealizado[];
+  // Timeline e tarefas são a FONTE PRIMÁRIA de contagem das metas.
+  // AcompanhamentoRealizado fica como fonte complementar (ex.: avaliações
+  // 180° geradas pelo motor de formulários, que não passam pela timeline).
+  timeline: TimelineRegistro[];
+  tarefas: Tarefa[];
   lideres: Lider[];
   setores: Setor[];
   colaboradores: Colaborador[];
   currentUserId: string;
-  // Grupos de Meta — configuráveis em Configurações Gerais → Grupos de Meta.
-  // Cada grupo agrupa múltiplos TipoInteracao sob um nome de negócio
-  // (ex.: "Feedback Positivo" engloba feedback + conversa_reconhecimento).
   gruposMeta?: GrupoMeta[];
   onSaveMetaLideranca: (meta: MetaLideranca) => void;
   onDeleteMetaLideranca: (id: string) => void;
@@ -81,6 +86,8 @@ export default function MetasLideranca({
   metasLideranca,
   metasSetor,
   acompanhamentos,
+  timeline,
+  tarefas,
   lideres,
   setores,
   colaboradores,
@@ -111,24 +118,105 @@ export default function MetasLideranca({
     setorId: '',
   });
 
+  // ─── Núcleo do Motor de Metas ────────────────────────────────────────────
+  // Fonte primária: Timeline + Tarefas concluídas
+  // Fonte complementar: AcompanhamentoRealizado (ex.: Avaliações 180° do
+  // motor de formulários, que não passam pela timeline manual).
+  //
+  // Regras de contagem:
+  // 1. Cada registro da Timeline cujo TipoRegistro mapeie para um TipoInteracao
+  //    via MAPA_TIPO_PARA_INTERACAO conta como 1 interação do LÍDER responsável
+  //    (responsavelId) com o colaborador do setor do colaborador.
+  // 2. Tarefas CONCLUÍDAS cujo tipoOrigem mapeie contam como 1 interação —
+  //    a conclusão de uma tarefa de acompanhamento é o encerramento do ciclo
+  //    de feedback, não o início.
+  // 3. AcompanhamentoRealizado complementa (ex.: avaliações geradas por
+  //    formulários). Deduplicados por id para evitar dupla contagem.
+  // 4. Retroativo: periodoAtual é qualquer AAAA-MM; basta mudar o seletor.
+  const interacoesDoPeriodo = useMemo(() => {
+    // --- Fonte 1: Timeline ---
+    const doTimeline = timeline
+      .filter((r) => r.data.startsWith(periodoAtual))
+      .flatMap((r) => {
+        const tipoInteracao = MAPA_TIPO_PARA_INTERACAO[r.tipo];
+        if (!tipoInteracao) return [];
+        // Descobrir o setor do colaborador (para metas por setor)
+        const col = colaboradores.find((c) => c.id === r.colaboradorId);
+        return [{
+          tipoInteracao,
+          liderId: r.responsavelId,      // o líder que fez a interação
+          setorId: col?.setorId || '',   // setor do colaborador
+          data: r.data,
+          _fonte: 'timeline',
+          _id: r.id,
+        }];
+      });
+
+    // --- Fonte 2: Tarefas concluídas no período ---
+    const deTarefas = tarefas
+      .filter((t) => {
+        if (!t.concluida) return false;
+        // Usar vencimento como proxy de data de conclusão (não temos data_conclusao explícita)
+        // mas só conta se o vencimento estiver no período
+        const dataRef = t.vencimento || '';
+        return dataRef.startsWith(periodoAtual);
+      })
+      .flatMap((t) => {
+        const tipoInteracao = t.tipoOrigem
+          ? MAPA_TIPO_PARA_INTERACAO[t.tipoOrigem as keyof typeof MAPA_TIPO_PARA_INTERACAO]
+          : undefined;
+        if (!tipoInteracao) return [];
+        const col = colaboradores.find((c) => c.id === t.colaboradorId);
+        return [{
+          tipoInteracao,
+          liderId: t.responsavelId || '',
+          setorId: col?.setorId || '',
+          data: t.vencimento,
+          _fonte: 'tarefa',
+          _id: `tar-${t.id}`,
+        }];
+      });
+
+    // --- Fonte 3: AcompanhamentoRealizado (complementar) ---
+    const deAcomp = acompanhamentos
+      .filter((a) => a.data.startsWith(periodoAtual))
+      .map((a) => ({
+        tipoInteracao: a.tipoInteracao,
+        liderId: a.liderId,
+        setorId: a.setorId,
+        data: a.data,
+        _fonte: 'acompanhamento',
+        _id: a.id,
+      }));
+
+    // Unir e deduplicar por _id
+    const todas = [...doTimeline, ...deTarefas, ...deAcomp];
+    const vistos = new Set<string>();
+    return todas.filter((i) => {
+      if (vistos.has(i._id)) return false;
+      vistos.add(i._id);
+      return true;
+    });
+  }, [timeline, tarefas, acompanhamentos, colaboradores, periodoAtual]);
+
   // Calcular resumo das metas
   const resumoMetas = useMemo(() => {
     const metasAtivas = [...metasLideranca.filter((m) => m.ativo), ...metasSetor.filter((m) => m.ativo)];
-    const acompPeriodo = acompanhamentos.filter((a) => a.data.startsWith(periodoAtual));
 
     return metasAtivas.map((meta) => {
       const isMetaLider = 'liderId' in meta;
       const tipoId = isMetaLider ? (meta as MetaLideranca).liderId : (meta as MetaSetor).setorId;
-      // Se a meta tem um grupoId, contar todos os acompanhamentos cujo tipoInteracao
-      // esteja na lista do grupo. Caso contrário, usar o tipoInteracao individual.
       const grupoAtivo = meta.grupoId ? gruposMeta.find(g => g.id === meta.grupoId) : null;
       const tiposValidos = grupoAtivo ? grupoAtivo.tiposInteracao : [meta.tipoInteracao];
-      const realizado = acompPeriodo.filter((a) => {
-        if (!tiposValidos.includes(a.tipoInteracao)) return false;
+
+      const realizado = interacoesDoPeriodo.filter((i) => {
+        if (!tiposValidos.includes(i.tipoInteracao)) return false;
         if (isMetaLider) {
-          return a.liderId === tipoId;
+          // Meta por líder: conta APENAS interações onde o responsável é esse líder
+          return i.liderId === tipoId;
         } else {
-          return a.setorId === tipoId;
+          // Meta por setor: conta TODAS as interações com colaboradores desse setor
+          return i.setorId === tipoId;
         }
       }).length;
 
@@ -139,7 +227,7 @@ export default function MetasLideranca({
         status: realizado >= meta.quantidadeMinima ? 'concluido' : realizado > 0 ? 'parcial' : 'pendente',
       };
     });
-  }, [metasLideranca, metasSetor, acompanhamentos, periodoAtual]);
+  }, [metasLideranca, metasSetor, interacoesDoPeriodo, gruposMeta]);
 
   const stats = useMemo(() => {
     const total = resumoMetas.length;
@@ -344,7 +432,11 @@ export default function MetasLideranca({
                       <div>
                         <h5 className="font-bold text-slate-800">{item.meta.titulo}</h5>
                         <p className="text-xs text-slate-500 mt-0.5">
-                          {isLider ? 'Líder' : 'Setor'}: {responsavel} • {getNomeInteracao(item.meta.tipoInteracao)}
+                          {isLider ? 'Líder' : 'Setor'}: {responsavel} • {
+                            item.meta.grupoId
+                              ? (gruposMeta.find(g => g.id === item.meta.grupoId)?.nome || getNomeInteracao(item.meta.tipoInteracao))
+                              : getNomeInteracao(item.meta.tipoInteracao)
+                          }
                         </p>
                         <p className="text-xs text-slate-400">{item.meta.descricao}</p>
                       </div>

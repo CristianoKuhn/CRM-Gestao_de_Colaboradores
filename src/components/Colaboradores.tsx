@@ -72,6 +72,7 @@ export default function Colaboradores({
   const [filterSetor, setFilterSetor] = useState(preselectedFilters.setorId || '');
   const [filterCargo, setFilterCargo] = useState('');
   const [filterSituacao, setFilterSituacao] = useState<string>(preselectedFilters.situacao || 'Ativo');
+  const [filterCidade, setFilterCidade] = useState('');
 
   // Modais de Cadastro
   const [isColModalOpen, setIsColModalOpen] = useState(false);
@@ -160,6 +161,16 @@ export default function Colaboradores({
     ? cargos.filter((c) => c.setorId === filterSetor || !c.setorId)
     : cargos;
 
+  // Lista de cidades únicas derivada dos colaboradores — sem necessidade de
+  // cadastro separado: qualquer cidade digitada no formulário aparece aqui.
+  const cidadesUnicas = Array.from(
+    new Set(
+      colaboradores
+        .map((c) => c.cidadeBase?.trim())
+        .filter((c): c is string => !!c)
+    )
+  ).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+
   // Cargos filtrados pelo Setor escolhido no formulário de Novo Colaborador —
   // evita que a lista inteira de Cargos da empresa apareça ali; só mostra os
   // vinculados ao Setor já selecionado (ver arquitetura: Cargo vinculado a Setor).
@@ -176,8 +187,11 @@ export default function Colaboradores({
     const matchesSetor = filterSetor ? col.setorId === filterSetor : true;
     const matchesCargo = filterCargo ? col.cargoId === filterCargo : true;
     const matchesSituacao = filterSituacao ? col.situacao === filterSituacao : true;
+    const matchesCidade = filterCidade
+      ? (col.cidadeBase?.trim().toLowerCase() === filterCidade.toLowerCase())
+      : true;
 
-    return matchesSearch && matchesSetor && matchesCargo && matchesSituacao;
+    return matchesSearch && matchesSetor && matchesCargo && matchesSituacao && matchesCidade;
   });
 
   const handleSaveColaborador = (e: React.FormEvent) => {
@@ -400,6 +414,22 @@ export default function Colaboradores({
             <option value="Ativo">Ativo</option>
             <option value="Desligado">Desligado</option>
           </select>
+
+          {cidadesUnicas.length > 1 && (
+            <select
+              id="filter-cidade"
+              value={filterCidade}
+              onChange={(e) => setFilterCidade(e.target.value)}
+              className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none text-slate-700 cursor-pointer"
+            >
+              <option value="">Todas as Cidades</option>
+              {cidadesUnicas.map((cidade) => (
+                <option key={cidade} value={cidade}>
+                  {cidade}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
       </div>
 
@@ -469,6 +499,11 @@ export default function Colaboradores({
                         <div>
                           <p className="font-semibold text-slate-800">{cargo}</p>
                           <p className="text-xs text-slate-400">{setor}</p>
+                          {col.cidadeBase && (
+                            <p className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1">
+                              📍 {col.cidadeBase}
+                            </p>
+                          )}
                         </div>
                       </td>
 

@@ -758,8 +758,18 @@ export default function Usuarios({
                     )}
                   </div>
                   <p className="text-[10px] text-slate-400 mt-1.5">
-                    Líderes verão somente colaboradores dos setores marcados. Perfis administrativos mantêm visão total.
+                    Líderes verão somente colaboradores dos setores marcados. Administradores <strong>sem setores marcados</strong> mantêm visão total; com setores marcados, ficam restritos a eles — útil para Admins de departamento que não devem enxergar dados de outros setores.
                   </p>
+                  {perfil === 'Administrador' && dashboardsHabilitados.length > 0 && (
+                    <div className="mt-2 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2 text-[10px] text-amber-700 flex items-start gap-1.5">
+                      <span className="shrink-0 font-bold">⚠</span>
+                      <span>
+                        Este Administrador tem setores marcados — enxergará <strong>apenas</strong> os colaboradores desses setores.
+                        Ações administrativas (gerenciar usuários, configurações) permanecem globais.
+                        Para visão total, desmarque todos os setores.
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Dashboards habilitados */}

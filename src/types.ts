@@ -386,6 +386,28 @@ export type TipoInteracao =
   | 'onboarding'
   | 'pdiavaliacao_360';
 
+// ── Mapeamento canônico: TipoRegistro (Timeline) → TipoInteracao (Metas) ───
+// Fonte única de verdade para converter registros da timeline em unidades
+// contáveis pelas metas. "Observação Geral" e tipos administrativos
+// (Férias, Mudança de Cargo) não contam como interação de liderança.
+// Uma tarefa CONCLUÍDA vira feedback — a conclusão de tarefas de
+// acompanhamento é o "resultado" do ciclo de feedback, não o início.
+export const MAPA_TIPO_PARA_INTERACAO: Partial<Record<TipoRegistro, TipoInteracao>> = {
+  'Feedback Positivo':                        'feedback',
+  'Feedback Corretivo':                       'feedback',
+  'Reconhecimento':                           'conversa_reconhecimento',
+  'Conversa Individual (1:1)':                'conversa_informal',
+  'Plano de Desenvolvimento Individual (PDI)':'pdiavaliacao_360',
+  'Advertência':                              'conversa_disciplinar',
+  'Suspensão':                                'conversa_disciplinar',
+  'Elogio de Cliente':                        'conversa_reconhecimento',
+  'Reclamação de Cliente':                    'conversa_disciplinar',
+  // 'Observação Geral' → não conta (intencionalmente excluído)
+  'Acompanhamento':                           'feedback',   // conclusão de ciclo de feedback
+  // 'Férias Planejadas', 'Férias Gozadas', 'Mudança de Cargo' → não contam
+  'Outros':                                   'feedback',   // registro genérico de interação
+};
+
 export interface MetaLideranca {
   id: string;
   liderId: string;

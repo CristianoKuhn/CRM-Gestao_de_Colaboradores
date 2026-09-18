@@ -1,0 +1,61 @@
+{
+  "name": "Gestão360 · Gestão de Colaboradores",
+  "short_name": "Gestão360",
+  "description": "CRM de Gestão de Colaboradores — dashboards, timeline, metas de liderança e desenvolvimento de equipes.",
+  "start_url": "/",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone"],
+  "orientation": "landscape-primary",
+  "background_color": "#0F172A",
+  "theme_color": "#0D9488",
+  "lang": "pt-BR",
+  "dir": "ltr",
+  "scope": "/",
+  "categories": ["business", "productivity"],
+  "prefer_related_applications": false,
+  "icons": [
+    { "src": "/icon-72x72.svg",   "sizes": "72x72",   "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/icon-96x96.svg",   "sizes": "96x96",   "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/icon-128x128.svg", "sizes": "128x128", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/icon-144x144.svg", "sizes": "144x144", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/icon-152x152.svg", "sizes": "152x152", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/icon-192x192.svg", "sizes": "192x192", "type": "image/svg+xml", "purpose": "any maskable" },
+    { "src": "/icon-384x384.svg", "sizes": "384x384", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/icon-512x512.svg", "sizes": "512x512", "type": "image/svg+xml", "purpose": "any maskable" }
+  ],
+  "screenshots": [
+    {
+      "src": "/screenshot-desktop.svg",
+      "sizes": "1280x720",
+      "type": "image/svg+xml",
+      "form_factor": "wide",
+      "label": "Dashboard do Gestão360"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Colaboradores",
+      "short_name": "Equipe",
+      "description": "Acessar lista de colaboradores",
+      "url": "/?tab=colaboradores",
+      "icons": [{ "src": "/icon-96x96.svg", "sizes": "96x96", "type": "image/svg+xml" }]
+    },
+    {
+      "name": "Tarefas de Liderança",
+      "short_name": "Tarefas",
+      "description": "Ver tarefas pendentes",
+      "url": "/?tab=tarefas",
+      "icons": [{ "src": "/icon-96x96.svg", "sizes": "96x96", "type": "image/svg+xml" }]
+    },
+    {
+      "name": "Metas Liderança",
+      "short_name": "Metas",
+      "description": "Acompanhar metas do período",
+      "url": "/?tab=metas",
+      "icons": [{ "src": "/icon-96x96.svg", "sizes": "96x96", "type": "image/svg+xml" }]
+    }
+  ],
+  "launch_handler": {
+    "client_mode": "focus-existing"
+  }
+}

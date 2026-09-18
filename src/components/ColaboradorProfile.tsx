@@ -39,6 +39,7 @@ import CentralDocumentos from './CentralDocumentos';
 import AnexoPreviewModal, { ArquivoParaPreview } from './AnexoPreviewModal';
 import InsightsPanel from '../features/desenvolvimento-colaboradores/InsightsPanel';
 import PainelDesenvolvimento from '../features/desenvolvimento-colaboradores/PainelDesenvolvimento';
+import PainelAnaliseIA from './PainelAnaliseIA';
 import {
   Calendar,
   Briefcase,
@@ -871,18 +872,30 @@ export default function ColaboradorProfile({
 
           {/* SEÇÃO: DESENVOLVIMENTO */}
           {secaoPerfil === 'desenvolvimento' && (
-            <PainelDesenvolvimento
-              colaborador={colaborador}
-              capacidades={capacidades}
-              competencias={competencias}
-              escalas={escalas}
-              graus={graus}
-              tiposEvidencia={tiposEvidencia}
-              gravidadesOcorrencia={gravidadesOcorrencia}
-              matrizVersoes={matrizVersoes}
-              setores={setores}
-              currentUserId={currentUser?.id || ''}
-            />
+            <div className="space-y-6">
+              <PainelDesenvolvimento
+                colaborador={colaborador}
+                capacidades={capacidades}
+                competencias={competencias}
+                escalas={escalas}
+                graus={graus}
+                tiposEvidencia={tiposEvidencia}
+                gravidadesOcorrencia={gravidadesOcorrencia}
+                matrizVersoes={matrizVersoes}
+                setores={setores}
+                currentUserId={currentUser?.id || ''}
+              />
+
+              {/* Análise Inteligente de Competências — IA analisa a timeline e identifica
+                  competências em desenvolvimento, padrões de comportamento e recomendações
+                  de treinamento específicas a partir do histórico real do colaborador. */}
+              <PainelAnaliseIA
+                colaborador={colaborador}
+                timeline={timeline}
+                capacidades={capacidades || []}
+                competencias={competencias || []}
+              />
+            </div>
           )}
 
           {/* SEÇÃO: CRM & TIMELINE */}

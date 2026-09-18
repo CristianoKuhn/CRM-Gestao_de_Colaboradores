@@ -280,6 +280,8 @@ export default function MetasLideranca({
 
   const salvarMeta = () => {
     if (!formData.titulo) return;
+    // Meta por Setor exige ao menos um setor selecionado
+    if (tipoMeta === 'setor' && formData.setorIds.length === 0) return;
 
     if (tipoMeta === 'lider') {
       const meta: MetaLideranca = {

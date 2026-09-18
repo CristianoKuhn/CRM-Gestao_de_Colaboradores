@@ -2517,11 +2517,18 @@ export class GoogleScriptDataService implements IDataService {
     // chamar a action. Por isso, ao contrário de outras entidades, NÃO
     // gravamos primeiro no fallback local "otimisticamente" — se o servidor
         // recusar, quem chamou precisa saber, em vez de a tela achar que salvou.
-    const body = {
+    // CORREÇÃO CRÍTICA DE SEGURANÇA:
+    // O backend (apps-script-atualizado.gs v1.1.0) não tem proteção contra
+    // senha_hash vazio — grava qualquer valor recebido diretamente na planilha.
+    // Como o sanitizarUsuario_ nunca retorna a senha real ao frontend (por
+    // segurança), usuario.senha_hash sempre chega '' após uma edição de perfil.
+    // Se enviarmos '' o backend apaga a senha real → força "Aguardando 1º acesso".
+    // SOLUÇÃO: omitir completamente o campo senha_hash quando estiver vazio.
+    // O backend só grava o que recebe — campo ausente = coluna não tocada.
+    const body: Record<string, unknown> = {
       id: usuario.id,
       nome: usuario.nome,
       email: usuario.email,
-      senha_hash: usuario.senha_hash || '',
       senha_provisoria: usuario.senha_provisoria === true,
       perfil: usuario.perfil,
       setor_id: usuario.setoresPermitidos?.[0] || usuario.setor_id || '',
@@ -2531,6 +2538,11 @@ export class GoogleScriptDataService implements IDataService {
       ativo: usuario.ativo,
       ultimo_login: usuario.ultimo_login || ''
     };
+    // Só inclui senha_hash se o admin digitou algo novo (campo não vazio).
+    // Campo ausente no body → saveRow do backend não toca a coluna existente.
+    if (usuario.senha_hash && usuario.senha_hash.trim()) {
+      body.senha_hash = usuario.senha_hash.trim();
+    }
     try {
       await this.request('saveUsuario', { data: body });
     } catch (e: any) {

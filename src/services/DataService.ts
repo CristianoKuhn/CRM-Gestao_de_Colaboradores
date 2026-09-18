@@ -2951,11 +2951,16 @@ export class GoogleScriptDataService implements IDataService {
     try {
       const raw = await this.request<any[]>('getMetasSetor');
       return (raw || []).map((m) => {
-        // Ler setorIds do banco (campo setor_ids, serializado como JSON)
+        // ATENÇÃO: o backend já deserializou setor_ids via COLUNAS_JSON_ no
+        // getTableData — chega aqui como Array diretamente, não como string.
+        // Tentar JSON.parse em cima de um Array jogava fora os setores extras.
         let setorIds: string[] | undefined;
-        try {
-          setorIds = m.setor_ids ? JSON.parse(m.setor_ids) : undefined;
-        } catch { setorIds = undefined; }
+        if (Array.isArray(m.setor_ids) && m.setor_ids.length > 0) {
+          setorIds = m.setor_ids;
+        } else if (typeof m.setor_ids === 'string' && m.setor_ids.trim()) {
+          // Fallback defensivo: se por acaso chegou como string (backend legado)
+          try { setorIds = JSON.parse(m.setor_ids); } catch { setorIds = undefined; }
+        }
         return {
           id: m.id,
           setorId: m.setor_id,
@@ -2972,13 +2977,17 @@ export class GoogleScriptDataService implements IDataService {
     } catch (e) { return this.localFallback.getMetasSetor(); }
   }
   async saveMetaSetor(meta: MetaSetor): Promise<void> {
-    // setorId = primeiro setor (retrocompatibilidade); setor_ids = JSON dos múltiplos
+    // setorId = primeiro setor (retrocompatibilidade); setor_ids = array de todos os setores.
+    // IMPORTANTE: enviamos setor_ids como ARRAY (não como string JSON), pois o
+    // saveRow do backend o serializa automaticamente via COLUNAS_JSON_. Se
+    // enviássemos como string, o saveRow serializaria de novo → double-encode.
     const setorIdPrincipal = meta.setorIds?.length ? meta.setorIds[0] : meta.setorId;
+    const setorIdsArray = meta.setorIds?.length ? meta.setorIds : (meta.setorId ? [meta.setorId] : []);
     try {
       await this.request('saveMetaSetor', { data: {
         id: meta.id,
         setor_id: setorIdPrincipal,
-        setor_ids: meta.setorIds ? JSON.stringify(meta.setorIds) : '',
+        setor_ids: setorIdsArray,
         tipo_interacao: meta.tipoInteracao,
         grupo_id: meta.grupoId || '',
         titulo: meta.titulo,

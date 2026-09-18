@@ -39,6 +39,7 @@ import {
 } from './types';
 import Sidebar from './components/Sidebar';
 import { dashboardVisivelParaUsuario } from './utils/dashboards';
+import PWAInstallPrompt from './components/PWAInstallPrompt';
 import DashboardExecutiva from './components/DashboardExecutiva';
 import Colaboradores from './components/Colaboradores';
 import ColaboradorProfile from './components/ColaboradorProfile';
@@ -1457,6 +1458,9 @@ export default function App() {
         usuarioId={currentUser?.id}
         nomeUsuario={currentUser?.nome}
       />
+
+      {/* PWA: banner de instalação e atualizações — flutuante, não bloqueia nada */}
+      <PWAInstallPrompt />
     </div>
   );
 }

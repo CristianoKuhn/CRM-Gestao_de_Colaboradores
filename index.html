@@ -1,13 +1,97 @@
 <!doctype html>
-<html lang="en">
+<html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>👥</text></svg>" />
-    <title>Gestão360 &middot; Gestão de Colaboradores</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+
+    <!-- PWA: Manifest e tema -->
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#0D9488" />
+    <meta name="background-color" content="#0F172A" />
+
+    <!-- Favicon e ícones -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.svg" />
+
+    <!-- SEO e metadados do app -->
+    <meta name="application-name" content="Gestão360" />
+    <meta name="description" content="CRM de Gestão de Colaboradores — dashboards, timeline, metas de liderança e desenvolvimento de equipes." />
+    <meta name="keywords" content="gestão, colaboradores, CRM, RH, liderança, feedbacks, metas" />
+    <meta name="author" content="Gestão360" />
+    <meta name="robots" content="noindex, nofollow" />
+
+    <!-- Apple PWA (iOS Safari) -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Gestão360" />
+    <meta name="mobile-web-app-capable" content="yes" />
+
+    <!-- Windows (Edge / Windows tiles) -->
+    <meta name="msapplication-TileColor" content="#0D9488" />
+    <meta name="msapplication-TileImage" content="/icon-144x144.svg" />
+    <meta name="msapplication-starturl" content="/" />
+    <meta name="msapplication-tap-highlight" content="no" />
+
+    <!-- Open Graph (compartilhamento) -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Gestão360 · Gestão de Colaboradores" />
+    <meta property="og:description" content="CRM de Gestão de Colaboradores com timeline, metas de liderança e análise de competências com IA." />
+    <meta property="og:image" content="/icon-512x512.svg" />
+
+    <title>Gestão360 · Gestão de Colaboradores</title>
+
+    <!-- Previne flash de fundo branco antes do React montar -->
+    <style>
+      html, body { background-color: #0F172A; margin: 0; padding: 0; }
+      #root { min-height: 100vh; }
+      /* Safe area para dispositivos com notch (iPhone, etc.) */
+      body {
+        padding-top: env(safe-area-inset-top);
+        padding-right: env(safe-area-inset-right);
+        padding-bottom: env(safe-area-inset-bottom);
+        padding-left: env(safe-area-inset-left);
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+
+    <!-- Registro do Service Worker -->
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function () {
+          navigator.serviceWorker.register('/sw.js', { scope: '/' })
+            .then(function (reg) {
+              console.log('[Gestão360] Service Worker registrado:', reg.scope);
+
+              // Verificar atualizações a cada 60 minutos enquanto o app está aberto
+              setInterval(function () { reg.update(); }, 60 * 60 * 1000);
+
+              // Quando uma nova versão do SW está pronta, recarrega automaticamente
+              reg.addEventListener('updatefound', function () {
+                var newSW = reg.installing;
+                if (!newSW) return;
+                newSW.addEventListener('statechange', function () {
+                  if (newSW.state === 'installed' && navigator.serviceWorker.controller) {
+                    // Notifica o React para mostrar o banner de "Nova versão disponível"
+                    window.dispatchEvent(new CustomEvent('gestao360-update-available'));
+                  }
+                });
+              });
+            })
+            .catch(function (err) {
+              console.warn('[Gestão360] Service Worker não registrado:', err);
+            });
+
+          // Detectar quando o app é aberto como PWA instalada
+          if (window.matchMedia('(display-mode: standalone)').matches ||
+              window.navigator.standalone === true) {
+            document.documentElement.setAttribute('data-pwa', 'true');
+            console.log('[Gestão360] Rodando como app instalado (PWA)');
+          }
+        });
+      }
+    </script>
   </body>
 </html>

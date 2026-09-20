@@ -2300,257 +2300,235 @@ export default function GestaoPessoas({
   };
   const renderConfig = () => {
     if (!config) return null;
-    
+
+    // Wrapper para salvar config com merge defensivo dos campos novos
+    const salvar = (patch: Partial<typeof config>) => {
+      handleSalvarConfig({
+        diasAntecedenciaFerias: config.diasAntecedenciaFerias ?? 30,
+        permitirFeriasProlongadas: config.permitirFeriasProlongadas ?? false,
+        obrigarPeriodoAquisitivo: config.obrigarPeriodoAquisitivo ?? true,
+        anteciparAniversario: config.anteciparAniversario ?? false,
+        cicloDesenvolvimentoMeses: (config as any).cicloDesenvolvimentoMeses ?? 5,
+        alertaCicloDias: (config as any).alertaCicloDias ?? 15,
+        diasLimiteDayOff: (config as any).diasLimiteDayOff ?? 30,
+        notificacoes: {
+          ferias90dias: config.notificacoes?.ferias90dias ?? true,
+          feriasVencendo: config.notificacoes?.feriasVencendo ?? true,
+          dayoffPendente: config.notificacoes?.dayoffPendente ?? true,
+          aniversarioProximo: config.notificacoes?.aniversarioProximo ?? true,
+          aniversarioEmpresaProximo: config.notificacoes?.aniversarioEmpresaProximo ?? true,
+          cicloPendente: (config.notificacoes as any)?.cicloPendente ?? true,
+        },
+        ...patch,
+      } as any);
+    };
+
+    const Label = ({ children }: { children: React.ReactNode }) => (
+      <label className="block text-xs font-semibold text-slate-700 mb-1.5">{children}</label>
+    );
+    const Hint = ({ children }: { children: React.ReactNode }) => (
+      <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">{children}</p>
+    );
+    const Card = ({ titulo, desc, icon, children }: { titulo: string; desc: string; icon: string; children: React.ReactNode }) => (
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
+        <div className="flex items-center gap-3 mb-5 pb-4 border-b border-slate-50">
+          <span className="text-xl">{icon}</span>
+          <div>
+            <h3 className="text-sm font-extrabold text-slate-900">{titulo}</h3>
+            <p className="text-[11px] text-slate-400 mt-0.5">{desc}</p>
+          </div>
+        </div>
+        {children}
+      </div>
+    );
+    const Toggle = ({ id, checked, onChange, label, hint }: { id: string; checked: boolean; onChange: (v: boolean) => void; label: string; hint?: string }) => (
+      <label htmlFor={id} className="flex items-start gap-3 cursor-pointer group">
+        <div className="relative mt-0.5 shrink-0">
+          <input type="checkbox" id={id} checked={checked} onChange={e => onChange(e.target.checked)}
+            className="sr-only peer" />
+          <div className="w-9 h-5 bg-slate-200 peer-checked:bg-teal-500 rounded-full transition-colors" />
+          <div className="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform peer-checked:translate-x-4" />
+        </div>
+        <div>
+          <p className="text-xs font-semibold text-slate-700">{label}</p>
+          {hint && <p className="text-[10px] text-slate-400 mt-0.5">{hint}</p>}
+        </div>
+      </label>
+    );
+    const NumInput = ({ label, value, min, max, onChange, hint, unit }: { label: string; value: number; min: number; max?: number; onChange: (v: number) => void; hint?: string; unit?: string }) => (
+      <div>
+        <Label>{label}</Label>
+        <div className="flex items-center gap-2">
+          <input type="number" min={min} max={max} value={value}
+            onChange={e => onChange(parseInt(e.target.value) || min)}
+            className="w-24 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-teal-500/20 text-center font-semibold" />
+          {unit && <span className="text-xs text-slate-400">{unit}</span>}
+        </div>
+        {hint && <Hint>{hint}</Hint>}
+      </div>
+    );
+
+    const cicloAtual = (config as any).cicloDesenvolvimentoMeses ?? 5;
+    const alertaCiclo = (config as any).alertaCicloDias ?? 15;
+    const diasDayOff = (config as any).diasLimiteDayOff ?? 30;
+
     return (
-      <div className="space-y-6">
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
-          <h3 className="text-sm font-bold text-slate-900 mb-6">Configurações de Gestão de Pessoas</h3>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-2">
-                Dias de antecedência para planejar férias
-              </label>
-              <input
-                type="number"
-                value={config.diasAntecedenciaFerias}
-                onChange={e => handleSalvarConfig({ ...config, diasAntecedenciaFerias: parseInt(e.target.value) || 0 })}
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-teal-500"
-              />
-            </div>
-            
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-2">
-                Máximo de folgas por ano
-              </label>
-              <input
-                type="number"
-                value={config.maximoDiasFolga}
-                onChange={e => handleSalvarConfig({ ...config, maximoDiasFolga: parseInt(e.target.value) || 0 })}
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-teal-500"
-              />
-            </div>
-            
-            <div className="flex items-center gap-3">
-              <input
-                type="checkbox"
-                id="permitirFeriasProlongadas"
-                checked={config.permitirFeriasProlongadas}
-                onChange={e => handleSalvarConfig({ ...config, permitirFeriasProlongadas: e.target.checked })}
-                className="w-4 h-4 text-teal-500 rounded border-slate-300 focus:ring-teal-500"
-              />
-              <label htmlFor="permitirFeriasProlongadas" className="text-xs text-slate-700">
-                Permitir férias prolongadas (mais de 30 dias)
-              </label>
-            </div>
-            
-            <div className="flex items-center gap-3">
-              <input
-                type="checkbox"
-                id="obrigarPeriodoAquisitivo"
-                checked={config.obrigarPeriodoAquisitivo}
-                onChange={e => handleSalvarConfig({ ...config, obrigarPeriodoAquisitivo: e.target.checked })}
-                className="w-4 h-4 text-teal-500 rounded border-slate-300 focus:ring-teal-500"
-              />
-              <label htmlFor="obrigarPeriodoAquisitivo" className="text-xs text-slate-700">
-                Exigir período aquisitivo completo
-              </label>
-            </div>
-          </div>
+      <div className="space-y-5 max-w-3xl">
+        <div>
+          <h2 className="text-base font-extrabold text-slate-900">Configurações — Gestão de Pessoas</h2>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Parâmetros centrais que controlam o comportamento de todas as sub-dashboards.
+            Valores salvos automaticamente ao sair do campo.
+          </p>
         </div>
 
-        {configFerias && (
-          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
-            <h3 className="text-sm font-bold text-slate-900 mb-1">Regras de Férias</h3>
-            <p className="text-[11px] text-slate-500 mb-6">
-              Único lugar onde essas regras são definidas — o planejador de férias de cada colaborador só consulta
-              o que está aqui, nunca tem valor fixo embutido.
-            </p>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-2">
-                  Antecedência mínima para solicitar (dias)
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  value={configFerias.diasMinimosAntecedenciaPlanejamento}
-                  onChange={(e) =>
-                    handleSalvarConfigFerias({ ...configFerias, diasMinimosAntecedenciaPlanejamento: parseInt(e.target.value) || 0 })
-                  }
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-teal-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-2">
-                  Antecedência dos alertas (dias)
-                </label>
-                <select
-                  value={configFerias.diasAntecedenciaAlerta}
-                  onChange={(e) => handleSalvarConfigFerias({ ...configFerias, diasAntecedenciaAlerta: Number(e.target.value) })}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-teal-500"
-                >
-                  {configFerias.opcoesAntecedencia.map((op) => (
-                    <option key={op} value={op}>{op} dias</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-2">
-                  Mínimo de dias por lançamento
-                </label>
-                <input
-                  type="number"
-                  min={1}
-                  value={configFerias.salarioMinimoDias}
-                  onChange={(e) => handleSalvarConfigFerias({ ...configFerias, salarioMinimoDias: parseInt(e.target.value) || 1 })}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-teal-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-2">
-                  Máximo de parcelas por período aquisitivo
-                </label>
-                <input
-                  type="number"
-                  min={1}
-                  max={10}
-                  value={configFerias.maximoParcelas}
-                  onChange={(e) => handleSalvarConfigFerias({ ...configFerias, maximoParcelas: parseInt(e.target.value) || 1 })}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-teal-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-2">
-                  Prazo concessivo (meses após o período)
-                </label>
-                <input
-                  type="number"
-                  min={1}
-                  value={configFerias.prazoConcessivoMeses}
-                  onChange={(e) => handleSalvarConfigFerias({ ...configFerias, prazoConcessivoMeses: parseInt(e.target.value) || 1 })}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-teal-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-2">
-                  Máx. de colaboradores do mesmo setor simultaneamente em férias
-                </label>
-                <input
-                  type="number"
-                  min={1}
-                  value={configFerias.maximoDiasSimultaneoSetor}
-                  onChange={(e) => handleSalvarConfigFerias({ ...configFerias, maximoDiasSimultaneoSetor: parseInt(e.target.value) || 1 })}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-teal-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-2">
-                  Percentual máximo da equipe simultaneamente ausente
-                </label>
-                <input
-                  type="number"
-                  min={1}
-                  max={100}
-                  value={configFerias.maximoPercentualEquipe}
-                  onChange={(e) => handleSalvarConfigFerias({ ...configFerias, maximoPercentualEquipe: parseInt(e.target.value) || 1 })}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-teal-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-2">
-                  Máximo de dias vendidos (abono pecuniário)
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  max={10}
-                  disabled={!configFerias.permitirVendaFerias}
-                  value={configFerias.diasVendidosMaximo}
-                  onChange={(e) => handleSalvarConfigFerias({ ...configFerias, diasVendidosMaximo: parseInt(e.target.value) || 0 })}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-teal-500 disabled:bg-slate-50 disabled:text-slate-400"
-                />
-              </div>
-
-              <div className="flex items-center gap-3">
-                <input
-                  type="checkbox"
-                  id="permitirFeriasProlongadasFerias"
-                  checked={configFerias.permitirFeriasProlongadas}
-                  onChange={(e) => handleSalvarConfigFerias({ ...configFerias, permitirFeriasProlongadas: e.target.checked })}
-                  className="w-4 h-4 text-teal-500 rounded border-slate-300 focus:ring-teal-500"
-                />
-                <label htmlFor="permitirFeriasProlongadasFerias" className="text-xs text-slate-700">
-                  Permitir férias prolongadas (mais de 30 dias)
-                </label>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <input
-                  type="checkbox"
-                  id="permitirVendaFerias"
-                  checked={configFerias.permitirVendaFerias}
-                  onChange={(e) => handleSalvarConfigFerias({ ...configFerias, permitirVendaFerias: e.target.checked })}
-                  className="w-4 h-4 text-teal-500 rounded border-slate-300 focus:ring-teal-500"
-                />
-                <label htmlFor="permitirVendaFerias" className="text-xs text-slate-700">
-                  Permitir venda de férias (abono pecuniário)
-                </label>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <input
-                  type="checkbox"
-                  id="bloquearSobreposicao"
-                  checked={configFerias.bloquearSobreposicao}
-                  onChange={(e) => handleSalvarConfigFerias({ ...configFerias, bloquearSobreposicao: e.target.checked })}
-                  className="w-4 h-4 text-teal-500 rounded border-slate-300 focus:ring-teal-500"
-                />
-                <label htmlFor="bloquearSobreposicao" className="text-xs text-slate-700">
-                  Bloquear (não só avisar) sobreposição de férias na mesma equipe
-                </label>
-              </div>
-            </div>
+        {/* ── GRUPO 1: Radar de Desenvolvimento ─────────────────────────── */}
+        <Card titulo="Radar de Desenvolvimento" desc="Controla o motor de ciclos de avaliação de cargo." icon="📈">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+            <NumInput
+              label="Duração do ciclo de avaliação"
+              value={cicloAtual}
+              min={1} max={12}
+              unit="meses"
+              onChange={v => salvar({ cicloDesenvolvimentoMeses: v } as any)}
+              hint="A cada N meses o sistema considera que o colaborador entrou no mês de avaliação de cargo. Padrão: 5 meses."
+            />
+            <NumInput
+              label="Alerta de ciclo iminente"
+              value={alertaCiclo}
+              min={1} max={60}
+              unit="dias antes"
+              onChange={v => salvar({ alertaCicloDias: v } as any)}
+              hint="Quantos dias antes do fim do ciclo o card aparece como 🔴 Iminente no Radar. Padrão: 15 dias."
+            />
           </div>
-        )}
+        </Card>
 
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
-          <h3 className="text-sm font-bold text-slate-900 mb-4">Notificações Automáticas</h3>
-          
-          <div className="space-y-3">
-            {Object.entries(config.notificacoes).map(([key, value]) => (
-              <div key={key} className="flex items-center gap-3">
-                <input
-                  type="checkbox"
-                  id={`notif-${key}`}
-                  checked={value}
-                  onChange={e => handleSalvarConfig({
-                    ...config,
-                    notificacoes: {
-                      ...config.notificacoes,
-                      [key]: e.target.checked,
-                    },
-                  })}
-                  className="w-4 h-4 text-teal-500 rounded border-slate-300 focus:ring-teal-500"
-                />
-                <label htmlFor={`notif-${key}`} className="text-xs text-slate-700 capitalize">
-                  {key.replace(/([A-Z])/g, ' $1').toLowerCase()}
-                </label>
-              </div>
-            ))}
+        {/* ── GRUPO 2: Férias ────────────────────────────────────────────── */}
+        <Card titulo="Férias" desc="Regras CLT e parâmetros operacionais do planejador de férias." icon="🌴">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-6">
+            <NumInput
+              label="Antecedência mínima para solicitar"
+              value={configFerias?.diasMinimosAntecedenciaPlanejamento ?? 7}
+              min={0}
+              unit="dias"
+              onChange={v => configFerias && handleSalvarConfigFerias({ ...configFerias, diasMinimosAntecedenciaPlanejamento: v })}
+              hint="Mínimo de dias de antecedência para criar um planejamento de férias."
+            />
+            <NumInput
+              label="Antecedência dos alertas automáticos"
+              value={configFerias?.diasAntecedenciaAlerta ?? 90}
+              min={30} max={365}
+              unit="dias"
+              onChange={v => configFerias && handleSalvarConfigFerias({ ...configFerias, diasAntecedenciaAlerta: v })}
+              hint="O sistema começa a alertar sobre férias vencendo com esta antecedência."
+            />
+            <NumInput
+              label="Mínimo de dias por concessão"
+              value={configFerias?.salarioMinimoDias ?? 10}
+              min={1} max={30}
+              unit="dias"
+              onChange={v => configFerias && handleSalvarConfigFerias({ ...configFerias, salarioMinimoDias: v })}
+              hint="CLT exige mínimo de 10 dias por lançamento de férias."
+            />
+            <NumInput
+              label="Máximo de parcelas por período"
+              value={configFerias?.maximoParcelas ?? 3}
+              min={1} max={6}
+              unit="parcelas"
+              onChange={v => configFerias && handleSalvarConfigFerias({ ...configFerias, maximoParcelas: v })}
+              hint="Quantidade máxima de vezes que as férias de um período podem ser divididas."
+            />
+            <NumInput
+              label="Prazo concessivo após o período"
+              value={configFerias?.prazoConcessivoMeses ?? 12}
+              min={1} max={24}
+              unit="meses"
+              onChange={v => configFerias && handleSalvarConfigFerias({ ...configFerias, prazoConcessivoMeses: v })}
+              hint="Meses além do fim do período aquisitivo antes que as férias vençam. CLT: 12 meses."
+            />
+            <NumInput
+              label="Máx. colaboradores simultâneos no setor"
+              value={configFerias?.maximoDiasSimultaneoSetor ?? 3}
+              min={1}
+              unit="pessoas"
+              onChange={v => configFerias && handleSalvarConfigFerias({ ...configFerias, maximoDiasSimultaneoSetor: v })}
+              hint="Número máximo de colaboradores do mesmo setor que podem estar em férias ao mesmo tempo."
+            />
           </div>
-        </div>
+          <div className="space-y-4 pt-4 border-t border-slate-50">
+            <Toggle
+              id="obrigarPeriodoAquisitivo"
+              checked={config.obrigarPeriodoAquisitivo}
+              onChange={v => salvar({ obrigarPeriodoAquisitivo: v })}
+              label="Exigir período aquisitivo completo antes do planejamento"
+              hint="Quando ativo, só permite planejar férias após o colaborador completar 12 meses de período aquisitivo."
+            />
+            <Toggle
+              id="permitirFeriasProlongadas"
+              checked={config.permitirFeriasProlongadas}
+              onChange={v => salvar({ permitirFeriasProlongadas: v })}
+              label="Permitir férias prolongadas (mais de 30 dias)"
+            />
+            {configFerias && (
+              <Toggle
+                id="bloquearSobreposicao"
+                checked={configFerias.bloquearSobreposicao ?? false}
+                onChange={v => handleSalvarConfigFerias({ ...configFerias, bloquearSobreposicao: v })}
+                label="Bloquear sobreposição de férias na mesma equipe"
+                hint="Quando ativo, impede salvar um planejamento que ultrapasse o limite simultâneo do setor."
+              />
+            )}
+          </div>
+        </Card>
+
+        {/* ── GRUPO 3: DayOff ───────────────────────────────────────────── */}
+        <Card titulo="DayOff de Aniversário" desc="Regras do benefício de folga no mês de aniversário." icon="🎂">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+            <NumInput
+              label="Dias após o aniversário para usar o DayOff"
+              value={diasDayOff}
+              min={1} max={365}
+              unit="dias"
+              onChange={v => salvar({ diasLimiteDayOff: v } as any)}
+              hint="Prazo dentro do mês do aniversário (ou N dias após) para o colaborador utilizar o DayOff. Padrão: 30 dias."
+            />
+          </div>
+        </Card>
+
+        {/* ── GRUPO 4: Notificações ─────────────────────────────────────── */}
+        <Card titulo="Notificações Automáticas" desc="Controla quais alertas o sistema gera na Dashboard e no sino." icon="🔔">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Toggle id="n-ferias90" checked={config.notificacoes?.ferias90dias ?? true}
+              onChange={v => salvar({ notificacoes: { ...config.notificacoes, ferias90dias: v } })}
+              label="Férias vencendo em 90 dias"
+              hint="Alerta quando um período aquisitivo vai vencer em até 90 dias sem férias planejadas." />
+            <Toggle id="n-feriasVencendo" checked={config.notificacoes?.feriasVencendo ?? true}
+              onChange={v => salvar({ notificacoes: { ...config.notificacoes, feriasVencendo: v } })}
+              label="Férias vencidas sem gozo"
+              hint="Alerta quando o prazo concessivo já expirou e ainda há dias a gozar." />
+            <Toggle id="n-dayoff" checked={config.notificacoes?.dayoffPendente ?? true}
+              onChange={v => salvar({ notificacoes: { ...config.notificacoes, dayoffPendente: v } })}
+              label="DayOff de aniversário pendente"
+              hint="Lembrete mensal para organizar o DayOff dos aniversariantes do mês." />
+            <Toggle id="n-aniversario" checked={config.notificacoes?.aniversarioProximo ?? true}
+              onChange={v => salvar({ notificacoes: { ...config.notificacoes, aniversarioProximo: v } })}
+              label="Aniversário de colaborador próximo"
+              hint="Avisa quando um colaborador fará aniversário nos próximos 7 dias." />
+            <Toggle id="n-empresa" checked={config.notificacoes?.aniversarioEmpresaProximo ?? true}
+              onChange={v => salvar({ notificacoes: { ...config.notificacoes, aniversarioEmpresaProximo: v } })}
+              label="Aniversário de empresa próximo"
+              hint="Avisa quando um colaborador completará aniversário de empresa em breve." />
+            <Toggle id="n-ciclo" checked={(config.notificacoes as any)?.cicloPendente ?? true}
+              onChange={v => salvar({ notificacoes: { ...config.notificacoes, cicloPendente: v } as any })}
+              label="Ciclo de desenvolvimento iminente"
+              hint="Alerta no Radar de Desenvolvimento quando um colaborador está nos últimos dias do ciclo." />
+          </div>
+        </Card>
       </div>
     );
   };
+
 
   return (
     <div className="p-8">

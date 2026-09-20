@@ -26,6 +26,7 @@ interface SidebarProps {
   tarefasPendentesCount: number;
   currentUser: Usuario | null;
   onLogout: () => void;
+  renderBottom?: React.ReactNode;
 }
 
 // IDs de dashboards que foram removidos do produto mas podem ainda estar
@@ -45,6 +46,7 @@ export default function Sidebar({
   tarefasPendentesCount,
   currentUser,
   onLogout,
+  renderBottom,
 }: SidebarProps) {
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -112,6 +114,9 @@ export default function Sidebar({
           );
         })}
       </nav>
+
+      {/* Slot para componentes extras (ex.: botão Indicadores Operacionais) */}
+      {renderBottom}
 
       {/* System Footer */}
       <div className="p-4 border-t border-slate-800 flex flex-col gap-3">

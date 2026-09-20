@@ -40,6 +40,7 @@ import {
 import Sidebar from './components/Sidebar';
 import { dashboardVisivelParaUsuario } from './utils/dashboards';
 import PWAInstallPrompt from './components/PWAInstallPrompt';
+import BotaoIndicadoresOperacionais from './components/BotaoIndicadoresOperacionais';
 import DashboardExecutiva from './components/DashboardExecutiva';
 import Colaboradores from './components/Colaboradores';
 import ColaboradorProfile from './components/ColaboradorProfile';
@@ -1117,6 +1118,12 @@ export default function App() {
         tarefasPendentesCount={tarefasPendentesCount}
         currentUser={currentUser}
         onLogout={handleLogout}
+        renderBottom={currentUser ? (
+          <BotaoIndicadoresOperacionais
+            currentUser={currentUser}
+            sessionToken={typeof localStorage !== 'undefined' ? localStorage.getItem('gc_session_token') || '' : ''}
+          />
+        ) : undefined}
       />
 
       {/* Main Content View Frame */}

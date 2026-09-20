@@ -460,16 +460,18 @@ const SEED_FOLGAS: Folga[] = [
 const DEFAULT_CONFIG_GESTAO_PESSOAS: ConfiguracaoGestaoPessoas = {
   diasAntecedenciaFerias: 30,
   permitirFeriasProlongadas: false,
-  maximoDiasFolga: 5,
   obrigarPeriodoAquisitivo: true,
   anteciparAniversario: false,
+  cicloDesenvolvimentoMeses: 5,
+  alertaCicloDias: 15,
+  diasLimiteDayOff: 30,
   notificacoes: {
     ferias90dias: true,
     feriasVencendo: true,
     dayoffPendente: true,
-    folgasPendentes: true,
     aniversarioProximo: true,
     aniversarioEmpresaProximo: true,
+    cicloPendente: true,
   },
 };
 

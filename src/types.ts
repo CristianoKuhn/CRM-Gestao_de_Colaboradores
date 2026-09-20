@@ -295,9 +295,30 @@ export type CategoriaDocumento =
   | 'documento_pessoal'
   | 'outro';
 
+// ── Pastas da Central Docs ───────────────────────────────────────────────────
+// Três tipos de pasta:
+//  'colaborador' — vinculada a um colaborador específico. Visível a quem tem
+//                  acesso ao perfil daquele colaborador.
+//  'pessoal'     — visível apenas ao usuário dono (donoId = usuário logado).
+//  'departamento'— visível a todos os usuários do mesmo setor (setorId).
+export type TipoPasta = 'colaborador' | 'pessoal' | 'departamento';
+
+export interface PastaDocumento {
+  id: string;
+  nome: string;
+  tipo: TipoPasta;
+  colaboradorId?: string;   // preenchido quando tipo='colaborador'
+  donoId?: string;          // preenchido quando tipo='pessoal' (userId do dono)
+  setorId?: string;         // preenchido quando tipo='departamento'
+  criadaEm: string;
+  criadaPor: string;        // userId de quem criou
+  cor?: string;             // cor opcional para identificação visual
+}
+
 export interface Documento {
   id: string;
   colaboradorId: string;
+  pastaId?: string;         // pasta à qual o documento pertence (opcional — retrocompatível)
   nome: string;
   categoria: CategoriaDocumento;
   tipoArquivo: string; // pdf, docx, png, jpg, etc

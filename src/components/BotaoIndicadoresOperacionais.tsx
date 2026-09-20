@@ -1,58 +1,77 @@
 /**
- * BotaoIndicadoresOperacionais — Gestão360
+ * BotaoIndicadoresOperacionais — Gestão360 v3
  *
- * Botão que abre o App-Indicadores-Operacionais já logado via SSO.
+ * Fluxo sem poluição visual:
  *
- * CORREÇÕES v2:
- *  1. Pop-up bloqueado: a janela é aberta IMEDIATAMENTE no clique (gesto do
- *     usuário), antes da chamada async. A navegação para a URL final acontece
- *     dentro da janela já aberta — browsers nunca bloqueiam isso.
- *  2. URL do backend G360: passada como parâmetro ?g360=URL na URL de destino,
- *     porque o localStorage do IO (nova aba) não conhece a URL do G360.
- *  3. Fallback de pop-up: se o navegador bloquear mesmo assim (configuração
- *     corporativa), um modal aparece com o link para copiar manualmente.
+ *  CLIQUE 1 (usuário) → busca o token SSO em background (sem abrir nada)
+ *                     → quando o token chega, exibe um micro-popover
+ *                       inline com botão "Abrir agora"
+ *
+ *  CLIQUE 2 (usuário, no popover) → window.open() chamado diretamente
+ *                                   no handler do clique → navegador
+ *                                   NUNCA bloqueia porque é gesto direto
+ *                                   → abre o IO já logado, sem about:blank
+ *
+ * Resultado: zero abas `about:blank`, zero pop-ups bloqueados.
  */
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   BarChart2, ExternalLink, Loader2, AlertTriangle,
-  Copy, Check, X,
+  CheckCircle2, X,
 } from 'lucide-react';
 import { Usuario } from '../types';
 import { StorageAPI } from '../utils/storage';
 
-interface BotaoIndicadoresOperacionaisProps {
+interface Props {
   currentUser: Usuario;
   sessionToken: string;
 }
 
 const IO_URL = 'https://app-indicadores-operacionais.vercel.app';
 
-export default function BotaoIndicadoresOperacionais({
-  currentUser,
-  sessionToken,
-}: BotaoIndicadoresOperacionaisProps) {
-  const [carregando, setCarregando] = useState(false);
-  const [erro, setErro] = useState<string | null>(null);
-  // Modal de fallback quando pop-up é bloqueado
-  const [urlFallback, setUrlFallback] = useState<string | null>(null);
-  const [copiado, setCopiado] = useState(false);
+type Estado =
+  | { tipo: 'idle' }
+  | { tipo: 'carregando' }
+  | { tipo: 'pronto'; url: string }
+  | { tipo: 'erro'; msg: string };
 
+export default function BotaoIndicadoresOperacionais({ currentUser, sessionToken }: Props) {
+  const [estado, setEstado] = useState<Estado>({ tipo: 'idle' });
+  const popoverRef = useRef<HTMLDivElement>(null);
   const backendUrl = StorageAPI.getGoogleScriptConfig()?.webAppUrl || '';
-  const semBackend = !backendUrl || !backendUrl.startsWith('https://script.google.com/');
+  const semBackend = !backendUrl.startsWith('https://script.google.com/');
 
-  const abrirIndicadores = async () => {
-    if (semBackend || carregando) return;
+  // Fecha o popover ao clicar fora
+  useEffect(() => {
+    if (estado.tipo !== 'pronto') return;
+    const handler = (e: MouseEvent) => {
+      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
+        setEstado({ tipo: 'idle' });
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [estado.tipo]);
 
-    setCarregando(true);
-    setErro(null);
+  // Token expira em 5 min — limpa o popover após 4m50s
+  useEffect(() => {
+    if (estado.tipo !== 'pronto') return;
+    const t = setTimeout(() => setEstado({ tipo: 'idle' }), 4 * 60 * 1000 + 50 * 1000);
+    return () => clearTimeout(t);
+  }, [estado.tipo]);
 
-    // ── CORREÇÃO 1: abrir janela IMEDIATAMENTE (gesto do usuário) ──────────
-    // O navegador só permite window.open sem bloquear quando chamado
-    // diretamente em resposta a um clique. Chamadas dentro de .then() de
-    // uma Promise async são tratadas como fora do contexto de gesto.
-    // Abrimos uma janela de loading agora e navegamos nela depois.
-    const janelaIO = window.open('about:blank', '_blank', 'noopener');
+  // ── CLIQUE 1: buscar token sem abrir nada ─────────────────────────────────
+  const handlePrimeiroClique = async () => {
+    if (semBackend || estado.tipo === 'carregando') return;
+
+    // Se já temos o token pronto, o segundo clique vai abrir diretamente
+    if (estado.tipo === 'pronto') {
+      setEstado({ tipo: 'idle' });
+      return;
+    }
+
+    setEstado({ tipo: 'carregando' });
 
     try {
       const resp = await fetch('/api/gerar-token-sso', {
@@ -60,157 +79,138 @@ export default function BotaoIndicadoresOperacionais({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sessionToken, backendUrl }),
       });
-
       const dados = await resp.json();
 
       if (!resp.ok || !dados.success || !dados.ssoToken) {
-        // Fechar janela vazia se falhar
-        janelaIO?.close();
-        setErro(dados?.message || 'Não foi possível gerar o acesso. Tente novamente.');
+        setEstado({ tipo: 'erro', msg: dados?.message || 'Não foi possível gerar o acesso. Tente novamente.' });
+        setTimeout(() => setEstado({ tipo: 'idle' }), 4000);
         return;
       }
 
-      // ── CORREÇÃO 2: URL do backend G360 passada como parâmetro ────────────
-      // O localStorage do IO (nova aba) não conhece a URL do G360.
-      // Passamos ela como ?g360=URL para que o ssoService do IO a use
-      // sem precisar de configuração prévia naquele domínio.
-      const urlIO = `${IO_URL}?sso=${encodeURIComponent(dados.ssoToken)}&g360=${encodeURIComponent(backendUrl)}`;
-
-      if (janelaIO && !janelaIO.closed) {
-        // Navega a janela já aberta para a URL correta
-        janelaIO.location.href = urlIO;
-      } else {
-        // ── CORREÇÃO 3: fallback se pop-up foi bloqueado ───────────────────
-        // O navegador fechou/bloqueou a janela. Mostramos um modal com o
-        // link para o usuário abrir manualmente.
-        setUrlFallback(urlIO);
-      }
+      const url = `${IO_URL}?sso=${encodeURIComponent(dados.ssoToken)}&g360=${encodeURIComponent(backendUrl)}`;
+      setEstado({ tipo: 'pronto', url });
 
     } catch (e: any) {
-      janelaIO?.close();
-      setErro('Erro de conexão. Verifique sua internet e tente novamente.');
-      console.error('[BotaoIO]', e);
-    } finally {
-      setCarregando(false);
+      setEstado({ tipo: 'erro', msg: 'Erro de conexão. Tente novamente.' });
+      setTimeout(() => setEstado({ tipo: 'idle' }), 4000);
     }
   };
 
-  const copiarLink = async () => {
-    if (!urlFallback) return;
-    try {
-      await navigator.clipboard.writeText(urlFallback);
-      setCopiado(true);
-      setTimeout(() => setCopiado(false), 2000);
-    } catch {
-      // Fallback para navegadores sem clipboard API
-      const el = document.createElement('textarea');
-      el.value = urlFallback;
-      document.body.appendChild(el);
-      el.select();
-      document.execCommand('copy');
-      document.body.removeChild(el);
-      setCopiado(true);
-      setTimeout(() => setCopiado(false), 2000);
-    }
+  // ── CLIQUE 2: abrir a aba — chamado DIRETAMENTE no onClick do <a> ─────────
+  // Usando <a target="_blank"> em vez de window.open(): browsers NUNCA
+  // bloqueiam links <a> com target="_blank" clicados pelo usuário, mesmo com
+  // bloqueadores de pop-up ativos. É o método mais confiável disponível.
+  const handleAbrirIO = () => {
+    // Limpa o popover após abrir
+    setTimeout(() => setEstado({ tipo: 'idle' }), 300);
   };
+
+  const carregando = estado.tipo === 'carregando';
+  const pronto = estado.tipo === 'pronto';
+  const erro = estado.tipo === 'erro';
 
   return (
-    <>
+    <div className="relative mt-1" ref={popoverRef}>
+      {/* Separador */}
+      <div className="border-t border-slate-800 mb-2 mx-2" />
+
       {/* Botão principal */}
-      <div className="mt-1">
-        <div className="border-t border-slate-800 mb-2 mx-2" />
-
-        <button
-          onClick={abrirIndicadores}
-          disabled={semBackend || carregando}
-          title={
-            semBackend
-              ? 'Configure a URL do backend em Configurações Gerais'
-              : `Abrir Indicadores Operacionais como ${currentUser.nome}`
-          }
-          className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 group ${
-            semBackend || carregando
-              ? 'opacity-40 cursor-not-allowed text-slate-500'
-              : 'text-slate-400 hover:bg-slate-800 hover:text-slate-100 cursor-pointer'
-          }`}
-        >
-          <div className="flex items-center gap-3 flex-1 min-w-0">
-            {carregando ? (
-              <Loader2 size={18} className="text-teal-400 animate-spin shrink-0" />
-            ) : (
-              <BarChart2 size={18} className="text-slate-400 group-hover:text-teal-400 transition-colors shrink-0" />
-            )}
-            <span className="truncate">
-              {carregando ? 'Preparando acesso...' : 'Indicadores Operacionais'}
-            </span>
-          </div>
-          {!carregando && (
-            <ExternalLink size={13} className="text-slate-600 group-hover:text-slate-400 shrink-0" />
+      <button
+        onClick={handlePrimeiroClique}
+        disabled={semBackend || carregando}
+        title={
+          semBackend
+            ? 'Configure a URL do backend em Configurações Gerais'
+            : pronto
+            ? 'Clique em "Abrir agora" para entrar'
+            : `Acessar Indicadores Operacionais como ${currentUser.nome}`
+        }
+        className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 group ${
+          semBackend || carregando
+            ? 'opacity-40 cursor-not-allowed text-slate-500'
+            : pronto
+            ? 'bg-teal-900/30 text-teal-300 cursor-pointer'
+            : 'text-slate-400 hover:bg-slate-800 hover:text-slate-100 cursor-pointer'
+        }`}
+      >
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          {carregando ? (
+            <Loader2 size={18} className="text-teal-400 animate-spin shrink-0" />
+          ) : pronto ? (
+            <CheckCircle2 size={18} className="text-teal-400 shrink-0" />
+          ) : erro ? (
+            <AlertTriangle size={18} className="text-rose-400 shrink-0" />
+          ) : (
+            <BarChart2 size={18} className="text-slate-400 group-hover:text-teal-400 transition-colors shrink-0" />
           )}
-        </button>
-
-        {erro && (
-          <div className="mx-2 mt-1 flex items-start gap-1.5 bg-rose-900/40 border border-rose-800/50 rounded-xl px-3 py-2">
-            <AlertTriangle size={12} className="text-rose-400 mt-0.5 shrink-0" />
-            <p className="text-[10px] text-rose-300 leading-tight">{erro}</p>
-          </div>
+          <span className="truncate text-sm">
+            {carregando
+              ? 'Preparando acesso...'
+              : pronto
+              ? 'Acesso pronto!'
+              : 'Indicadores Operacionais'}
+          </span>
+        </div>
+        {!carregando && !pronto && (
+          <ExternalLink size={13} className="text-slate-600 group-hover:text-slate-400 shrink-0" />
         )}
-      </div>
+        {pronto && (
+          <span className="text-[10px] text-teal-500 font-bold shrink-0">Abrir ↓</span>
+        )}
+      </button>
 
-      {/* Modal de fallback — pop-up bloqueado */}
-      {urlFallback && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl max-w-sm w-full p-6">
-            <div className="flex items-start justify-between gap-3 mb-4">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 bg-amber-500/20 rounded-xl flex items-center justify-center">
-                  <AlertTriangle size={16} className="text-amber-400" />
+      {/* Erro inline */}
+      {erro && (
+        <div className="mx-2 mt-1 flex items-start gap-1.5 bg-rose-900/40 border border-rose-800/50 rounded-xl px-3 py-2">
+          <AlertTriangle size={12} className="text-rose-400 mt-0.5 shrink-0" />
+          <p className="text-[10px] text-rose-300 leading-tight">{(estado as any).msg}</p>
+        </div>
+      )}
+
+      {/* Popover inline — aparece abaixo do botão quando token está pronto */}
+      {pronto && (
+        <div className="absolute bottom-full left-2 right-2 mb-2 z-50 animate-in fade-in slide-in-from-bottom-2 duration-200">
+          <div className="bg-slate-800 border border-teal-700/50 rounded-2xl shadow-2xl p-4">
+            {/* Header */}
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 bg-teal-500/20 rounded-lg flex items-center justify-center">
+                  <CheckCircle2 size={13} className="text-teal-400" />
                 </div>
-                <div>
-                  <p className="font-bold text-slate-100 text-sm">Pop-up bloqueado</p>
-                  <p className="text-[11px] text-slate-400">O navegador bloqueou a abertura automática</p>
-                </div>
+                <span className="text-xs font-bold text-teal-300">Acesso autorizado</span>
               </div>
               <button
-                onClick={() => setUrlFallback(null)}
-                className="text-slate-500 hover:text-slate-300 cursor-pointer"
+                onClick={() => setEstado({ tipo: 'idle' })}
+                className="text-slate-500 hover:text-slate-300 cursor-pointer transition"
+                aria-label="Fechar"
               >
-                <X size={16} />
+                <X size={14} />
               </button>
             </div>
 
-            <p className="text-xs text-slate-300 mb-4 leading-relaxed">
-              Clique no botão abaixo para abrir o Indicadores Operacionais, ou libere
-              pop-ups para este site nas configurações do navegador.
+            <p className="text-[11px] text-slate-400 mb-3 leading-relaxed">
+              Logado como <span className="text-slate-200 font-semibold">{currentUser.nome}</span>.
+              Clique abaixo para abrir o Indicadores Operacionais.
             </p>
 
-            <div className="space-y-2">
-              <a
-                href={urlFallback}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={() => setUrlFallback(null)}
-                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-sm rounded-xl transition cursor-pointer"
-              >
-                <ExternalLink size={14} />
-                Abrir Indicadores Operacionais
-              </a>
+            {/* Link direto — <a> nunca é bloqueado por pop-up blockers */}
+            <a
+              href={(estado as { tipo: 'pronto'; url: string }).url}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={handleAbrirIO}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs rounded-xl transition cursor-pointer"
+            >
+              <ExternalLink size={13} />
+              Abrir Indicadores Operacionais
+            </a>
 
-              <button
-                onClick={copiarLink}
-                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-xl transition cursor-pointer"
-              >
-                {copiado ? <Check size={13} className="text-teal-400" /> : <Copy size={13} />}
-                {copiado ? 'Link copiado!' : 'Copiar link de acesso'}
-              </button>
-            </div>
-
-            <p className="text-[10px] text-slate-500 text-center mt-3">
-              Este link expira em 5 minutos. Não compartilhe com terceiros.
+            <p className="text-[10px] text-slate-600 text-center mt-2">
+              Link expira em 5 min · uso único
             </p>
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 }

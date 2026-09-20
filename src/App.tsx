@@ -20,6 +20,7 @@ import {
   Usuario,
   AvaliacaoExperiencia,
   Documento,
+  PastaDocumento,
   Reconhecimento,
   ConfiguracaoReconhecimento,
   MetaLideranca,
@@ -54,6 +55,7 @@ import CentralDocumentos from './components/CentralDocumentos';
 import SistemaReconhecimento from './components/SistemaReconhecimento';
 import MetasLideranca from './components/MetasLideranca';
 import SistemaNotificacoes from './components/SistemaNotificacoes';
+import GuiaUsabilidade from './components/GuiaUsabilidade';
 import GestaoPessoas from './components/GestaoPessoas';
 import LisaWidget, { ResultadoNavegacaoLisa, ResumoDiarioLisa } from './components/lisa/LisaWidget';
 import { LisaAcaoNavegar } from './services/LisaService';
@@ -205,6 +207,7 @@ export default function App() {
 
   // P3: Documentos
   const [documentos, setDocumentos] = useState<Documento[]>([]);
+  const [pastas, setPastas] = useState<PastaDocumento[]>([]);
 
   // P4: Reconhecimento
   const [reconhecimentos, setReconhecimentos] = useState<Reconhecimento[]>([]);
@@ -220,7 +223,7 @@ export default function App() {
   const [metasSetor, setMetasSetor] = useState<MetaSetor[]>([]);
   const [acompanhamentos, setAcompanhamentos] = useState<AcompanhamentoRealizado[]>([]);
 
-  // Sistema de Notificações e Alertas
+  const [showGuia, setShowGuia] = useState(false);
   const [alertas, setAlertas] = useState<AlertaInteligente[]>([]);
   const [configAlertas, setConfigAlertas] = useState<ConfiguracaoAlertas>({
     diasSemInteracao: 14,
@@ -1137,8 +1140,18 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-4">
-            {/* Sistema de Notificações */}
-            <SistemaNotificacoes
+              {/* Botão Guia de Usabilidade */}
+              <button
+                onClick={() => setShowGuia(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-slate-900 hover:bg-slate-700 text-white text-xs font-bold rounded-xl cursor-pointer transition"
+                title="Abrir Manual do Gestão360"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+                Guia de Usabilidade
+              </button>
+
+              {/* Sistema de Notificações */}
+              <SistemaNotificacoes
               alertas={alertasVisiveis}
               configAlertas={configAlertas}
               colaboradores={colaboradoresVisiveis}
@@ -1293,8 +1306,13 @@ export default function App() {
               colaborador={{ id: 'todos', nome: 'Todos', email: '', fotoUrl: '', cargoId: '', setorId: '', liderId: '', dataAdmissao: '', situacao: 'Ativo', empresaId: '' } as Colaborador}
               documentos={documentosVisiveis}
               colaboradores={colaboradoresVisiveis}
+              setores={setores}
+              currentUser={currentUser || undefined}
+              pastas={pastas}
+              onAddPasta={(pasta) => setPastas(prev => [...prev, pasta])}
               onAddDocumento={handleAddDocumento}
               onDeleteDocumento={handleDeleteDocumento}
+              onUpdateDocumento={async (doc) => { await DataService.saveDocumento(doc); setDocumentos(prev => prev.map(d => d.id === doc.id ? doc : d)); }}
               currentUserId={currentUser?.id || ''}
             />
           )}
@@ -1468,6 +1486,9 @@ export default function App() {
 
       {/* PWA: banner de instalação e atualizações — flutuante, não bloqueia nada */}
       <PWAInstallPrompt />
+
+      {/* Guia de Usabilidade — modal global */}
+      {showGuia && <GuiaUsabilidade onFechar={() => setShowGuia(false)} />}
     </div>
   );
 }

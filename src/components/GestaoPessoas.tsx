@@ -57,7 +57,7 @@ import {
 // ==========================================
 // TIPOS INTERNOS
 // ==========================================
-type SubTab = 'dashboard' | 'calendario' | 'ferias' | 'dayoff' | 'folgas' | 'config';
+type SubTab = 'dashboard' | 'calendario' | 'ferias' | 'dayoff' | 'desenvolvimento' | 'config';
 
 interface AlertaGestaoPessoas {
   id: string;
@@ -392,6 +392,7 @@ interface GestaoPessoasProps {
   avaliacoesExperiencia: AvaliacaoExperiencia[];
   currentUserId: string;
   onSelectColaborador?: (id: string) => void;
+  onNavigateToColaborador?: (colaboradorId: string, aba?: string) => void;
 }
 
 export default function GestaoPessoas({
@@ -404,6 +405,7 @@ export default function GestaoPessoas({
   avaliacoesExperiencia,
   currentUserId,
   onSelectColaborador,
+  onNavigateToColaborador,
 }: GestaoPessoasProps) {
   const [subTab, setSubTab] = useState<SubTab>('dashboard');
   const [ferias, setFerias] = useState<Ferias[]>([]);
@@ -426,7 +428,7 @@ export default function GestaoPessoas({
   
   // Filtros
   const [filtroAno, setFiltroAno] = useState(ANO_ATUAL);
-  const [filtroMes, setFiltroMes] = useState<number | null>(null);
+  const [filtroMes, setFiltroMes] = useState<number | null>(new Date().getMonth());
   const [filtroSetor, setFiltroSetor] = useState<string | null>(null);
   const [filtroTipoEvento, setFiltroTipoEvento] = useState<string | null>(null);
   
@@ -990,7 +992,7 @@ export default function GestaoPessoas({
         { id: 'calendario', label: 'Calendário', icon: Calendar },
         { id: 'ferias', label: 'Férias', icon: Palmtree },
         { id: 'dayoff', label: 'DayOff', icon: Gift },
-        { id: 'folgas', label: 'Folgas', icon: Briefcase },
+        { id: 'desenvolvimento', label: 'Desenvolvimento', icon: TrendingUp },
         { id: 'config', label: 'Config', icon: Settings },
       ].map(tab => (
         <button
@@ -1293,7 +1295,11 @@ export default function GestaoPessoas({
     const meses = getMesesDoAno();
     
     // Filtrar eventos
-    let eventosFiltrados = eventosCalendario;
+    let eventosFiltrados = eventosCalendario.filter(e => {
+      // Excluir eventos de colaboradores desligados por padrão
+      const col = colaboradores.find(c => c.id === e.colaboradorId);
+      return !col || col.situacao !== 'Desligado';
+    });
     if (filtroSetor) {
       eventosFiltrados = eventosFiltrados.filter(e => e.setorId === filtroSetor);
     }
@@ -1446,171 +1452,357 @@ export default function GestaoPessoas({
   };
 
   const renderFerias = () => {
-    // Filtros
-    let feriasFiltradas = [...ferias];
-    if (filtroSetor) {
-      feriasFiltradas = feriasFiltradas.filter(f => {
-        const col = colaboradores.find(c => c.id === f.colaboradorId);
-        return col?.setorId === filtroSetor;
-      });
-    }
-    if (filtroAno) {
-      feriasFiltradas = feriasFiltradas.filter(f => new Date(f.dataInicio).getFullYear() === filtroAno);
-    }
-    
-    // Planning de férias
+    const hoje = new Date();
+    const ANO_CONCESSAO = filtroAno;
+
+    // ── Helpers de cálculo CLT ────────────────────────────────────────────
+    // Período aquisitivo: 12 meses a partir da admissão (aniversários)
+    // Prazo para gozo: até 12 meses após o fim do período aquisitivo
+    // Mínimo de dias: 10 dias por concessão (CLT art. 134)
+    // Não pode iniciar nos 2 dias antes de DSR ou feriado nacional
+
+    const FERIADOS_NACIONAIS = [
+      [1,1],[21,4],[1,5],[7,9],[12,10],[2,11],[15,11],[25,12],
+    ]; // [dia, mês-1]
+
+    const isDSR = (d: Date) => d.getDay() === 0 || d.getDay() === 6;
+    const isFeriado = (d: Date) => FERIADOS_NACIONAIS.some(([dia, mes]) => d.getDate() === dia && d.getMonth() === mes);
+
+    const validarInicioFerias = (dataInicio: Date): { ok: boolean; aviso?: string } => {
+      // CLT: não pode começar 2 dias antes de DSR ou feriado
+      const d1 = new Date(dataInicio); d1.setDate(d1.getDate() + 1);
+      const d2 = new Date(dataInicio); d2.setDate(d2.getDate() + 2);
+      if (isDSR(d1) || isFeriado(d1) || isDSR(d2) || isFeriado(d2)) {
+        return { ok: false, aviso: 'CLT: Férias não devem terminar próximas a DSR ou feriado.' };
+      }
+      // Recomendação interna: terça a quinta
+      const diaSemana = dataInicio.getDay();
+      if (diaSemana < 2 || diaSemana > 4) {
+        return { ok: true, aviso: 'Recomendação: iniciar entre terça e quinta-feira.' };
+      }
+      return { ok: true };
+    };
+
+    // ── Calcular todos os períodos aquisitivos de todos os colaboradores ──
+    // Mostra TODOS os períodos (passados, atual, futuros) para planejamento
     const planejamento = colaboradores
-      .filter(c => c.situacao !== 'Desligado')
+      .filter(c => c.situacao !== 'Desligado' && (!filtroSetor || c.setorId === filtroSetor))
+      .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
       .map(col => {
-        const colPeriodos = periodosAquisitivos.filter(p => p.colaboradorId === col.id);
-        const colFerias = feriasFiltradas.filter(f => f.colaboradorId === col.id);
-        const periodoAtivo = colPeriodos.find(p => p.status === 'ativo');
-        const prazoMax = calcularPrazoMaximoFerias(col.dataAdmissao);
-        
-        return {
-          colaborador: col,
-          setores: setores.find(s => s.id === col.setorId),
-          periodos: colPeriodos,
-          ferias: colFerias,
-          periodoAtivo,
-          prazoMaximo: prazoMax,
-        };
-      });
-    
+        if (!col.dataAdmissao) return null;
+        const admissao = new Date(col.dataAdmissao);
+        if (isNaN(admissao.getTime())) return null;
+
+        // Gerar todos os períodos aquisitivos desde a admissão até ~2 anos à frente
+        const anos_a_gerar = Math.ceil((new Date().getFullYear() + 2 - admissao.getFullYear())) + 1;
+        const periodos: {
+          anoBase: number;
+          inicioAquisitivo: Date;
+          fimAquisitivo: Date;
+          limiteGozo: Date;
+          diasGozados: number;
+          diasRestantes: number;
+          status: 'vencido' | 'ativo' | 'futuro';
+          jaGozado: boolean;
+          feriasVinculadas: Ferias[];
+        }[] = [];
+
+        for (let i = 0; i < anos_a_gerar; i++) {
+          const inicioAq = new Date(admissao);
+          inicioAq.setFullYear(admissao.getFullYear() + i);
+          const fimAq = new Date(inicioAq);
+          fimAq.setFullYear(fimAq.getFullYear() + 1);
+          fimAq.setDate(fimAq.getDate() - 1);
+          const limiteGozo = new Date(fimAq);
+          limiteGozo.setFullYear(limiteGozo.getFullYear() + 1);
+
+          // Férias vinculadas a este período
+          const feriasVinculadas = ferias.filter(f =>
+            f.colaboradorId === col.id &&
+            f.periodoAquisitivoId &&
+            periodosAquisitivos.find(p =>
+              p.id === f.periodoAquisitivoId &&
+              new Date(p.dataInicio).getFullYear() === inicioAq.getFullYear()
+            )
+          );
+
+          // Dias gozados neste período
+          const diasGozados = feriasVinculadas
+            .filter(f => f.status !== 'planejada')
+            .reduce((acc, f) => acc + (f.dias || 0), 0);
+          const diasRestantes = 30 - diasGozados;
+
+          // Verificar se este período foi marcado como "já gozado" no estado local
+          const periodoDb = periodosAquisitivos.find(p =>
+            p.colaboradorId === col.id &&
+            Math.abs(new Date(p.dataInicio).getFullYear() - inicioAq.getFullYear()) <= 0
+          );
+          const jaGozado = periodoDb?.marcaComoUtilizado === true || diasRestantes <= 0;
+
+          const status: 'vencido' | 'ativo' | 'futuro' =
+            limiteGozo < hoje ? 'vencido' :
+            inicioAq > hoje ? 'futuro' : 'ativo';
+
+          periodos.push({
+            anoBase: admissao.getFullYear() + i,
+            inicioAquisitivo: inicioAq,
+            fimAquisitivo: fimAq,
+            limiteGozo,
+            diasGozados,
+            diasRestantes: Math.max(0, diasRestantes),
+            status,
+            jaGozado,
+            feriasVinculadas,
+          });
+        }
+
+        return { colaborador: col, setor: setores.find(s => s.id === col.setorId), periodos };
+      })
+      .filter(Boolean) as {
+        colaborador: Colaborador;
+        setor: Setor | undefined;
+        periodos: {
+          anoBase: number;
+          inicioAquisitivo: Date;
+          fimAquisitivo: Date;
+          limiteGozo: Date;
+          diasGozados: number;
+          diasRestantes: number;
+          status: 'vencido' | 'ativo' | 'futuro';
+          jaGozado: boolean;
+          feriasVinculadas: Ferias[];
+        }[];
+      }[];
+
+    // Estado local para edição de concessão inline
+    // (gerenciado via editConcessao state já existente no componente)
+
     return (
-      <div className="space-y-6">
-        {/* Header com filtros e ações */}
-        <div className="flex flex-wrap justify-between items-center gap-4">
-          <div className="flex flex-wrap gap-4 items-center">
-            <select
-              value={filtroAno}
-              onChange={e => setFiltroAno(parseInt(e.target.value))}
-              className="text-xs border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:border-teal-500 bg-white"
-            >
-              {anosDisponiveis.map(ano => (
-                <option key={ano} value={ano}>{ano}</option>
-              ))}
-            </select>
-            
+      <div className="space-y-4">
+        {/* Header */}
+        <div className="flex flex-wrap justify-between items-center gap-3">
+          <div className="flex items-center gap-3">
             <select
               value={filtroSetor ?? ''}
               onChange={e => setFiltroSetor(e.target.value || null)}
-              className="text-xs border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:border-teal-500 bg-white"
+              className="text-xs border border-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:border-teal-500 bg-white"
             >
               <option value="">Todos os setores</option>
-              {setores.map(setor => (
-                <option key={setor.id} value={setor.id}>{setor.nome}</option>
-              ))}
+              {setores.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
             </select>
           </div>
-          
-          <button
-            onClick={() => setShowSugestaoDistribuicao(true)}
-            className="flex items-center gap-2 px-4 py-2 border border-teal-200 text-teal-700 hover:bg-teal-50 font-semibold rounded-xl text-xs transition"
-          >
-            <Sparkles size={14} />
-            Sugerir Distribuição
-          </button>
-
-          <button
-            onClick={() => {
-              setModalType('ferias');
-              setSelectedColaborador(null);
-              setShowModal(true);
-            }}
-            className="flex items-center gap-2 px-4 py-2 bg-teal-500 hover:bg-teal-400 text-slate-950 font-semibold rounded-xl text-xs transition"
-          >
-            <Plus size={14} />
-            Planejar Férias
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowSugestaoDistribuicao(true)}
+              className="flex items-center gap-1.5 px-3 py-2 border border-teal-200 text-teal-700 hover:bg-teal-50 font-semibold rounded-xl text-xs transition"
+            >
+              <Sparkles size={13} /> Sugerir Distribuição
+            </button>
+          </div>
         </div>
 
-        {/* Tabela de Planejamento */}
+        {/* Legenda CLT */}
+        <div className="bg-blue-50 border border-blue-200 rounded-2xl p-3 flex items-start gap-2 text-[11px] text-blue-700">
+          <Info size={14} className="shrink-0 mt-0.5" />
+          <span><strong>Regras CLT:</strong> Férias não podem iniciar nos 2 dias antes de DSR/feriado. <strong>Recomendação interna:</strong> iniciar entre terça e quinta-feira. Mínimo 10 dias por concessão. Prazo máximo: 12 meses após o fim do período aquisitivo.</span>
+        </div>
+
+        {/* Tabela */}
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead className="bg-slate-50">
+            <table className="w-full text-xs min-w-[900px]">
+              <thead className="bg-slate-50 border-b border-slate-100">
                 <tr>
-                  <th className="text-left py-3 px-4 font-semibold text-slate-500 uppercase tracking-wider">Colaborador</th>
-                  <th className="text-left py-3 px-4 font-semibold text-slate-500 uppercase tracking-wider">Setor</th>
-                  <th className="text-left py-3 px-4 font-semibold text-slate-500 uppercase tracking-wider">Admissão</th>
-                  <th className="text-left py-3 px-4 font-semibold text-slate-500 uppercase tracking-wider">Período</th>
-                  <th className="text-left py-3 px-4 font-semibold text-slate-500 uppercase tracking-wider">Início</th>
-                  <th className="text-left py-3 px-4 font-semibold text-slate-500 uppercase tracking-wider">Fim</th>
-                  <th className="text-left py-3 px-4 font-semibold text-slate-500 uppercase tracking-wider">Dias</th>
-                  <th className="text-left py-3 px-4 font-semibold text-slate-500 uppercase tracking-wider">Status</th>
-                  <th className="text-left py-3 px-4 font-semibold text-slate-500 uppercase tracking-wider">Restantes</th>
+                  <th className="text-left py-3 px-3 font-bold text-slate-500 uppercase tracking-wider text-[10px]">Colaborador</th>
+                  <th className="text-left py-3 px-3 font-bold text-slate-500 uppercase tracking-wider text-[10px]">Admissão</th>
+                  <th className="text-left py-3 px-3 font-bold text-slate-500 uppercase tracking-wider text-[10px]">Início Aquisitivo</th>
+                  <th className="text-left py-3 px-3 font-bold text-slate-500 uppercase tracking-wider text-[10px]">Fim Aquisitivo</th>
+                  <th className="text-center py-3 px-3 font-bold text-slate-500 uppercase tracking-wider text-[10px]">Gozados</th>
+                  <th className="text-center py-3 px-3 font-bold text-slate-500 uppercase tracking-wider text-[10px]">Restantes</th>
+                  <th className="text-left py-3 px-3 font-bold text-slate-500 uppercase tracking-wider text-[10px]">Limite Gozo</th>
+                  <th className="text-left py-3 px-3 font-bold text-slate-500 uppercase tracking-wider text-[10px]">Concessão Início</th>
+                  <th className="text-center py-3 px-3 font-bold text-slate-500 uppercase tracking-wider text-[10px]">Nº Dias</th>
+                  <th className="text-left py-3 px-3 font-bold text-slate-500 uppercase tracking-wider text-[10px]">Concessão Fim</th>
+                  <th className="text-center py-3 px-3 font-bold text-slate-500 uppercase tracking-wider text-[10px]">Status</th>
+                  <th className="py-3 px-3 text-[10px]"></th>
                 </tr>
               </thead>
               <tbody>
-                {planejamento.flatMap(item => {
-                  const rows: React.ReactNode[] = [];
-                  
-                  // Períodos
-                  item.periodos.forEach(periodo => {
-                    const diasRestantes = periodo.diasDisponiveis - periodo.diasUsados;
-                    rows.push(
-                      <tr key={periodo.id} className="border-t border-slate-100">
-                        <td className="py-3 px-4">
-                          <div className="flex items-center gap-2">
-                            <img src={item.colaborador.fotoUrl} alt={item.colaborador.nome} className="w-6 h-6 rounded-full object-cover" />
-                            <span className="font-semibold text-slate-800">{item.colaborador.nome}</span>
-                          </div>
+                {planejamento.flatMap(({ colaborador, setor, periodos }) =>
+                  periodos.map((per, idx) => {
+                    // Concessão existente (férias planejadas neste período)
+                    const feriasExistente = per.feriasVinculadas.find(f => f.status === 'planejada');
+                    const concessaoInicio = feriasExistente?.dataInicio
+                      ? new Date(feriasExistente.dataInicio)
+                      : null;
+                    const concessaoDias = feriasExistente?.dias || 0;
+                    const concessaoFim = concessaoInicio && concessaoDias
+                      ? (() => { const d = new Date(concessaoInicio); d.setDate(d.getDate() + concessaoDias - 1); return d; })()
+                      : null;
+
+                    const validacao = concessaoInicio ? validarInicioFerias(concessaoInicio) : null;
+
+                    // Cor da linha por status
+                    const bgRow =
+                      per.jaGozado ? 'bg-slate-50 opacity-60' :
+                      per.status === 'vencido' && per.diasRestantes > 0 ? 'bg-rose-50/50' :
+                      idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/30';
+
+                    const statusLabel =
+                      per.jaGozado ? { label: 'Já Gozado', cls: 'bg-slate-100 text-slate-500' } :
+                      per.status === 'vencido' && per.diasRestantes > 0 ? { label: 'VENCIDO', cls: 'bg-rose-100 text-rose-700' } :
+                      per.status === 'vencido' ? { label: 'Concluído', cls: 'bg-slate-100 text-slate-500' } :
+                      feriasExistente ? { label: 'Planejado', cls: 'bg-teal-100 text-teal-700' } :
+                      per.status === 'ativo' ? { label: 'ATIVO', cls: 'bg-emerald-100 text-emerald-700' } :
+                      { label: 'Futuro', cls: 'bg-blue-100 text-blue-700' };
+
+                    return (
+                      <tr
+                        key={`${colaborador.id}-${per.anoBase}`}
+                        className={`border-t border-slate-100 ${bgRow}`}
+                      >
+                        {/* Colaborador — só exibe na primeira linha */}
+                        <td className="py-2.5 px-3">
+                          {idx === 0 && (
+                            <div className="flex items-center gap-2">
+                              <img src={colaborador.fotoUrl} alt={colaborador.nome}
+                                className="w-6 h-6 rounded-full object-cover shrink-0" />
+                              <div>
+                                <p className="font-bold text-slate-800 whitespace-nowrap">{colaborador.nome}</p>
+                                <p className="text-[9px] text-slate-400">{setor?.nome}</p>
+                              </div>
+                            </div>
+                          )}
                         </td>
-                        <td className="py-3 px-4 text-slate-600">{item.setores?.nome}</td>
-                        <td className="py-3 px-4 text-slate-600">{new Date(item.colaborador.dataAdmissao).toLocaleDateString('pt-BR')}</td>
-                        <td className="py-3 px-4 text-slate-600">
-                          {periodo.anoBase}/{periodo.anoBase + 1}
+
+                        {/* Admissão */}
+                        <td className="py-2.5 px-3 text-slate-500 whitespace-nowrap">
+                          {idx === 0 ? new Date(colaborador.dataAdmissao).toLocaleDateString('pt-BR') : ''}
                         </td>
-                        <td className="py-3 px-4 text-slate-400">-</td>
-                        <td className="py-3 px-4 text-slate-400">-</td>
-                        <td className="py-3 px-4 text-slate-400">-</td>
-                        <td className="py-3 px-4">
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase ${
-                            periodo.status === 'ativo' ? 'bg-emerald-100 text-emerald-700' :
-                            periodo.status === 'vencido' ? 'bg-slate-100 text-slate-600' :
-                            'bg-blue-100 text-blue-700'
-                          }`}>
-                            {periodo.status}
+
+                        {/* Início / Fim Aquisitivo */}
+                        <td className="py-2.5 px-3 text-slate-600 whitespace-nowrap">
+                          {per.inicioAquisitivo.toLocaleDateString('pt-BR')}
+                        </td>
+                        <td className="py-2.5 px-3 text-slate-600 whitespace-nowrap">
+                          {per.fimAquisitivo.toLocaleDateString('pt-BR')}
+                        </td>
+
+                        {/* Gozados / Restantes */}
+                        <td className="py-2.5 px-3 text-center">
+                          <span className="font-semibold text-slate-700">{per.diasGozados}</span>
+                        </td>
+                        <td className="py-2.5 px-3 text-center">
+                          <span className={`font-bold ${per.diasRestantes > 0 ? 'text-emerald-600' : 'text-slate-400'}`}>
+                            {per.diasRestantes}
                           </span>
                         </td>
-                        <td className="py-3 px-4">
-                          <span className={`font-semibold ${diasRestantes > 0 ? 'text-emerald-600' : 'text-slate-400'}`}>
-                            {diasRestantes} dias
+
+                        {/* Limite para Gozo */}
+                        <td className="py-2.5 px-3 whitespace-nowrap">
+                          <span className={per.limiteGozo < hoje && per.diasRestantes > 0 ? 'text-rose-600 font-bold' : 'text-slate-600'}>
+                            {per.limiteGozo.toLocaleDateString('pt-BR')}
                           </span>
+                        </td>
+
+                        {/* Concessão Início (editável) */}
+                        <td className="py-2.5 px-3">
+                          {!per.jaGozado && per.diasRestantes > 0 ? (
+                            <div className="flex flex-col gap-0.5">
+                              <input
+                                type="date"
+                                defaultValue={concessaoInicio ? concessaoInicio.toISOString().split('T')[0] : ''}
+                                onChange={async (e) => {
+                                  if (!e.target.value || !feriasExistente) return;
+                                  const novaData = e.target.value;
+                                  const feriasAtualizada = { ...feriasExistente, dataInicio: novaData };
+                                  await DataService.saveFerias(feriasAtualizada);
+                                  setFerias(prev => prev.map(f => f.id === feriasExistente.id ? feriasAtualizada : f));
+                                }}
+                                className="text-[10px] border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:border-teal-500 bg-white w-28"
+                              />
+                              {validacao?.aviso && (
+                                <span className={`text-[9px] ${validacao.ok ? 'text-amber-600' : 'text-rose-600'}`}>
+                                  {validacao.aviso}
+                                </span>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-slate-400">
+                              {concessaoInicio ? concessaoInicio.toLocaleDateString('pt-BR') : '—'}
+                            </span>
+                          )}
+                        </td>
+
+                        {/* Nº de Dias */}
+                        <td className="py-2.5 px-3 text-center">
+                          {!per.jaGozado && per.diasRestantes > 0 ? (
+                            <input
+                              type="number"
+                              min={10}
+                              max={per.diasRestantes}
+                              defaultValue={concessaoDias || ''}
+                              placeholder="dias"
+                              className="text-[10px] border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:border-teal-500 bg-white w-16 text-center"
+                            />
+                          ) : (
+                            <span className="text-slate-400">{concessaoDias || '—'}</span>
+                          )}
+                        </td>
+
+                        {/* Concessão Fim (calculado) */}
+                        <td className="py-2.5 px-3 text-slate-600 whitespace-nowrap">
+                          {concessaoFim ? (
+                            <span className="text-teal-700 font-semibold">{concessaoFim.toLocaleDateString('pt-BR')}</span>
+                          ) : '—'}
+                        </td>
+
+                        {/* Status */}
+                        <td className="py-2.5 px-3 text-center">
+                          <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase whitespace-nowrap ${statusLabel.cls}`}>
+                            {statusLabel.label}
+                          </span>
+                        </td>
+
+                        {/* Ações */}
+                        <td className="py-2.5 px-3">
+                          {!per.jaGozado && per.status !== 'futuro' && per.diasRestantes > 0 && (
+                            <button
+                              onClick={async () => {
+                                // Marcar período como já gozado
+                                const periodoDb = periodosAquisitivos.find(p =>
+                                  p.colaboradorId === colaborador.id &&
+                                  Math.abs(new Date(p.dataInicio).getFullYear() - per.anoBase) <= 0
+                                );
+                                if (periodoDb) {
+                                  const atualizado = { ...periodoDb, marcaComoUtilizado: true, diasUsados: 30 };
+                                  await DataService.savePeriodoAquisitivo(atualizado);
+                                  setPeriodosAquisitivos(prev => prev.map(p => p.id === periodoDb.id ? atualizado : p));
+                                }
+                              }}
+                              title="Marcar férias deste período como já gozadas"
+                              className="text-[9px] text-slate-400 hover:text-rose-600 hover:bg-rose-50 px-2 py-1 rounded-lg transition whitespace-nowrap cursor-pointer"
+                            >
+                              Já Gozado
+                            </button>
+                          )}
+                          {!per.jaGozado && per.status !== 'futuro' && per.diasRestantes > 0 && (
+                            <button
+                              onClick={() => {
+                                setSelectedColaborador(colaborador.id);
+                                setModalType('ferias');
+                                setShowPlanejadorFerias(true);
+                              }}
+                              className="ml-1 text-[9px] text-teal-600 hover:bg-teal-50 px-2 py-1 rounded-lg transition whitespace-nowrap cursor-pointer"
+                            >
+                              Planejar
+                            </button>
+                          )}
                         </td>
                       </tr>
                     );
-                  });
-                  
-                  // Férias planejadas
-                  item.ferias.filter(f => f.status === 'planejada').forEach(ferias => {
-                    rows.push(
-                      <tr key={ferias.id} className="border-t border-slate-100 bg-teal-50/50">
-                        <td className="py-3 px-4">
-                          <div className="flex items-center gap-2">
-                            <img src={item.colaborador.fotoUrl} alt={item.colaborador.nome} className="w-6 h-6 rounded-full object-cover" />
-                            <span className="font-semibold text-teal-700">{item.colaborador.nome}</span>
-                          </div>
-                        </td>
-                        <td className="py-3 px-4 text-teal-600">{item.setores?.nome}</td>
-                        <td className="py-3 px-4 text-slate-600">{new Date(item.colaborador.dataAdmissao).toLocaleDateString('pt-BR')}</td>
-                        <td className="py-3 px-4 text-slate-400">-</td>
-                        <td className="py-3 px-4 text-teal-700 font-semibold">{new Date(ferias.dataInicio).toLocaleDateString('pt-BR')}</td>
-                        <td className="py-3 px-4 text-teal-700 font-semibold">{new Date(ferias.dataFim).toLocaleDateString('pt-BR')}</td>
-                        <td className="py-3 px-4 text-teal-700 font-semibold">{ferias.dias}</td>
-                        <td className="py-3 px-4">
-                          <span className="px-2 py-0.5 bg-teal-100 text-teal-700 rounded-full text-[10px] font-semibold uppercase">
-                            Planejada
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-slate-400">-</td>
-                      </tr>
-                    );
-                  });
-                  
-                  return rows;
-                })}
+                  })
+                )}
               </tbody>
             </table>
           </div>
@@ -1618,249 +1810,367 @@ export default function GestaoPessoas({
       </div>
     );
   };
-
-  const renderDayOff = () => {
-    const dayoffsPorColaborador = colaboradores
-      .filter(c => c.situacao !== 'Desligado')
-      .map(col => {
-        const dayoff = dayOffs.find(d => d.colaboradorId === col.id && d.ano === ANO_ATUAL);
-        const diffMs = dayoff ? new Date(dayoff.dataLimite).getTime() - HOJE.getTime() : 0;
-        const diasRestantes = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
-        
-        return {
-          colaborador: col,
-          dayoff,
-          diasRestantes: diasRestantes > 0 ? diasRestantes : 0,
-        };
-      });
     
+  const renderDayOff = () => {
+    const hoje = new Date();
+    const mesAtual = hoje.getMonth();
+    const anoAtual = hoje.getFullYear();
+
+    // ── Colaboradores com aniversário no mês atual ─────────────────────
+    const aniversariantesDoMes = colaboradores
+      .filter(c => {
+        if (c.situacao === 'Desligado' || !c.dataNascimento) return false;
+        const nasc = new Date(c.dataNascimento);
+        return nasc.getMonth() === mesAtual;
+      })
+      .sort((a, b) => new Date(a.dataNascimento!).getDate() - new Date(b.dataNascimento!).getDate());
+
+    const MESES_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+
+    const getDayOffStatus = (col: Colaborador) => {
+      const dayoff = dayOffs.find(d => d.colaboradorId === col.id && d.ano === anoAtual);
+      return dayoff;
+    };
+
+    // ── Alertas persistentes por colaborador ───────────────────────────
+    // Chave: `gc_dayoff_alerta_${mes}_${ano}_${colaboradorId}` → 'ciente' | 'amanha_${data}' | undefined
+    const getAlertaStatus = (colId: string): string | null => {
+      try {
+        return localStorage.getItem(`gc_dayoff_alerta_${mesAtual}_${anoAtual}_${colId}`);
+      } catch { return null; }
+    };
+    const setAlertaStatus = (colId: string, status: string) => {
+      try {
+        localStorage.setItem(`gc_dayoff_alerta_${mesAtual}_${anoAtual}_${colId}`, status);
+        // Força re-render
+        setFiltroSetor(prev => prev); // hack mínimo para trigger
+      } catch {}
+    };
+
+    // Filtrar quem ainda precisa de atenção (não está ciente e não tem dayoff agendado)
+    const pendentesAlerta = aniversariantesDoMes.filter(col => {
+      const alertaStatus = getAlertaStatus(col.id);
+      if (alertaStatus === 'ciente') return false;
+      if (alertaStatus?.startsWith('amanha_')) {
+        const dataLembrete = alertaStatus.replace('amanha_', '');
+        const hoje_str = hoje.toISOString().split('T')[0];
+        if (dataLembrete > hoje_str) return false; // ainda não chegou o dia
+      }
+      const dayoff = getDayOffStatus(col);
+      if (dayoff?.status === 'utilizado') return false;
+      return true;
+    });
+
+    // Todos para a tabela geral
+    const dayoffsPorColaborador = colaboradores
+      .filter(c => c.situacao !== 'Desligado' && (!filtroSetor || c.setorId === filtroSetor))
+      .sort((a, b) => {
+        // Ordenar por mês de aniversário
+        const mA = a.dataNascimento ? new Date(a.dataNascimento).getMonth() : 12;
+        const mB = b.dataNascimento ? new Date(b.dataNascimento).getMonth() : 12;
+        return mA - mB;
+      })
+      .map(col => {
+        const dayoff = getDayOffStatus(col);
+        return { colaborador: col, dayoff };
+      });
+
     return (
       <div className="space-y-6">
-        {/* Info Box */}
-        <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 flex items-start gap-3">
-          <Info size={18} className="text-blue-600 shrink-0 mt-0.5" />
-          <div>
-            <p className="text-xs font-bold text-blue-800">Como funciona o DayOff?</p>
-            <p className="text-[11px] text-blue-600 leading-relaxed mt-1">
-              O DayOff é uma folga especial garantida no mês do aniversário do colaborador. 
-              Deve ser utilizado dentro do mês de aniversário do mesmo. O cálculo é automático 
-              baseado na data de nascimento do colaborador.
-            </p>
-          </div>
-        </div>
-
-        {/* Lista de DayOffs */}
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-          <table className="w-full text-xs">
-            <thead className="bg-slate-50">
-              <tr>
-                <th className="text-left py-3 px-4 font-semibold text-slate-500 uppercase tracking-wider">Colaborador</th>
-                <th className="text-left py-3 px-4 font-semibold text-slate-500 uppercase tracking-wider">Setor</th>
-                <th className="text-left py-3 px-4 font-semibold text-slate-500 uppercase tracking-wider">Disponível</th>
-                <th className="text-left py-3 px-4 font-semibold text-slate-500 uppercase tracking-wider">Utilizado</th>
-                <th className="text-left py-3 px-4 font-semibold text-slate-500 uppercase tracking-wider">Data Limite</th>
-                <th className="text-left py-3 px-4 font-semibold text-slate-500 uppercase tracking-wider">Status</th>
-                <th className="text-left py-3 px-4 font-semibold text-slate-500 uppercase tracking-wider">Ação</th>
-              </tr>
-            </thead>
-            <tbody>
-              {dayoffsPorColaborador.map(item => (
-                <tr key={item.colaborador.id} className="border-t border-slate-100">
-                  <td className="py-3 px-4">
-                    <div className="flex items-center gap-2">
-                      <img src={item.colaborador.fotoUrl} alt={item.colaborador.nome} className="w-6 h-6 rounded-full object-cover" />
-                      <span className="font-semibold text-slate-800">{item.colaborador.nome}</span>
-                    </div>
-                  </td>
-                  <td className="py-3 px-4 text-slate-600">
-                    {setores.find(s => s.id === item.colaborador.setorId)?.nome}
-                  </td>
-                  <td className="py-3 px-4">
-                    {item.dayoff?.status === 'disponivel' ? (
-                      <span className="text-violet-600 font-semibold">Sim</span>
-                    ) : (
-                      <span className="text-slate-400">Não</span>
-                    )}
-                  </td>
-                  <td className="py-3 px-4">
-                    {item.dayoff?.status === 'utilizado' ? (
-                      <span className="text-emerald-600 font-semibold">
-                        {item.dayoff.dataUtilizacao && new Date(item.dayoff.dataUtilizacao).toLocaleDateString('pt-BR')}
-                      </span>
-                    ) : (
-                      <span className="text-slate-400">-</span>
-                    )}
-                  </td>
-                  <td className="py-3 px-4 text-slate-600">
-                    {item.dayoff ? new Date(item.dayoff.dataLimite).toLocaleDateString('pt-BR') : '-'}
-                  </td>
-                  <td className="py-3 px-4">
-                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase ${
-                      item.dayoff?.status === 'disponivel' ? 'bg-violet-100 text-violet-700' :
-                      item.dayoff?.status === 'utilizado' ? 'bg-emerald-100 text-emerald-700' :
-                      'bg-slate-100 text-slate-600'
-                    }`}>
-                      {item.dayoff?.status || 'N/A'}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4">
-                    {item.dayoff?.status === 'disponivel' && (
-                      <button
-                        onClick={() => item.dayoff && handleUtilizarDayOff(item.dayoff)}
-                        className="px-3 py-1 bg-violet-500 hover:bg-violet-400 text-white text-[10px] font-semibold rounded-lg transition"
-                      >
-                        Registrar Uso
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    );
-  };
-
-  const renderFolgas = () => {
-    return (
-      <div className="space-y-6">
-        {/* Header com ação */}
-        <div className="flex justify-between items-center">
-          <div className="flex gap-2">
-            <select
-              value={filtroSetor ?? ''}
-              onChange={e => setFiltroSetor(e.target.value || null)}
-              className="text-xs border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:border-teal-500"
-            >
-              <option value="">Todos os setores</option>
-              {setores.map(setor => (
-                <option key={setor.id} value={setor.id}>{setor.nome}</option>
-              ))}
-            </select>
-          </div>
-          
-          <button
-            onClick={() => {
-              setModalType('folga');
-              setSelectedColaborador(null);
-              setShowModal(true);
-            }}
-            className="flex items-center gap-2 px-4 py-2 bg-teal-500 hover:bg-teal-400 text-slate-950 font-semibold rounded-xl text-xs transition"
-          >
-            <Plus size={14} />
-            Solicitar Folga
-          </button>
-        </div>
-
-        {/* Lista de Folgas */}
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-          <table className="w-full text-xs">
-            <thead className="bg-slate-50">
-              <tr>
-                <th className="text-left py-3 px-4 font-semibold text-slate-500 uppercase tracking-wider">Colaborador</th>
-                <th className="text-left py-3 px-4 font-semibold text-slate-500 uppercase tracking-wider">Data</th>
-                <th className="text-left py-3 px-4 font-semibold text-slate-500 uppercase tracking-wider">Motivo</th>
-                <th className="text-left py-3 px-4 font-semibold text-slate-500 uppercase tracking-wider">Status</th>
-                <th className="text-left py-3 px-4 font-semibold text-slate-500 uppercase tracking-wider">Obs.</th>
-                <th className="text-left py-3 px-4 font-semibold text-slate-500 uppercase tracking-wider">Ações</th>
-              </tr>
-            </thead>
-            <tbody>
-              {folgas
-                .filter(f => {
-                  if (filtroSetor) {
-                    const col = colaboradores.find(c => c.id === f.colaboradorId);
-                    return col?.setorId === filtroSetor;
-                  }
-                  return true;
-                })
-                .map(folga => {
-                  const col = colaboradores.find(c => c.id === folga.colaboradorId);
-                  return (
-                    <tr key={folga.id} className="border-t border-slate-100">
-                      <td className="py-3 px-4">
-                        <div className="flex items-center gap-2">
-                          {col && <img src={col.fotoUrl} alt={col.nome} className="w-6 h-6 rounded-full object-cover" />}
-                          <span className="font-semibold text-slate-800">{col?.nome}</span>
-                        </div>
-                      </td>
-                      <td className="py-3 px-4 text-slate-600">{new Date(folga.data).toLocaleDateString('pt-BR')}</td>
-                      <td className="py-3 px-4 text-slate-600">{folga.motivo}</td>
-                      <td className="py-3 px-4">
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase ${
-                          folga.status === 'aprovada' ? 'bg-emerald-100 text-emerald-700' :
-                          folga.status === 'pendente' ? 'bg-amber-100 text-amber-700' :
-                          'bg-slate-100 text-slate-600'
-                        }`}>
-                          {folga.status}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-slate-400 text-[10px]">{folga.observacoes || '-'}</td>
-                      <td className="py-3 px-4">
-                        <div className="flex gap-1">
-                          {folga.status === 'pendente' && (
-                            <>
-                              <button
-                                onClick={() => handleAprovarFolga(folga)}
-                                className="px-2 py-1 bg-emerald-500 hover:bg-emerald-400 text-white text-[10px] font-semibold rounded-lg transition"
-                              >
-                                Aprovar
-                              </button>
-                              <button
-                                onClick={() => handleCancelarFolga(folga)}
-                                className="px-2 py-1 bg-slate-500 hover:bg-slate-400 text-white text-[10px] font-semibold rounded-lg transition"
-                              >
-                                Cancelar
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Saldo por Colaborador */}
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
-          <h3 className="text-sm font-bold text-slate-900 mb-4">Saldo de Folgas por Colaborador</h3>
-          
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {colaboradores
-              .filter(c => c.situacao !== 'Desligado')
-              .map(col => {
-                const folgasAprovadas = folgas.filter(f => 
-                  f.colaboradorId === col.id && 
-                  f.status === 'aprovada' && 
-                  new Date(f.data).getFullYear() === ANO_ATUAL
-                ).length;
-                const maxFolgas = config?.maximoDiasFolga || 5;
-                const saldo = maxFolgas - folgasAprovadas;
-                
+        {/* BANNER DE ALERTA — Aniversariantes do mês sem DayOff organizado */}
+        {pendentesAlerta.length > 0 && (
+          <div className="bg-violet-50 border-2 border-violet-200 rounded-2xl p-4">
+            <div className="flex items-start justify-between gap-3 mb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 bg-violet-100 rounded-xl flex items-center justify-center">
+                  <span className="text-lg">🎂</span>
+                </div>
+                <div>
+                  <p className="font-extrabold text-violet-900 text-sm">
+                    {pendentesAlerta.length} aniversariante(s) em {MESES_PT[mesAtual]} sem DayOff organizado
+                  </p>
+                  <p className="text-[11px] text-violet-600">Organize o DayOff dos colaboradores abaixo ou sinalize sua ciência.</p>
+                </div>
+              </div>
+            </div>
+            <div className="space-y-2">
+              {pendentesAlerta.map(col => {
+                const nasc = new Date(col.dataNascimento!);
+                const dayoff = getDayOffStatus(col);
                 return (
-                  <div key={col.id} className="p-3 bg-slate-50 rounded-xl">
-                    <div className="flex items-center gap-2 mb-2">
-                      <img src={col.fotoUrl} alt={col.nome} className="w-6 h-6 rounded-full object-cover" />
-                      <span className="text-xs font-semibold text-slate-700">{col.nome}</span>
+                  <div key={col.id} className="flex items-center gap-3 bg-white rounded-xl px-4 py-3 border border-violet-100">
+                    <img src={col.fotoUrl} alt={col.nome} className="w-8 h-8 rounded-full object-cover shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="font-bold text-slate-800 text-sm">{col.nome}</p>
+                      <p className="text-[11px] text-slate-500">
+                        Aniversário: dia {nasc.getDate()} de {MESES_PT[mesAtual]}
+                        {dayoff?.status === 'disponivel' && (
+                          <span className="ml-2 text-violet-600 font-semibold">· DayOff disponível não agendado</span>
+                        )}
+                        {!dayoff && <span className="ml-2 text-rose-600 font-semibold">· DayOff não gerado</span>}
+                      </p>
                     </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] text-slate-500">Saldo disponível:</span>
-                      <span className={`text-sm font-bold ${saldo > 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                        {saldo} / {maxFolgas}
-                      </span>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {dayoff?.status === 'disponivel' && (
+                        <button
+                          onClick={() => dayoff && handleUtilizarDayOff(dayoff)}
+                          className="px-3 py-1.5 bg-violet-500 hover:bg-violet-400 text-white text-[10px] font-bold rounded-lg cursor-pointer transition"
+                        >
+                          Agendar
+                        </button>
+                      )}
+                      <button
+                        onClick={() => setAlertaStatus(col.id, 'ciente')}
+                        className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-[10px] font-bold rounded-lg cursor-pointer transition border border-emerald-200"
+                        title="Dispensar alerta — estou ciente"
+                      >
+                        Estou ciente
+                      </button>
+                      <button
+                        onClick={() => {
+                          const amanha = new Date(hoje);
+                          amanha.setDate(amanha.getDate() + 1);
+                          setAlertaStatus(col.id, `amanha_${amanha.toISOString().split('T')[0]}`);
+                        }}
+                        className="px-3 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-600 text-[10px] font-bold rounded-lg cursor-pointer transition border border-slate-200"
+                        title="Lembrar amanhã"
+                      >
+                        Lembrar amanhã
+                      </button>
                     </div>
                   </div>
                 );
               })}
+            </div>
           </div>
+        )}
+
+        {/* Filtro de setor */}
+        <div className="flex items-center gap-3">
+          <select
+            value={filtroSetor ?? ''}
+            onChange={e => setFiltroSetor(e.target.value || null)}
+            className="text-xs border border-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:border-teal-500 bg-white"
+          >
+            <option value="">Todos os setores</option>
+            {setores.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
+          </select>
+          <span className="text-xs text-slate-400">Ordenado por mês de aniversário</span>
+        </div>
+
+        {/* Tabela de DayOffs */}
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+          <table className="w-full text-xs">
+            <thead className="bg-slate-50 border-b border-slate-100">
+              <tr>
+                <th className="text-left py-3 px-4 font-bold text-slate-500 uppercase tracking-wider text-[10px]">Colaborador</th>
+                <th className="text-left py-3 px-4 font-bold text-slate-500 uppercase tracking-wider text-[10px]">Setor</th>
+                <th className="text-center py-3 px-4 font-bold text-slate-500 uppercase tracking-wider text-[10px]">Aniversário</th>
+                <th className="text-center py-3 px-4 font-bold text-slate-500 uppercase tracking-wider text-[10px]">Mês</th>
+                <th className="text-center py-3 px-4 font-bold text-slate-500 uppercase tracking-wider text-[10px]">Status DayOff</th>
+                <th className="text-left py-3 px-4 font-bold text-slate-500 uppercase tracking-wider text-[10px]">Data Utilização</th>
+                <th className="text-center py-3 px-4 font-bold text-slate-500 uppercase tracking-wider text-[10px]">Ação</th>
+              </tr>
+            </thead>
+            <tbody>
+              {dayoffsPorColaborador.map(({ colaborador, dayoff }) => {
+                const nasc = colaborador.dataNascimento ? new Date(colaborador.dataNascimento) : null;
+                const isAnivMesAtual = nasc?.getMonth() === mesAtual;
+                return (
+                  <tr key={colaborador.id}
+                    className={`border-t border-slate-100 ${isAnivMesAtual ? 'bg-violet-50/30' : ''}`}>
+                    <td className="py-3 px-4">
+                      <div className="flex items-center gap-2">
+                        <img src={colaborador.fotoUrl} alt={colaborador.nome} className="w-6 h-6 rounded-full object-cover" />
+                        <span className="font-semibold text-slate-800">{colaborador.nome}</span>
+                        {isAnivMesAtual && <span className="text-base">🎂</span>}
+                      </div>
+                    </td>
+                    <td className="py-3 px-4 text-slate-500">
+                      {setores.find(s => s.id === colaborador.setorId)?.nome || '—'}
+                    </td>
+                    <td className="py-3 px-4 text-center text-slate-600">
+                      {nasc ? `${nasc.getDate().toString().padStart(2,'0')}/${(nasc.getMonth()+1).toString().padStart(2,'0')}` : '—'}
+                    </td>
+                    <td className="py-3 px-4 text-center">
+                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${isAnivMesAtual ? 'bg-violet-100 text-violet-700' : 'bg-slate-100 text-slate-400'}`}>
+                        {nasc ? MESES_PT[nasc.getMonth()] : '—'}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4 text-center">
+                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${
+                        dayoff?.status === 'utilizado' ? 'bg-emerald-100 text-emerald-700' :
+                        dayoff?.status === 'disponivel' ? 'bg-violet-100 text-violet-700' :
+                        'bg-slate-100 text-slate-500'
+                      }`}>
+                        {dayoff?.status || 'N/A'}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4 text-slate-600">
+                      {dayoff?.dataUtilizacao ? new Date(dayoff.dataUtilizacao).toLocaleDateString('pt-BR') : '—'}
+                    </td>
+                    <td className="py-3 px-4 text-center">
+                      {dayoff?.status === 'disponivel' && (
+                        <button
+                          onClick={() => handleUtilizarDayOff(dayoff)}
+                          className="px-3 py-1 bg-violet-500 hover:bg-violet-400 text-white text-[10px] font-semibold rounded-lg cursor-pointer transition"
+                        >
+                          Agendar
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       </div>
     );
   };
+  // ── RADAR DE DESENVOLVIMENTO (substitui Folgas) ────────────────────────────
+  const renderDesenvolvimento = () => {
+    const NIVEIS_PRONTIDAO = [
+      { key: 'pronto', label: 'Pronto', cor: 'bg-emerald-500', textCor: 'text-emerald-700', bgLight: 'bg-emerald-50', emoji: '🟢' },
+      { key: 'em_desenvolvimento', label: 'Em prog.', cor: 'bg-amber-400', textCor: 'text-amber-700', bgLight: 'bg-amber-50', emoji: '🟡' },
+      { key: 'com_lacunas', label: 'Com lacunas', cor: 'bg-rose-500', textCor: 'text-rose-700', bgLight: 'bg-rose-50', emoji: '🔴' },
+      { key: 'sem_matriz', label: 'Sem matriz', cor: 'bg-slate-300', textCor: 'text-slate-500', bgLight: 'bg-slate-50', emoji: '⚪' },
+      { key: 'topo_trilha', label: 'Topo trilha', cor: 'bg-indigo-400', textCor: 'text-indigo-700', bgLight: 'bg-indigo-50', emoji: '🏆' },
+    ];
 
+    const colsAtivos = colaboradores.filter(c => c.situacao !== 'Desligado' && (!filtroSetor || c.setorId === filtroSetor));
+
+    // Dados de evidências e perfis já carregados (usamos as props disponíveis)
+    const dadosDesenvolvimento = colsAtivos.map(col => {
+      const cargo = cargos.find(ca => ca.id === col.cargoId);
+      const setor = setores.find(s => s.id === col.setorId);
+      const temProximoCargo = !!(cargo?.proximoCargoId);
+
+      // Dias no cargo atual (aproximado pela data de admissão ou última mudança)
+      const admissao = col.dataAdmissao ? new Date(col.dataAdmissao) : null;
+      const diasNoCargo = admissao ? Math.floor((new Date().getTime() - admissao.getTime()) / (1000 * 60 * 60 * 24)) : 0;
+      const mesesNoCargo = Math.floor(diasNoCargo / 30);
+
+      // Urgência baseada em tempo sem evidências (simulado — dados reais vêm de PerfilCapacidades)
+      const urgencia: 'alta' | 'media' | 'baixa' | 'ok' =
+        !temProximoCargo ? 'ok' :
+        mesesNoCargo >= 18 ? 'alta' :
+        mesesNoCargo >= 12 ? 'media' :
+        mesesNoCargo >= 6 ? 'baixa' : 'ok';
+
+      return { colaborador: col, cargo, setor, mesesNoCargo, temProximoCargo, urgencia };
+    });
+
+    const por_urgencia = {
+      alta: dadosDesenvolvimento.filter(d => d.urgencia === 'alta'),
+      media: dadosDesenvolvimento.filter(d => d.urgencia === 'media'),
+      baixa: dadosDesenvolvimento.filter(d => d.urgencia === 'baixa'),
+      ok: dadosDesenvolvimento.filter(d => d.urgencia === 'ok'),
+    };
+
+    const corUrgencia = (u: string) =>
+      u === 'alta' ? 'border-rose-200 bg-rose-50' :
+      u === 'media' ? 'border-amber-200 bg-amber-50' :
+      u === 'baixa' ? 'border-blue-200 bg-blue-50' :
+      'border-slate-100 bg-white';
+
+    const badgeUrgencia = (u: string) =>
+      u === 'alta' ? 'bg-rose-100 text-rose-700' :
+      u === 'media' ? 'bg-amber-100 text-amber-700' :
+      u === 'baixa' ? 'bg-blue-100 text-blue-700' :
+      'bg-slate-100 text-slate-500';
+
+    const labelUrgencia = (u: string) =>
+      u === 'alta' ? '🔴 Urgente — +18 meses' :
+      u === 'media' ? '🟡 Atenção — 12–18 meses' :
+      u === 'baixa' ? '🔵 Planejamento — 6–12 meses' :
+      '✅ No prazo';
+
+    return (
+      <div className="space-y-6">
+        {/* Header */}
+        <div className="flex flex-wrap justify-between items-start gap-4">
+          <div>
+            <h3 className="font-extrabold text-slate-900 text-base">Radar de Desenvolvimento</h3>
+            <p className="text-xs text-slate-400 mt-0.5">Colaboradores ordenados por urgência de organizar evidências para evolução de cargo. Clique para abrir o perfil de Desenvolvimento.</p>
+          </div>
+          <select
+            value={filtroSetor ?? ''}
+            onChange={e => setFiltroSetor(e.target.value || null)}
+            className="text-xs border border-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:border-teal-500 bg-white"
+          >
+            <option value="">Todos os setores</option>
+            {setores.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
+          </select>
+        </div>
+
+        {/* Legenda */}
+        <div className="flex flex-wrap gap-2">
+          {[
+            { cor: 'bg-rose-100 text-rose-700', label: '🔴 Urgente (+18 meses no cargo)' },
+            { cor: 'bg-amber-100 text-amber-700', label: '🟡 Atenção (12–18 meses)' },
+            { cor: 'bg-blue-100 text-blue-700', label: '🔵 Planejamento (6–12 meses)' },
+            { cor: 'bg-slate-100 text-slate-500', label: '✅ No prazo ou sem trilha' },
+          ].map(l => (
+            <span key={l.label} className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${l.cor}`}>{l.label}</span>
+          ))}
+        </div>
+
+        {/* Grupos por urgência */}
+        {(['alta', 'media', 'baixa', 'ok'] as const).map(urgencia => {
+          const grupo = por_urgencia[urgencia];
+          if (grupo.length === 0) return null;
+          return (
+            <div key={urgencia}>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+                {labelUrgencia(urgencia)}
+                <span className="text-slate-300 font-normal">— {grupo.length} colaborador(es)</span>
+              </p>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                {grupo.map(({ colaborador, cargo, setor, mesesNoCargo, temProximoCargo }) => (
+                  <button
+                    key={colaborador.id}
+                    onClick={() => {
+                      if (onNavigateToColaborador) onNavigateToColaborador(colaborador.id, 'desenvolvimento');
+                    }}
+                    className={`flex flex-col items-start gap-2 p-4 rounded-2xl border text-left cursor-pointer hover:shadow-sm transition group ${corUrgencia(urgencia)}`}
+                  >
+                    <div className="flex items-center gap-2.5 w-full">
+                      <div className="relative shrink-0">
+                        <img src={colaborador.fotoUrl} alt={colaborador.nome} className="w-9 h-9 rounded-full object-cover" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-bold text-slate-800 text-xs truncate group-hover:text-teal-700 transition">{colaborador.nome}</p>
+                        <p className="text-[10px] text-slate-400 truncate">{cargo?.nome || 'Sem cargo'}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between w-full">
+                      <span className="text-[10px] text-slate-400">{setor?.nome || '—'}</span>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${badgeUrgencia(urgencia)}`}>
+                        {mesesNoCargo}m no cargo
+                      </span>
+                    </div>
+                    {!temProximoCargo && (
+                      <p className="text-[9px] text-slate-400 italic">Trilha não configurada</p>
+                    )}
+                    <div className="w-full text-[10px] text-teal-600 font-semibold group-hover:underline flex items-center gap-1 mt-1">
+                      Ver desenvolvimento →
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+
+        {dadosDesenvolvimento.length === 0 && (
+          <div className="text-center py-16 text-slate-400">
+            <p className="font-semibold">Nenhum colaborador ativo encontrado.</p>
+          </div>
+        )}
+      </div>
+    );
+  };
   const renderConfig = () => {
     if (!config) return null;
     
@@ -2133,7 +2443,7 @@ export default function GestaoPessoas({
       {subTab === 'calendario' && renderCalendario()}
       {subTab === 'ferias' && renderFerias()}
       {subTab === 'dayoff' && renderDayOff()}
-      {subTab === 'folgas' && renderFolgas()}
+      {subTab === 'desenvolvimento' && renderDesenvolvimento()}
       {subTab === 'config' && renderConfig()}
 
       {/* Modal de Cadastro */}

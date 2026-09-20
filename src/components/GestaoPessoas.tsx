@@ -439,7 +439,7 @@ export default function GestaoPessoas({
   const [feriasFilterStatusPeriodo, setFeriasFilterStatusPeriodo] = useState<'ativo' | 'vencido' | 'futuro' | 'todos'>('ativo');
 
   // ── Modal de agendamento de DayOff ────────────────────────────────────────
-  const [dayoffModalAberto, setDayoffModalAberto] = useState<DayOff | null>(null);
+  const [dayoffModalAberto, setDayoffModalAberto] = useState<{ dayoff: DayOff | null; colaboradorId: string } | null>(null);
   const [dayoffDataAgendamento, setDayoffDataAgendamento] = useState('');
 
   // ── Modo de visualização do Desenvolvimento ────────────────────────────────
@@ -1797,6 +1797,50 @@ export default function GestaoPessoas({
     const anoAtual = hoje.getFullYear();
 
     const MESES_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+    const DIAS_SEMANA = ['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
+    const DIAS_SEMANA_CURTO = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+
+    // ── Helpers de validação de data do DayOff ────────────────────────
+    const FERIADOS_FIXOS: number[][] = [
+      [1,0],[21,3],[1,4],[7,8],[12,9],[2,10],[15,10],[25,11],[24,11],[31,11],
+    ];
+    const isDomingoFn = (d: Date) => d.getDay() === 0;
+    const isFeriadoFn = (d: Date) =>
+      FERIADOS_FIXOS.some(([dia, mes]) => d.getDate() === dia && d.getMonth() === mes);
+    const isBloqueadaFn = (d: Date) => isDomingoFn(d) || isFeriadoFn(d);
+
+    // Calcula mês/ano de referência do DayOff para um colaborador
+    const calcularRefDayOff = (dataNasc: string | undefined) => {
+      if (!dataNasc) return { mesAniv: -1, anoRef: anoAtual };
+      const nasc = new Date(dataNasc);
+      const mesAniv = nasc.getMonth();
+      const anoRef = mesAniv < hoje.getMonth() ? anoAtual + 1 : anoAtual;
+      return { mesAniv, anoRef };
+    };
+
+    // Calcula os dias disponíveis no mês de aniversário para DayOff
+    const diasDisponiveisDayOff = (mesAniv: number, anoRef: number): string[] => {
+      if (mesAniv < 0) return [];
+      const ultimoDia = new Date(anoRef, mesAniv + 1, 0).getDate();
+      const result: string[] = [];
+      for (let d = 1; d <= ultimoDia; d++) {
+        const data = new Date(anoRef, mesAniv, d);
+        if (!isBloqueadaFn(data)) {
+          result.push(`${String(d).padStart(2,'0')}/${String(mesAniv+1).padStart(2,'0')} — ${DIAS_SEMANA_CURTO[data.getDay()]}`);
+        }
+      }
+      return result;
+    };
+
+    // Valida uma data de DayOff selecionada
+    const validarDataDayOff = (dataStr: string, mesAniv: number): string | null => {
+      if (!dataStr) return null;
+      const d = new Date(dataStr + 'T12:00:00');
+      if (d.getMonth() !== mesAniv) return `O DayOff deve ser em ${MESES_PT[mesAniv]}.`;
+      if (isDomingoFn(d)) return 'Domingos não são permitidos.';
+      if (isFeriadoFn(d)) return 'Feriados nacionais não são permitidos.';
+      return null;
+    };
 
     const getDayOffStatus = (col: Colaborador) =>
       dayOffs.find(d => d.colaboradorId === col.id && d.ano === anoAtual);
@@ -1812,15 +1856,36 @@ export default function GestaoPessoas({
     };
 
     // ── Handler de agendamento com data — persiste no banco ─────────────
-    const handleAgendarDayOff = async (dayoff: DayOff, dataAgendada: string) => {
+    const handleAgendarDayOff = async (colaboradorId: string, dayoffExistente: DayOff | null, dataAgendada: string) => {
       if (!dataAgendada) return;
-      const atualizado: DayOff = {
-        ...dayoff,
-        status: 'utilizado',
-        dataUtilizacao: dataAgendada,
-      };
-      await DataService.saveDayOff(atualizado);
-      setDayOffs(prev => prev.map(d => d.id === atualizado.id ? atualizado : d));
+      const col = colaboradores.find(c => c.id === colaboradorId);
+      const nasc = col?.dataNascimento ? new Date(col.dataNascimento) : null;
+      const mesAniv = nasc ? nasc.getMonth() : 0;
+      const anoRef = (() => {
+        const hoje = new Date();
+        if (nasc && nasc.getMonth() < hoje.getMonth()) return hoje.getFullYear() + 1;
+        return hoje.getFullYear();
+      })();
+      // Limite: último dia do mês de aniversário
+      const ultimoDia = new Date(anoRef, mesAniv + 1, 0);
+      const dataLimite = ultimoDia.toISOString().split('T')[0];
+
+      const salvo: DayOff = dayoffExistente
+        ? { ...dayoffExistente, status: 'utilizado', dataUtilizacao: dataAgendada }
+        : {
+            id: `dayoff-${colaboradorId}-${anoRef}`,
+            colaboradorId,
+            ano: anoRef,
+            dataLimite,
+            dataUtilizacao: dataAgendada,
+            status: 'utilizado',
+          };
+
+      await DataService.saveDayOff(salvo);
+      setDayOffs(prev => {
+        const existe = prev.find(d => d.id === salvo.id);
+        return existe ? prev.map(d => d.id === salvo.id ? salvo : d) : [...prev, salvo];
+      });
       setDayoffModalAberto(null);
       setDayoffDataAgendamento('');
     };
@@ -1859,88 +1924,35 @@ export default function GestaoPessoas({
     return (
       <div className="space-y-6">
         {/* Modal de agendamento com validação de mês e dia */}
+        {/* Modal de agendamento de DayOff — data limitada ao mês de aniversário */}
         {dayoffModalAberto && (() => {
-          const col = colaboradores.find(c => c.id === dayoffModalAberto.colaboradorId);
-          const nasc = col?.dataNascimento ? new Date(col.dataNascimento) : null;
-          const mesAniv = nasc ? nasc.getMonth() : -1;  // 0-11
-          const anoAtualModal = new Date().getFullYear();
-
-          // Feriados nacionais fixos (dia, mês 0-indexed)
-          const FERIADOS_NACIONAIS = [
-            [1,0],[21,3],[1,4],[7,8],[12,9],[2,10],[15,10],[25,11],
-            [24,11],[31,11], // Natal e véspera/fim de ano
-          ];
-          const isFeriado = (d: Date) =>
-            FERIADOS_NACIONAIS.some(([dia, mes]) => d.getDate() === dia && d.getMonth() === mes);
-          const isDomingo = (d: Date) => d.getDay() === 0;
-          const isBloqueada = (d: Date) => isDomingo(d) || isFeriado(d);
-
-          // Limite: qualquer dia do mês de aniversário no ano corrente ou próximo
-          // (quem faz aniversário em mês futuro → usa o próximo ciclo)
-          const hoje = new Date();
-          let anoRef = anoAtualModal;
-          if (mesAniv >= 0 && mesAniv < hoje.getMonth()) {
-            // Aniversário já passou este ano — próximo ciclo é no ano que vem
-            anoRef = anoAtualModal + 1;
-          }
-
-          const minDate = mesAniv >= 0
-            ? `${anoRef}-${String(mesAniv + 1).padStart(2,'0')}-01`
-            : '';
-          // Último dia do mês de aniversário
-          const ultimoDia = mesAniv >= 0
-            ? new Date(anoRef, mesAniv + 1, 0).getDate()
-            : 31;
-          const maxDate = mesAniv >= 0
-            ? `${anoRef}-${String(mesAniv + 1).padStart(2,'0')}-${ultimoDia}`
-            : '';
-
-          // Validação da data selecionada
+          const colModal = colaboradores.find(c => c.id === dayoffModalAberto.colaboradorId);
+          const { mesAniv, anoRef } = calcularRefDayOff(colModal?.dataNascimento);
+          const ultimoDiaModal = mesAniv >= 0 ? new Date(anoRef, mesAniv + 1, 0).getDate() : 31;
+          const minDate = mesAniv >= 0 ? `${anoRef}-${String(mesAniv+1).padStart(2,'0')}-01` : '';
+          const maxDate = mesAniv >= 0 ? `${anoRef}-${String(mesAniv+1).padStart(2,'0')}-${ultimoDiaModal}` : '';
+          const diasDisp = diasDisponiveisDayOff(mesAniv, anoRef);
+          const erroData = validarDataDayOff(dayoffDataAgendamento, mesAniv);
           const dataSel = dayoffDataAgendamento ? new Date(dayoffDataAgendamento + 'T12:00:00') : null;
-          const erroData: string | null = (() => {
-            if (!dataSel) return null;
-            if (dataSel.getMonth() !== mesAniv) return `O DayOff deve ser agendado dentro de ${MESES_PT[mesAniv]}.`;
-            if (isDomingo(dataSel)) return 'Domingos não são permitidos para DayOff.';
-            if (isFeriado(dataSel)) return 'Feriados nacionais não são permitidos para DayOff.';
-            return null;
-          })();
-
-          // Gerar lista de dias disponíveis no mês de aniversário
-          const diasDisponiveis: string[] = [];
-          if (mesAniv >= 0) {
-            for (let d = 1; d <= ultimoDia; d++) {
-              const data = new Date(anoRef, mesAniv, d);
-              if (!isBloqueada(data)) {
-                diasDisponiveis.push(
-                  `${String(d).padStart(2,'0')}/${String(mesAniv+1).padStart(2,'0')} — ${['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'][data.getDay()]}`
-                );
-              }
-            }
-          }
-
           const podeConfirmar = !!dayoffDataAgendamento && !erroData;
-
           return (
             <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
               <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6">
-                {/* Header */}
                 <div className="flex items-center gap-3 mb-4">
                   <div className="w-10 h-10 bg-violet-100 rounded-xl flex items-center justify-center text-xl shrink-0">🎂</div>
                   <div>
                     <h3 className="font-extrabold text-slate-900 text-sm">Agendar DayOff</h3>
-                    <p className="text-xs text-slate-500">{col?.nome}</p>
+                    <p className="text-xs text-slate-500">{colModal?.nome}</p>
                   </div>
                 </div>
 
-                {/* Regra visual */}
                 {mesAniv >= 0 && (
                   <div className="bg-violet-50 border border-violet-200 rounded-xl px-3 py-2 mb-4 text-[11px] text-violet-700">
-                    📅 O DayOff deve ser agendado em <strong>{MESES_PT[mesAniv]} de {anoRef}</strong>.
+                    📅 O DayOff deve ser em <strong>{MESES_PT[mesAniv]} de {anoRef}</strong>.
                     Domingos e feriados nacionais não estão disponíveis.
                   </div>
                 )}
 
-                {/* Input de data com limites */}
                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
                   Data do DayOff
                 </label>
@@ -1959,57 +1971,55 @@ export default function GestaoPessoas({
                   }`}
                 />
 
-                {/* Mensagem de erro ou confirmação */}
-                {erroData && (
-                  <p className="text-[11px] text-rose-600 font-semibold mb-3">⚠️ {erroData}</p>
-                )}
-                {dayoffDataAgendamento && !erroData && (
+                {erroData && <p className="text-[11px] text-rose-600 font-semibold mb-3">⚠️ {erroData}</p>}
+                {dayoffDataAgendamento && !erroData && dataSel && (
                   <p className="text-[11px] text-emerald-600 font-semibold mb-3">
-                    ✅ Data válida — {['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'][dataSel!.getDay()]}, {dataSel!.toLocaleDateString('pt-BR')}
+                    ✅ Data válida — {DIAS_SEMANA[dataSel.getDay()]}, {dataSel.toLocaleDateString('pt-BR')}
                   </p>
                 )}
                 {!dayoffDataAgendamento && <div className="mb-3" />}
 
-                {/* Dias disponíveis (hint rápido) */}
-                {mesAniv >= 0 && diasDisponiveis.length > 0 && (
+                {diasDisp.length > 0 && (
                   <details className="mb-4">
                     <summary className="text-[10px] text-slate-400 cursor-pointer hover:text-slate-600 font-semibold">
-                      Ver dias disponíveis em {MESES_PT[mesAniv]} ({diasDisponiveis.length} opções)
+                      Ver dias disponíveis em {mesAniv >= 0 ? MESES_PT[mesAniv] : ''} ({diasDisp.length} opções)
                     </summary>
                     <div className="mt-2 max-h-28 overflow-y-auto bg-slate-50 rounded-xl px-3 py-2 grid grid-cols-2 gap-x-4 gap-y-0.5">
-                      {diasDisponiveis.map(d => (
-                        <button
-                          key={d}
-                          onClick={() => {
-                            const [dia] = d.split('/');
-                            const dataFormatada = `${anoRef}-${String(mesAniv+1).padStart(2,'0')}-${dia}`;
-                            setDayoffDataAgendamento(dataFormatada);
-                          }}
-                          className="text-[10px] text-left text-teal-700 hover:text-teal-900 cursor-pointer font-medium"
-                        >
-                          {d}
-                        </button>
-                      ))}
+                      {diasDisp.map(d => {
+                        const dia = d.split('/')[0];
+                        const dataFmt = `${anoRef}-${String(mesAniv+1).padStart(2,'0')}-${dia}`;
+                        return (
+                          <button key={d} onClick={() => setDayoffDataAgendamento(dataFmt)}
+                            className="text-[10px] text-left text-teal-700 hover:text-teal-900 cursor-pointer font-medium">
+                            {d}
+                          </button>
+                        );
+                      })}
                     </div>
                   </details>
                 )}
 
-                {/* Botões */}
                 <div className="flex gap-2">
+                  <button onClick={() => { setDayoffModalAberto(null); setDayoffDataAgendamento(''); }}
+                    className="flex-1 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm font-semibold cursor-pointer hover:bg-slate-50">
+                    Cancelar
+                  </button>
                   <button
-                    onClick={() => { setDayoffModalAberto(null); setDayoffDataAgendamento(''); }}
-                    className="flex-1 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm font-semibold cursor-pointer hover:bg-slate-50"
-                  >Cancelar</button>
-                  <button
-                    onClick={() => handleAgendarDayOff(dayoffModalAberto, dayoffDataAgendamento)}
+                    onClick={() => handleAgendarDayOff(dayoffModalAberto.colaboradorId, dayoffModalAberto.dayoff, dayoffDataAgendamento)}
                     disabled={!podeConfirmar}
-                    className="flex-1 py-2.5 bg-violet-500 hover:bg-violet-400 text-white font-bold rounded-xl text-sm cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition"
-                  >Confirmar</button>
+                    className="flex-1 py-2.5 bg-violet-500 hover:bg-violet-400 text-white font-bold rounded-xl text-sm cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition">
+                    Confirmar
+                  </button>
                 </div>
               </div>
             </div>
           );
         })()}
+          const nasc = col?.dataNascimento ? new Date(col.dataNascimento) : null;
+          const mesAniv = nasc ? nasc.getMonth() : -1;  // 0-11
+          const anoAtualModal = new Date().getFullYear();
+
+          // Feriados nacionais fixos (dia, mês 0-indexed)
 
         {/* Banner de aniversariantes do mês */}
         {pendentesAlerta.length > 0 && (
@@ -2036,9 +2046,10 @@ export default function GestaoPessoas({
                       </p>
                     </div>
                     <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
-                      {dayoff?.status === 'disponivel' && (
+                      {/* Agendar aparece para qualquer colaborador com dataNascimento, independente do status do DayOff */}
+                      {dayoff?.status !== 'utilizado' && (
                         <button
-                          onClick={() => { setDayoffModalAberto(dayoff); setDayoffDataAgendamento(''); }}
+                          onClick={() => { setDayoffModalAberto({ dayoff: dayoff || null, colaboradorId: col.id }); setDayoffDataAgendamento(''); }}
                           className="px-3 py-1.5 bg-violet-500 hover:bg-violet-400 text-white text-[10px] font-bold rounded-lg cursor-pointer transition"
                         >Agendar</button>
                       )}
@@ -2124,9 +2135,11 @@ export default function GestaoPessoas({
                       {dayoff?.dataUtilizacao ? new Date(dayoff.dataUtilizacao).toLocaleDateString('pt-BR') : '—'}
                     </td>
                     <td className="py-2.5 px-4 text-center">
-                      {dayoff?.status === 'disponivel' && (
+                      {/* Agendar: aparece para qualquer colaborador com aniversário cadastrado
+                          que ainda não tem DayOff utilizado — cria o registro no banco se não existir */}
+                      {colaborador.dataNascimento && dayoff?.status !== 'utilizado' && (
                         <button
-                          onClick={() => { setDayoffModalAberto(dayoff); setDayoffDataAgendamento(''); }}
+                          onClick={() => { setDayoffModalAberto({ dayoff: dayoff || null, colaboradorId: colaborador.id }); setDayoffDataAgendamento(''); }}
                           className="px-3 py-1 bg-violet-500 hover:bg-violet-400 text-white text-[10px] font-semibold rounded-lg cursor-pointer transition"
                         >Agendar</button>
                       )}

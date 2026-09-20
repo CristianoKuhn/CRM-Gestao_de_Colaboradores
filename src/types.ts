@@ -723,18 +723,22 @@ export interface Folga {
 
 // Configurações de Gestão de Pessoas
 export interface ConfiguracaoGestaoPessoas {
-  diasAntecedenciaFerias: number; // Dias de antecedência para planejar férias
-  permitirFeriasProlongadas: boolean; // Permitir férias > 30 dias
-  maximoDiasFolga: number; // Máximo de folgas por ano
-  obrigarPeriodoAquisitivo: boolean; // Exigir período aquisitivo completo
-  anteciparAniversario: boolean; // Permitir antecipar aniversário de empresa
+  diasAntecedenciaFerias: number;       // Dias de antecedência para planejar férias
+  permitirFeriasProlongadas: boolean;   // Permitir férias > 30 dias
+  obrigarPeriodoAquisitivo: boolean;    // Exigir período aquisitivo completo
+  anteciparAniversario: boolean;        // Permitir antecipar aniversário de empresa
+  // Desenvolvimento — Radar de ciclo
+  cicloDesenvolvimentoMeses: number;    // Duração do ciclo de avaliação (padrão: 5)
+  alertaCicloDias: number;             // Alertar quando faltarem X dias para o fim do ciclo
+  // DayOff
+  diasLimiteDayOff: number;            // Dias após o aniversário para usar o DayOff
   notificacoes: {
     ferias90dias: boolean;
     feriasVencendo: boolean;
     dayoffPendente: boolean;
-    folgasPendentes: boolean;
     aniversarioProximo: boolean;
     aniversarioEmpresaProximo: boolean;
+    cicloPendente: boolean;            // Alertar quando ciclo de desenvolvimento estiver próximo
   };
 }
 

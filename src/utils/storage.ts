@@ -488,6 +488,9 @@ const DEFAULT_CONFIG_FERIAS: ConfiguracaoFerias = {
   permitirVendaFerias: true,
   diasVendidosMaximo: 10,
   bloquearSobreposicao: false,
+  validarProximidadeRSR: true,    // Ativa aviso quando início está próximo de domingo/feriado
+  diasAntesRSR: 2,                // CLT art.133: 2 dias antes de RSR (domingo)
+  recomendarTercaQuinta: true,    // Recomendação interna de boas práticas
 };
 
 // Funções de Inicialização e Leitura/Escrita

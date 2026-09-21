@@ -1416,6 +1416,13 @@ export default function App() {
               reconhecimentos={reconhecimentos}
               avaliacoesExperiencia={avaliacoesExperiencia}
               currentUserId={currentUser?.id || ''}
+              capacidades={capacidades}
+              competencias={competencias}
+              escalas={escalas}
+              graus={graus}
+              tiposEvidencia={tiposEvidencia}
+              gravidadesOcorrencia={gravidadesOcorrencia}
+              matrizVersoes={matrizVersoes}
             />
           )}
 

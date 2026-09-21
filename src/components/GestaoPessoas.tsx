@@ -1469,17 +1469,45 @@ export default function GestaoPessoas({
   const renderFerias = () => {
     const hoje = new Date();
 
-    // ── Helpers CLT ────────────────────────────────────────────────────────
+    // ── Helpers CLT — regras parametrizadas via Config → Férias ───────────
+    // RSR (Repouso Semanal Remunerado) = domingo apenas, conforme CLT art. 67.
+    // Sábado é dia útil pela CLT — só o contrato individual pode mudar isso.
+    // NUNCA bloqueia — apenas avisa com nível de urgência para o gestor decidir.
     const FERIADOS = [[1,0],[21,3],[1,4],[7,8],[12,9],[2,10],[15,10],[25,11]];
-    const isDSR = (d: Date) => d.getDay() === 0 || d.getDay() === 6;
-    const isFeriado = (d: Date) => FERIADOS.some(([dia, mes]) => d.getDate() === dia && d.getMonth() === mes);
-    const validarInicioFerias = (dataInicio: Date): { ok: boolean; aviso?: string } => {
-      const d1 = new Date(dataInicio); d1.setDate(d1.getDate() + 1);
-      const d2 = new Date(dataInicio); d2.setDate(d2.getDate() + 2);
-      if (isDSR(d1) || isFeriado(d1) || isDSR(d2) || isFeriado(d2))
-        return { ok: false, aviso: 'CLT: Início muito próximo de DSR/feriado.' };
-      const dia = dataInicio.getDay();
-      if (dia < 2 || dia > 4) return { ok: true, aviso: 'Recomendação: iniciar entre terça e quinta.' };
+    const isDomingo = (d: Date) => d.getDay() === 0;           // RSR = domingo
+    const isFeriadoNacional = (d: Date) => FERIADOS.some(([dia, mes]) => d.getDate() === dia && d.getMonth() === mes);
+    const diasAntesRSR = (configFerias as any)?.diasAntesRSR ?? 2;
+    const validarProximidadeRSR = (configFerias as any)?.validarProximidadeRSR !== false;
+    const recomendarTercaQuinta = (configFerias as any)?.recomendarTercaQuinta !== false;
+
+    // Retorna { ok: true } sempre — a trava nunca impede confirmar, apenas colore.
+    // aviso = texto do aviso em amarelo/vermelho; nivel = 'clt' (vermelho) | 'recomendacao' (amarelo)
+    const validarInicioFerias = (dataInicio: Date): {
+      ok: boolean; aviso?: string; nivel?: 'clt' | 'recomendacao'
+    } => {
+      if (validarProximidadeRSR) {
+        for (let i = 1; i <= diasAntesRSR; i++) {
+          const d = new Date(dataInicio); d.setDate(d.getDate() + i);
+          if (isDomingo(d)) return {
+            ok: true,
+            aviso: `Aviso CLT: início ${i === 1 ? '1 dia' : `${i} dias`} antes do domingo (RSR).`,
+            nivel: 'clt',
+          };
+          if (isFeriadoNacional(d)) return {
+            ok: true,
+            aviso: `Aviso CLT: início ${i === 1 ? '1 dia' : `${i} dias`} antes de feriado nacional.`,
+            nivel: 'clt',
+          };
+        }
+      }
+      if (recomendarTercaQuinta) {
+        const dia = dataInicio.getDay(); // 0=Dom 1=Seg 2=Ter 3=Qua 4=Qui 5=Sex 6=Sáb
+        if (dia < 2 || dia > 4) return {
+          ok: true,
+          aviso: 'Recomendação: iniciar entre terça e quinta-feira.',
+          nivel: 'recomendacao',
+        };
+      }
       return { ok: true };
     };
 
@@ -1669,7 +1697,8 @@ export default function GestaoPessoas({
         : null;
 
       const validacao = dataInicio ? validarInicioFerias(new Date(dataInicio + 'T12:00:00')) : null;
-      const podeConfirmar = !!dataInicio && diasNum >= 10 && diasNum <= linha.diasRestantes && (validacao?.ok !== false);
+      const podeConfirmar = !!dataInicio && diasNum >= 10 && diasNum <= linha.diasRestantes;
+      // Aviso: vermelho para CLT, amarelo para recomendação — nunca bloqueia o confirmar
 
       const handleConfirmar = async () => {
         if (!podeConfirmar || salvando) return;
@@ -1698,7 +1727,7 @@ export default function GestaoPessoas({
                   dataInicio ? 'border-teal-400 bg-teal-50' : 'border-slate-200 bg-white'
                 }`} />
               {validacao?.aviso && (
-                <span className={`text-[9px] ${validacao.ok ? 'text-amber-600' : 'text-rose-600'}`}>
+                <span className={`text-[9px] font-semibold ${validacao.nivel === 'clt' ? 'text-rose-600' : 'text-amber-600'}`}>
                   {validacao.aviso}
                 </span>
               )}
@@ -1860,7 +1889,7 @@ export default function GestaoPessoas({
                                   setFerias(prev => prev.map(ff => ff.id === f.id ? atualizado : ff));
                                 }}
                                 className="text-[10px] border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:border-teal-500 bg-white w-28" />
-                              {validacao?.aviso && <span className={`text-[9px] ${validacao.ok ? 'text-amber-600' : 'text-rose-600'}`}>{validacao.aviso}</span>}
+                              {validacao?.aviso && <span className={`text-[9px] font-semibold ${validacao.nivel === 'clt' ? 'text-rose-600' : 'text-amber-600'}`}>{validacao.aviso}</span>}
                             </div>
                           ) : <span className="text-slate-300 text-xs">—</span>}
                         </td>
@@ -2748,6 +2777,30 @@ export default function GestaoPessoas({
                 hint="Quando ativo, impede salvar um planejamento que ultrapasse o limite simultâneo do setor."
               />
             )}
+            <Toggle
+              id="validarProximidadeRSR"
+              checked={(configFerias as any)?.validarProximidadeRSR !== false}
+              onChange={v => configFerias && handleSalvarConfigFerias({ ...configFerias, validarProximidadeRSR: v } as any)}
+              label='Avisar quando início está próximo de domingo ou feriado (CLT)'
+              hint="Exibe aviso em vermelho quando a data de início está dentro do número de dias configurado antes de um domingo (RSR) ou feriado nacional. Nunca bloqueia — apenas informa."
+            />
+            {(configFerias as any)?.validarProximidadeRSR !== false && (
+              <NumInput
+                label="Dias antes do domingo/feriado que geram aviso"
+                value={(configFerias as any)?.diasAntesRSR ?? 2}
+                min={1} max={7}
+                unit="dias"
+                onChange={v => configFerias && handleSalvarConfigFerias({ ...configFerias, diasAntesRSR: v } as any)}
+                hint="CLT art. 133: padrão de 2 dias. Aumente para ser mais conservador (ex.: 3 dias = quinta não pode iniciar se domingo é daqui a 3 dias)."
+              />
+            )}
+            <Toggle
+              id="recomendarTercaQuinta"
+              checked={(configFerias as any)?.recomendarTercaQuinta !== false}
+              onChange={v => configFerias && handleSalvarConfigFerias({ ...configFerias, recomendarTercaQuinta: v } as any)}
+              label="Recomendar início entre terça e quinta-feira"
+              hint="Exibe aviso em amarelo quando o início cai em segunda, sexta ou fim de semana. Recomendação interna de boas práticas — nunca bloqueia."
+            />
           </div>
         </Card>
 

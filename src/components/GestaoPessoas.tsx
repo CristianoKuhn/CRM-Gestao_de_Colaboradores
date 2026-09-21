@@ -437,6 +437,7 @@ export default function GestaoPessoas({
   const [feriasFiltroBusca, setFeriasFiltroBusca] = useState('');
   const [feriasFiltroPlanejamento, setFeriasFiltroPlanejamento] = useState<'todos' | 'pendente' | 'planejado'>('todos');
   const [feriasFilterStatusPeriodo, setFeriasFilterStatusPeriodo] = useState<'ativo' | 'vencido' | 'futuro' | 'todos'>('ativo');
+  const [feriasFilterMesConcessao, setFeriasFilterMesConcessao] = useState<number | -1>(-1); // -1 = todos
 
   // ── Modal de agendamento de DayOff ────────────────────────────────────────
   const [dayoffModalAberto, setDayoffModalAberto] = useState<{ dayoff: DayOff | null; colaboradorId: string } | null>(null);
@@ -949,8 +950,44 @@ export default function GestaoPessoas({
 
   const handleSalvarDayOff = async (dayoffData: DayOff) => {
     await DataService.saveDayOff(dayoffData);
-    loadData();
+    setDayOffs(prev => {
+      const existe = prev.find(d => d.id === dayoffData.id);
+      return existe ? prev.map(d => d.id === dayoffData.id ? dayoffData : d) : [...prev, dayoffData];
+    });
     setShowModal(false);
+  };
+
+  // Agendar DayOff — nível de componente para evitar closure stale
+  const handleAgendarDayOffGlobal = async (
+    colaboradorId: string,
+    dayoffExistente: DayOff | null,
+    dataAgendada: string
+  ) => {
+    if (!dataAgendada) return;
+    const col = colaboradores.find(c => c.id === colaboradorId);
+    const nasc = col?.dataNascimento ? new Date(col.dataNascimento) : null;
+    const mesAniv = nasc ? nasc.getMonth() : 0;
+    const hoje = new Date();
+    const anoRef = (nasc && nasc.getMonth() < hoje.getMonth())
+      ? hoje.getFullYear() + 1 : hoje.getFullYear();
+    const ultimoDia = new Date(anoRef, mesAniv + 1, 0);
+    const dataLimite = ultimoDia.toISOString().split('T')[0];
+    const salvo: DayOff = dayoffExistente
+      ? { ...dayoffExistente, status: 'utilizado', dataUtilizacao: dataAgendada }
+      : { id: `dayoff-${colaboradorId}-${anoRef}`, colaboradorId, ano: anoRef, dataLimite, dataUtilizacao: dataAgendada, status: 'utilizado' };
+    await DataService.saveDayOff(salvo);
+    setDayOffs(prev => {
+      const existe = prev.find(d => d.id === salvo.id);
+      return existe ? prev.map(d => d.id === salvo.id ? salvo : d) : [...prev, salvo];
+    });
+    setDayoffModalAberto(null);
+    setDayoffDataAgendamento('');
+  };
+
+  const handleCancelarDayOffGlobal = async (dayoff: DayOff) => {
+    const revertido: DayOff = { ...dayoff, status: 'disponivel', dataUtilizacao: undefined };
+    await DataService.saveDayOff(revertido);
+    setDayOffs(prev => prev.map(d => d.id === revertido.id ? revertido : d));
   };
 
   const handleSalvarFolga = async (folgaData: Folga) => {
@@ -1534,6 +1571,8 @@ export default function GestaoPessoas({
       jaGozado: boolean; periodoDbId?: string;
       concessaoFeriasId?: string; concessaoInicio?: string; concessaoDias?: number;
       isParcela: boolean;
+      isEstagiario: boolean;        // colaboradores com cargo de estágio
+      concessaoForaDoPrazo: boolean; // concessão planejada além do limiteGozo
     };
 
     const linhas: LinhaPlanejamento[] = [];
@@ -1565,7 +1604,14 @@ export default function GestaoPessoas({
 
         const feriasVinc = ferias.filter(f => {
           if (f.colaboradorId !== col.id) return false;
-          if (periodoDb && f.periodoAquisitivoId === periodoDb.id) return true;
+          // Se existe um PeriodoAquisitivo no banco: vincular APENAS por id, nunca por data.
+          // O OR (id OU data) causava duplicação quando havia registros legados sem periodoId
+          // que caíam no mesmo intervalo de um registro novo com periodoId correto.
+          if (periodoDb) {
+            return f.periodoAquisitivoId === periodoDb.id;
+          }
+          // Fallback: sem periodoDb, vincular por intervalo de datas (registros legados)
+          if (f.periodoAquisitivoId) return false; // tem periodoId de outro período — ignorar
           const fi = parseDataSegura(f.dataInicio);
           if (!fi) return false;
           return fi >= inicioAq && fi <= fimAq;
@@ -1576,25 +1622,32 @@ export default function GestaoPessoas({
         const jaGozado = periodoDb?.marcaComoUtilizado === true || diasGozados >= 30;
         const status: 'vencido' | 'ativo' | 'futuro' = limiteGozo < hoje ? 'vencido' : inicioAq > hoje ? 'futuro' : 'ativo';
         const feriasPlanejadas = feriasVinc.filter(f => f.status === 'planejada');
+        const cargo = cargos.find(c => c.id === col.cargoId);
+        const isEstagiario = !!(cargo?.nome?.toLowerCase().includes('estagi') || col.cargoId?.toLowerCase().includes('estagi'));
 
         if (feriasPlanejadas.length === 0) {
           linhas.push({ colaborador: col, setor: setores.find(s => s.id === col.setorId),
             anoBase, inicioAquisitivo: inicioAq, fimAquisitivo: fimAq, limiteGozo,
             diasGozados, diasRestantes: Math.max(0, 30 - diasGozados - diasPlanejadasTotal),
-            status, jaGozado, periodoDbId: periodoDb?.id, isParcela: false });
+            status, jaGozado, periodoDbId: periodoDb?.id, isParcela: false,
+            isEstagiario, concessaoForaDoPrazo: false });
         } else {
           feriasPlanejadas.forEach(fp => {
+            const concessaoIni = parseDataSegura(fp.dataInicio);
+            const foraDoPrazo = !!(concessaoIni && concessaoIni > limiteGozo);
             linhas.push({ colaborador: col, setor: setores.find(s => s.id === col.setorId),
               anoBase, inicioAquisitivo: inicioAq, fimAquisitivo: fimAq, limiteGozo,
               diasGozados, diasRestantes: 0,
               status, jaGozado, periodoDbId: periodoDb?.id,
-              concessaoFeriasId: fp.id, concessaoInicio: fp.dataInicio, concessaoDias: fp.dias, isParcela: true });
+              concessaoFeriasId: fp.id, concessaoInicio: fp.dataInicio, concessaoDias: fp.dias,
+              isParcela: true, isEstagiario, concessaoForaDoPrazo: foraDoPrazo });
           });
           const restantes = Math.max(0, 30 - diasGozados - diasPlanejadasTotal);
           if (restantes > 0 && !jaGozado) {
             linhas.push({ colaborador: col, setor: setores.find(s => s.id === col.setorId),
               anoBase, inicioAquisitivo: inicioAq, fimAquisitivo: fimAq, limiteGozo,
-              diasGozados, diasRestantes: restantes, status, jaGozado, periodoDbId: periodoDb?.id, isParcela: false });
+              diasGozados, diasRestantes: restantes, status, jaGozado, periodoDbId: periodoDb?.id,
+              isParcela: false, isEstagiario, concessaoForaDoPrazo: false });
           }
         }
       }
@@ -1606,6 +1659,12 @@ export default function GestaoPessoas({
       if (feriasFiltroPlanejamento === 'pendente' && (l.concessaoFeriasId || l.jaGozado)) return false;
       if (feriasFiltroPlanejamento === 'planejado' && !l.concessaoFeriasId && !l.jaGozado) return false;
       if (l.jaGozado && feriasFilterStatusPeriodo === 'ativo') return false;
+      // Filtro por mês de concessão início
+      if (feriasFilterMesConcessao !== -1) {
+        if (!l.concessaoInicio) return false;
+        const ini = parseDataSegura(l.concessaoInicio);
+        if (!ini || ini.getMonth() !== feriasFilterMesConcessao) return false;
+      }
       return true;
     });
 
@@ -1672,7 +1731,111 @@ export default function GestaoPessoas({
       return novoId;
     };
 
-    // Salvar nova concessão — cria PeriodoAquisitivo se necessário, salva Ferias e atualiza estado
+    // ── Componente controlled para edição de concessão EXISTENTE ──────────
+    // Resolve o problema de defaultValue que não atualiza após setFerias():
+    // useState inicializado com o valor atual do banco, persiste entre renders.
+    const LinhaConcessaoExistente = ({
+      feriasId, dataInicioInicial, diasInicial,
+    }: {
+      feriasId: string; dataInicioInicial: string; diasInicial: number;
+    }) => {
+      // Normalizar a data para YYYY-MM-DD que o input type=date espera
+      const normalizarParaInput = (s: string): string => {
+        if (!s) return '';
+        // Se é ISO completo → pegar só a data
+        const match = s.match(/^(\d{4}-\d{2}-\d{2})/);
+        return match ? match[1] : s;
+      };
+
+      const [dataInicio, setDataInicio] = React.useState(normalizarParaInput(dataInicioInicial));
+      const [dias, setDias] = React.useState(diasInicial);
+      const [salvando, setSalvando] = React.useState(false);
+
+      // Sincronizar quando o item do banco mudar (ex.: remoção e criação)
+      React.useEffect(() => {
+        setDataInicio(normalizarParaInput(dataInicioInicial));
+        setDias(diasInicial);
+      }, [feriasId, dataInicioInicial, diasInicial]);
+
+      // Calcular fim em tempo real
+      const dataFimCalc = (dataInicio && dias >= 10)
+        ? (() => {
+            const d = new Date(dataInicio + 'T12:00:00');
+            d.setDate(d.getDate() + dias - 1);
+            return d.toLocaleDateString('pt-BR');
+          })()
+        : null;
+
+      const validacao = dataInicio ? validarInicioFerias(new Date(dataInicio + 'T12:00:00')) : null;
+
+      const handleSalvarData = async (novaData: string) => {
+        if (!novaData || salvando) return;
+        const f = ferias.find(ff => ff.id === feriasId);
+        if (!f) return;
+        setSalvando(true);
+        const inicio = new Date(novaData + 'T12:00:00');
+        const fim = new Date(inicio); fim.setDate(fim.getDate() + (f.dias - 1));
+        const atualizado = { ...f, dataInicio: novaData, dataFim: fim.toISOString().split('T')[0] };
+        await DataService.saveFerias(atualizado);
+        setFerias(prev => prev.map(ff => ff.id === f.id ? atualizado : ff));
+        setSalvando(false);
+      };
+
+      const handleSalvarDias = async (novosDias: number) => {
+        if (novosDias < 10 || salvando) return;
+        const f = ferias.find(ff => ff.id === feriasId);
+        if (!f) return;
+        setSalvando(true);
+        const inicio = new Date((dataInicio || f.dataInicio) + 'T12:00:00');
+        const fim = new Date(inicio); fim.setDate(fim.getDate() + novosDias - 1);
+        const atualizado = { ...f, dias: novosDias, dataFim: fim.toISOString().split('T')[0] };
+        await DataService.saveFerias(atualizado);
+        setFerias(prev => prev.map(ff => ff.id === f.id ? atualizado : ff));
+        setSalvando(false);
+      };
+
+      return (
+        <>
+          {/* Concessão Início */}
+          <td className="py-2 px-3">
+            <div className="flex flex-col gap-0.5">
+              <input
+                type="date"
+                value={dataInicio}
+                onChange={e => setDataInicio(e.target.value)}
+                onBlur={e => handleSalvarData(e.target.value)}
+                className={`text-[10px] border rounded-lg px-2 py-1 focus:outline-none w-28 ${
+                  validacao?.nivel === 'clt' ? 'border-rose-300 bg-rose-50/40' :
+                  validacao?.nivel === 'recomendacao' ? 'border-amber-300 bg-amber-50/30' :
+                  dataInicio ? 'border-teal-400 bg-teal-50/30' : 'border-slate-200 bg-white'
+                } focus:border-teal-500`}
+              />
+              {validacao?.aviso && (
+                <span className={`text-[9px] font-semibold ${validacao.nivel === 'clt' ? 'text-rose-600' : 'text-amber-600'}`}>
+                  {validacao.aviso}
+                </span>
+              )}
+            </div>
+          </td>
+          {/* Nº Dias */}
+          <td className="py-2 px-3 text-center">
+            <input
+              type="number" min={10} max={30}
+              value={dias}
+              onChange={e => setDias(parseInt(e.target.value) || dias)}
+              onBlur={e => handleSalvarDias(parseInt(e.target.value) || dias)}
+              className="text-[10px] border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:border-teal-500 bg-white w-14 text-center"
+            />
+          </td>
+          {/* Concessão Fim — calculado em tempo real */}
+          <td className="py-2 px-3 text-slate-600 whitespace-nowrap text-xs">
+            {dataFimCalc
+              ? <span className="text-teal-700 font-semibold">{dataFimCalc}</span>
+              : '—'}
+          </td>
+        </>
+      );
+    };
     const handleSalvarConcessao = async (linha: LinhaPlanejamento, dataInicio: string, dias: number) => {
       if (!dataInicio || dias < 10 || dias > linha.diasRestantes) return;
       const periodoId = await garantirPeriodo(linha);
@@ -1800,6 +1963,13 @@ export default function GestaoPessoas({
               </button>
             ))}
           </div>
+          <select value={feriasFilterMesConcessao} onChange={e => setFeriasFilterMesConcessao(parseInt(e.target.value))}
+            className="text-xs border border-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:border-teal-500 bg-white">
+            <option value={-1}>Todos os meses</option>
+            {['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'].map((m, i) => (
+              <option key={i} value={i}>{m}</option>
+            ))}
+          </select>
           <select value={filtroSetor ?? ''} onChange={e => setFiltroSetor(e.target.value || null)}
             className="text-xs border border-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:border-teal-500 bg-white">
             <option value="">Todos os setores</option>
@@ -1840,10 +2010,12 @@ export default function GestaoPessoas({
                     : null;
                   const validacao = concessaoInicio ? validarInicioFerias(concessaoInicio) : null;
                   const bgRow = l.jaGozado ? 'bg-slate-50/60 opacity-70' :
+                    l.concessaoForaDoPrazo ? 'bg-rose-50/40' :
                     l.isParcela && l.concessaoFeriasId ? 'bg-teal-50/40' :
                     l.status === 'vencido' && l.diasRestantes > 0 ? 'bg-rose-50/30' :
                     rowIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50/20';
-                  const statusLabel = l.jaGozado ? { label: 'Já Gozado', cls: 'bg-slate-100 text-slate-500' } :
+                  const statusLabel = l.jaGozado ? { label: 'Já Gozado', cls: 'bg-slate-200 text-slate-600' } :
+                    l.concessaoForaDoPrazo ? { label: '⚠️ Fora do Prazo', cls: 'bg-rose-100 text-rose-700' } :
                     l.concessaoFeriasId ? { label: 'Planejado', cls: 'bg-teal-100 text-teal-700' } :
                     l.status === 'vencido' && l.diasRestantes > 0 ? { label: 'VENCIDO', cls: 'bg-rose-100 text-rose-700' } :
                     l.status === 'vencido' ? { label: 'Concluído', cls: 'bg-slate-100 text-slate-500' } :
@@ -1859,7 +2031,12 @@ export default function GestaoPessoas({
                               <img src={l.colaborador.fotoUrl} alt={l.colaborador.nome} className="w-6 h-6 rounded-full object-cover shrink-0" />
                               <div>
                                 <p className="font-bold text-slate-800 whitespace-nowrap text-xs">{l.colaborador.nome}</p>
-                                <p className="text-[9px] text-slate-400">{l.setor?.nome}</p>
+                                <div className="flex items-center gap-1 mt-0.5">
+                                  <p className="text-[9px] text-slate-400">{l.setor?.nome}</p>
+                                  {l.isEstagiario && (
+                                    <span className="text-[8px] font-bold bg-purple-100 text-purple-700 px-1 py-0.5 rounded-full">ESTAGIÁRIO</span>
+                                  )}
+                                </div>
                               </div>
                             </div>
                           )}
@@ -1888,48 +2065,20 @@ export default function GestaoPessoas({
                             </span>
                           )}
                         </td>
-                        {/* Concessão Início — editável se já existe, display se for linha de nova concessão */}
-                        <td className="py-2 px-3">
-                          {l.concessaoFeriasId ? (
-                            <div className="flex flex-col gap-0.5">
-                              <input type="date" defaultValue={l.concessaoInicio || ''}
-                                onBlur={async (e) => {
-                                  if (!e.target.value) return;
-                                  const f = ferias.find(ff => ff.id === l.concessaoFeriasId)!;
-                                  if (!f || e.target.value === (parseDataSegura(f.dataInicio)?.toISOString().split('T')[0] || f.dataInicio)) return;
-                                  const inicio = new Date(e.target.value + 'T12:00:00');
-                                  const fim = new Date(inicio); fim.setDate(fim.getDate() + (f.dias - 1));
-                                  const atualizado = { ...f, dataInicio: e.target.value, dataFim: fim.toISOString().split('T')[0] };
-                                  await DataService.saveFerias(atualizado);
-                                  setFerias(prev => prev.map(ff => ff.id === f.id ? atualizado : ff));
-                                }}
-                                className="text-[10px] border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:border-teal-500 bg-white w-28" />
-                              {validacao?.aviso && <span className={`text-[9px] font-semibold ${validacao.nivel === 'clt' ? 'text-rose-600' : 'text-amber-600'}`}>{validacao.aviso}</span>}
-                            </div>
-                          ) : <span className="text-slate-300 text-xs">—</span>}
-                        </td>
-                        {/* Nº Dias — editável se já existe */}
-                        <td className="py-2 px-3 text-center">
-                          {l.concessaoFeriasId ? (
-                            <input type="number" min={10} max={30} defaultValue={l.concessaoDias || ''}
-                              onBlur={async (e) => {
-                                const dias = parseInt(e.target.value);
-                                if (!dias || dias < 10) return;
-                                const f = ferias.find(ff => ff.id === l.concessaoFeriasId)!;
-                                if (!f || dias === f.dias) return;
-                                const inicio = new Date(f.dataInicio + 'T12:00:00');
-                                const fim = new Date(inicio); fim.setDate(fim.getDate() + dias - 1);
-                                const atualizado = { ...f, dias, dataFim: fim.toISOString().split('T')[0] };
-                                await DataService.saveFerias(atualizado);
-                                setFerias(prev => prev.map(ff => ff.id === f.id ? atualizado : ff));
-                              }}
-                              className="text-[10px] border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:border-teal-500 bg-white w-14 text-center" />
-                          ) : <span className="text-slate-300 text-xs">—</span>}
-                        </td>
-                        {/* Concessão Fim */}
-                        <td className="py-2 px-3 text-slate-600 whitespace-nowrap text-xs">
-                          {concessaoFim ? <span className="text-teal-700 font-semibold">{concessaoFim.toLocaleDateString('pt-BR')}</span> : '—'}
-                        </td>
+                        {/* Concessão Início, Nº Dias e Concessão Fim — controlled via componente */}
+                        {l.concessaoFeriasId ? (
+                          <LinhaConcessaoExistente
+                            feriasId={l.concessaoFeriasId}
+                            dataInicioInicial={l.concessaoInicio || ''}
+                            diasInicial={l.concessaoDias || 0}
+                          />
+                        ) : (
+                          <>
+                            <td className="py-2 px-3"><span className="text-slate-300 text-xs">—</span></td>
+                            <td className="py-2 px-3"><span className="text-slate-300 text-xs">—</span></td>
+                            <td className="py-2 px-3"><span className="text-slate-300 text-xs">—</span></td>
+                          </>
+                        )}
                         <td className="py-2 px-3 text-center">
                           <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase whitespace-nowrap ${statusLabel.cls}`}>
                             {statusLabel.label}
@@ -2035,46 +2184,8 @@ export default function GestaoPessoas({
     };
 
     // ── Handler de agendamento com data — persiste no banco ─────────────
-    const handleAgendarDayOff = async (colaboradorId: string, dayoffExistente: DayOff | null, dataAgendada: string) => {
-      if (!dataAgendada) return;
-      const col = colaboradores.find(c => c.id === colaboradorId);
-      const nasc = col?.dataNascimento ? new Date(col.dataNascimento) : null;
-      const mesAniv = nasc ? nasc.getMonth() : 0;
-      const anoRef = (() => {
-        const hoje = new Date();
-        if (nasc && nasc.getMonth() < hoje.getMonth()) return hoje.getFullYear() + 1;
-        return hoje.getFullYear();
-      })();
-      // Limite: último dia do mês de aniversário
-      const ultimoDia = new Date(anoRef, mesAniv + 1, 0);
-      const dataLimite = ultimoDia.toISOString().split('T')[0];
-
-      const salvo: DayOff = dayoffExistente
-        ? { ...dayoffExistente, status: 'utilizado', dataUtilizacao: dataAgendada }
-        : {
-            id: `dayoff-${colaboradorId}-${anoRef}`,
-            colaboradorId,
-            ano: anoRef,
-            dataLimite,
-            dataUtilizacao: dataAgendada,
-            status: 'utilizado',
-          };
-
-      await DataService.saveDayOff(salvo);
-      setDayOffs(prev => {
-        const existe = prev.find(d => d.id === salvo.id);
-        return existe ? prev.map(d => d.id === salvo.id ? salvo : d) : [...prev, salvo];
-      });
-      setDayoffModalAberto(null);
-      setDayoffDataAgendamento('');
-    };
-
-    // ── Handler para cancelar/desfazer DayOff ───────────────────────────
-    const handleCancelarDayOff = async (dayoff: DayOff) => {
-      const revertido: DayOff = { ...dayoff, status: 'disponivel', dataUtilizacao: undefined };
-      await DataService.saveDayOff(revertido);
-      setDayOffs(prev => prev.map(d => d.id === revertido.id ? revertido : d));
-    };
+    const handleAgendarDayOff = handleAgendarDayOffGlobal;
+    const handleCancelarDayOff = handleCancelarDayOffGlobal;
 
     const pendentesAlerta = colaboradores
       .filter(c => {

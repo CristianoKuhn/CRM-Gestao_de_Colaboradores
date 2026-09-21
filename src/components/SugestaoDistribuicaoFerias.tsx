@@ -80,6 +80,9 @@ export function SugestaoDistribuicaoModal({
         permitirVendaFerias: true,
         diasVendidosMaximo: 10,
         bloquearSobreposicao: false,
+        validarProximidadeRSR: true,
+        diasAntesRSR: 2,
+        recomendarTercaQuinta: true,
       },
       ano
     );

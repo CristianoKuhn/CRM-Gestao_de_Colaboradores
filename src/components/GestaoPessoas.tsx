@@ -1469,6 +1469,20 @@ export default function GestaoPessoas({
   const renderFerias = () => {
     const hoje = new Date();
 
+    // parseDataSegura: converte string de data do banco (que pode vir sem timezone)
+    // para Date correta. Garante que '2027-05-20T00:00:00' não vire 19/05 em UTC-3.
+    const parseDataSegura = (s: string | undefined): Date | null => {
+      if (!s) return null;
+      // Já tem timezone → usar direto
+      if (s.includes('Z') || s.match(/[+-]\d{2}:\d{2}$/)) return new Date(s);
+      // Tem hora zerada → fixar em T12:00:00 para ser imune a qualquer UTC offset
+      const normalizada = s.replace(/T00:00:00$/, 'T12:00:00');
+      // Só data YYYY-MM-DD → adicionar meio-dia
+      const comHora = normalizada.match(/^\d{4}-\d{2}-\d{2}$/) ? normalizada + 'T12:00:00' : normalizada;
+      const d = new Date(comHora);
+      return isNaN(d.getTime()) ? null : d;
+    };
+
     // ── Helpers CLT — regras parametrizadas via Config → Férias ───────────
     // RSR (Repouso Semanal Remunerado) = domingo apenas, conforme CLT art. 67.
     // Sábado é dia útil pela CLT — só o contrato individual pode mudar isso.
@@ -1535,7 +1549,7 @@ export default function GestaoPessoas({
 
     colsFiltrados.forEach(col => {
       if (!col.dataAdmissao) return;
-      const admissao = new Date(col.dataAdmissao);
+      const admissao = parseDataSegura(col.dataAdmissao) || new Date(col.dataAdmissao + 'T12:00:00');
       if (isNaN(admissao.getTime())) return;
       const anos = Math.ceil((hoje.getFullYear() + ANOS_A_GERAR - admissao.getFullYear())) + 1;
 
@@ -1546,13 +1560,14 @@ export default function GestaoPessoas({
         const anoBase = admissao.getFullYear() + i;
 
         const periodoDb = periodosAquisitivos.find(p =>
-          p.colaboradorId === col.id && Math.abs(new Date(p.dataInicio).getFullYear() - anoBase) <= 0
+          p.colaboradorId === col.id && Math.abs((parseDataSegura(p.dataInicio) || new Date(p.dataInicio + 'T12:00:00')).getFullYear() - anoBase) <= 0
         );
 
         const feriasVinc = ferias.filter(f => {
           if (f.colaboradorId !== col.id) return false;
           if (periodoDb && f.periodoAquisitivoId === periodoDb.id) return true;
-          const fi = new Date(f.dataInicio);
+          const fi = parseDataSegura(f.dataInicio);
+          if (!fi) return false;
           return fi >= inicioAq && fi <= fimAq;
         });
 
@@ -1819,7 +1834,7 @@ export default function GestaoPessoas({
                   const isFirstRowOfPeriod = isFirstRowOfCol ||
                     linhasFiltradas[rowIdx - 1].anoBase !== l.anoBase ||
                     linhasFiltradas[rowIdx - 1].colaborador.id !== l.colaborador.id;
-                  const concessaoInicio = l.concessaoInicio ? new Date(l.concessaoInicio + 'T12:00:00') : null;
+                  const concessaoInicio = l.concessaoInicio ? parseDataSegura(l.concessaoInicio) : null;
                   const concessaoFim = concessaoInicio && l.concessaoDias
                     ? (() => { const d = new Date(concessaoInicio); d.setDate(d.getDate() + (l.concessaoDias! - 1)); return d; })()
                     : null;
@@ -1850,7 +1865,7 @@ export default function GestaoPessoas({
                           )}
                         </td>
                         <td className="py-2 px-3 text-slate-500 whitespace-nowrap text-xs">
-                          {isFirstRowOfCol ? new Date(l.colaborador.dataAdmissao).toLocaleDateString('pt-BR') : ''}
+                          {isFirstRowOfCol ? (parseDataSegura(l.colaborador.dataAdmissao) || new Date(l.colaborador.dataAdmissao)).toLocaleDateString('pt-BR') : ''}
                         </td>
                         <td className="py-2 px-3 text-slate-600 whitespace-nowrap text-xs">
                           {isFirstRowOfPeriod ? l.inicioAquisitivo.toLocaleDateString('pt-BR') : ''}
@@ -1881,7 +1896,7 @@ export default function GestaoPessoas({
                                 onBlur={async (e) => {
                                   if (!e.target.value) return;
                                   const f = ferias.find(ff => ff.id === l.concessaoFeriasId)!;
-                                  if (!f || e.target.value === f.dataInicio) return;
+                                  if (!f || e.target.value === (parseDataSegura(f.dataInicio)?.toISOString().split('T')[0] || f.dataInicio)) return;
                                   const inicio = new Date(e.target.value + 'T12:00:00');
                                   const fim = new Date(inicio); fim.setDate(fim.getDate() + (f.dias - 1));
                                   const atualizado = { ...f, dataInicio: e.target.value, dataFim: fim.toISOString().split('T')[0] };

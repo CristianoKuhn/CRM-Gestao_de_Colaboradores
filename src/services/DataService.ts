@@ -3064,14 +3064,29 @@ export class GoogleScriptDataService implements IDataService {
   // arquitetura, seção 0. Mesmo padrão salvar-local-primeiro-depois-sincronizar
   // já usado em getResultados180/saveResultado180 acima.
   async getFerias(): Promise<Ferias[]> {
+    // normalizarData: o Google Sheets salva datas como datetime sem timezone.
+    // O Apps Script serializa para '2027-05-20T00:00:00' (sem Z).
+    // O JS interpreta isso como UTC → em UTC-3 vira 19/05 21:00 → dia errado → "Invalid Date".
+    // Fix: substituir T00:00:00 por T12:00:00 — meio-dia é imune a qualquer offset UTC±12.
+    const normalizarData = (v: any): string => {
+      if (!v) return v;
+      const s = String(v);
+      // Já tem timezone explícito (Z ou +/-HH:MM) → não mexer
+      if (s.includes('Z') || s.match(/[+-]\d{2}:\d{2}$/)) return s;
+      // Tem hora zerada sem timezone → substituir por T12:00:00
+      if (s.match(/T00:00:00$/)) return s.replace('T00:00:00', 'T12:00:00');
+      // Só data YYYY-MM-DD → adicionar T12:00:00
+      if (s.match(/^\d{4}-\d{2}-\d{2}$/)) return s + 'T12:00:00';
+      return s;
+    };
     try {
       const raw = await this.request<any[]>('getFerias');
       return (raw || []).map((r) => ({
         id: r.id,
         colaboradorId: r.colaborador_id,
         periodoAquisitivoId: r.periodo_aquisitivo_id,
-        dataInicio: r.data_inicio,
-        dataFim: r.data_fim,
+        dataInicio: normalizarData(r.data_inicio),
+        dataFim: normalizarData(r.data_fim),
         dias: Number(r.dias) || 0,
         status: r.status,
         observacoes: r.observacoes || undefined,
@@ -3195,14 +3210,22 @@ export class GoogleScriptDataService implements IDataService {
     }
   }
   async getPeriodosAquisitivos(): Promise<PeriodoAquisitivo[]> {
+    const normalizarData = (v: any): string => {
+      if (!v) return v;
+      const s = String(v);
+      if (s.includes('Z') || s.match(/[+-]\d{2}:\d{2}$/)) return s;
+      if (s.match(/T00:00:00$/)) return s.replace('T00:00:00', 'T12:00:00');
+      if (s.match(/^\d{4}-\d{2}-\d{2}$/)) return s + 'T12:00:00';
+      return s;
+    };
     try {
       const raw = await this.request<any[]>('getPeriodosAquisitivos');
       return (raw || []).map((r) => ({
         id: r.id,
         colaboradorId: r.colaborador_id,
         anoBase: Number(r.ano_base) || 0,
-        dataInicio: r.data_inicio,
-        dataFim: r.data_fim,
+        dataInicio: normalizarData(r.data_inicio),
+        dataFim: normalizarData(r.data_fim),
         diasDisponiveis: Number(r.dias_disponiveis) || 0,
         diasUsados: Number(r.dias_usados) || 0,
         diasRestantes: Number(r.dias_restantes) || 0,

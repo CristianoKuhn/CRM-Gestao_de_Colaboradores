@@ -3401,6 +3401,9 @@ export class GoogleScriptDataService implements IDataService {
         permitirVendaFerias: raw.permitir_venda_ferias === true || raw.permitir_venda_ferias === 'true',
         diasVendidosMaximo: Number(raw.dias_vendidos_maximo) || 10,
         bloquearSobreposicao: raw.bloquear_sobreposicao === true || raw.bloquear_sobreposicao === 'true',
+        validarProximidadeRSR: raw.validar_proximidade_rsr !== false,
+        diasAntesRSR: Number(raw.dias_antes_rsr) || 2,
+        recomendarTercaQuinta: raw.recomendar_terca_quinta !== false,
       };
     } catch (e) {
       return this.localFallback.getConfiguracaoFerias();

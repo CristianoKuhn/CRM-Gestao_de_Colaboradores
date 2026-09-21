@@ -1568,9 +1568,27 @@ export default function GestaoPessoas({
 
     // ── Handlers ────────────────────────────────────────────────────────────
     const handleMarcarJaGozado = async (linha: LinhaPlanejamento) => {
-      if (!linha.periodoDbId) return;
-      const p = periodosAquisitivos.find(pp => pp.id === linha.periodoDbId)!;
-      const atualizado = { ...p, marcaComoUtilizado: true, diasUsados: 30 };
+      // Garante que o PeriodoAquisitivo existe no banco antes de marcá-lo
+      let periodoId = linha.periodoDbId;
+      if (!periodoId) {
+        const novoPeriodo: PeriodoAquisitivo = {
+          id: `per-${linha.colaborador.id}-${linha.anoBase}`,
+          colaboradorId: linha.colaborador.id,
+          anoBase: linha.anoBase,
+          dataInicio: linha.inicioAquisitivo.toISOString().split('T')[0],
+          dataFim: linha.fimAquisitivo.toISOString().split('T')[0],
+          diasDisponiveis: 30,
+          diasUsados: 30,
+          diasRestantes: 0,
+          status: 'concluido',
+          marcaComoUtilizado: true,
+        };
+        await DataService.savePeriodoAquisitivo(novoPeriodo);
+        setPeriodosAquisitivos(prev => [...prev, novoPeriodo]);
+        return;
+      }
+      const p = periodosAquisitivos.find(pp => pp.id === periodoId)!;
+      const atualizado = { ...p, marcaComoUtilizado: true, diasUsados: 30, diasRestantes: 0 };
       await DataService.savePeriodoAquisitivo(atualizado);
       setPeriodosAquisitivos(prev => prev.map(pp => pp.id === p.id ? atualizado : pp));
     };
@@ -1578,7 +1596,7 @@ export default function GestaoPessoas({
     const handleDesfazerJaGozado = async (linha: LinhaPlanejamento) => {
       if (!linha.periodoDbId) return;
       const p = periodosAquisitivos.find(pp => pp.id === linha.periodoDbId)!;
-      const atualizado = { ...p, marcaComoUtilizado: false, diasUsados: linha.diasGozados };
+      const atualizado = { ...p, marcaComoUtilizado: false, diasUsados: linha.diasGozados, diasRestantes: 30 - linha.diasGozados };
       await DataService.savePeriodoAquisitivo(atualizado);
       setPeriodosAquisitivos(prev => prev.map(pp => pp.id === p.id ? atualizado : pp));
     };
@@ -1586,6 +1604,130 @@ export default function GestaoPessoas({
     const handleRemoverConcessao = async (feriasId: string) => {
       await DataService.deleteFerias(feriasId);
       setFerias(prev => prev.filter(f => f.id !== feriasId));
+    };
+
+    // Garante que o PeriodoAquisitivo existe e retorna seu ID
+    const garantirPeriodo = async (linha: LinhaPlanejamento): Promise<string> => {
+      if (linha.periodoDbId) return linha.periodoDbId;
+      const novoId = `per-${linha.colaborador.id}-${linha.anoBase}`;
+      const novoPeriodo: PeriodoAquisitivo = {
+        id: novoId,
+        colaboradorId: linha.colaborador.id,
+        anoBase: linha.anoBase,
+        dataInicio: linha.inicioAquisitivo.toISOString().split('T')[0],
+        dataFim: linha.fimAquisitivo.toISOString().split('T')[0],
+        diasDisponiveis: 30,
+        diasUsados: 0,
+        diasRestantes: 30,
+        status: linha.status === 'futuro' ? 'futuro' : linha.status === 'vencido' ? 'vencido' : 'ativo',
+      };
+      await DataService.savePeriodoAquisitivo(novoPeriodo);
+      setPeriodosAquisitivos(prev => {
+        const existe = prev.find(p => p.id === novoId);
+        return existe ? prev : [...prev, novoPeriodo];
+      });
+      return novoId;
+    };
+
+    // Salvar nova concessão — cria PeriodoAquisitivo se necessário, salva Ferias e atualiza estado
+    const handleSalvarConcessao = async (linha: LinhaPlanejamento, dataInicio: string, dias: number) => {
+      if (!dataInicio || dias < 10 || dias > linha.diasRestantes) return;
+      const periodoId = await garantirPeriodo(linha);
+
+      const dataFimD = new Date(dataInicio + 'T12:00:00');
+      dataFimD.setDate(dataFimD.getDate() + dias - 1);
+
+      const novaFeria: Ferias = {
+        id: `fer-${Date.now()}-${Math.random().toString(36).slice(2,6)}`,
+        colaboradorId: linha.colaborador.id,
+        periodoAquisitivoId: periodoId,
+        dataInicio,
+        dataFim: dataFimD.toISOString().split('T')[0],
+        dias,
+        status: 'planejada',
+        createdAt: new Date().toISOString(),
+      };
+      await DataService.saveFerias(novaFeria);
+      setFerias(prev => [...prev, novaFeria]);
+    };
+
+    // ── Componente de linha de nova concessão (controlled, com estado local) ──
+    // Resolve o problema de inputs uncontrolled com IDs que colidiamm e não
+    // calculavam o fim automaticamente.
+    const LinhaNovaConcessao = ({ linha }: { linha: LinhaPlanejamento }) => {
+      const [dataInicio, setDataInicio] = React.useState('');
+      const [dias, setDias] = React.useState('');
+      const [salvando, setSalvando] = React.useState(false);
+
+      const diasNum = parseInt(dias) || 0;
+      const dataFim = (dataInicio && diasNum >= 10)
+        ? (() => {
+            const d = new Date(dataInicio + 'T12:00:00');
+            d.setDate(d.getDate() + diasNum - 1);
+            return d.toLocaleDateString('pt-BR');
+          })()
+        : null;
+
+      const validacao = dataInicio ? validarInicioFerias(new Date(dataInicio + 'T12:00:00')) : null;
+      const podeConfirmar = !!dataInicio && diasNum >= 10 && diasNum <= linha.diasRestantes && (validacao?.ok !== false);
+
+      const handleConfirmar = async () => {
+        if (!podeConfirmar || salvando) return;
+        setSalvando(true);
+        await handleSalvarConcessao(linha, dataInicio, diasNum);
+        setDataInicio(''); setDias('');
+        setSalvando(false);
+      };
+
+      return (
+        <tr className="border-t border-teal-100 bg-teal-50/30">
+          {/* células vazias para alinhar com as colunas anteriores */}
+          <td className="py-2 px-3" colSpan={2}></td>
+          <td className="py-2 px-3 text-[10px] text-teal-600 font-semibold whitespace-nowrap" colSpan={2}>
+            Nova concessão — {linha.diasRestantes} dias disponíveis
+          </td>
+          <td className="py-2 px-3" colSpan={2}></td>
+          <td className="py-2 px-3"></td>
+          {/* Concessão Início */}
+          <td className="py-2 px-3">
+            <div className="flex flex-col gap-0.5">
+              <input type="date" value={dataInicio}
+                onChange={e => setDataInicio(e.target.value)}
+                className={`text-[10px] border rounded-lg px-2 py-1 focus:outline-none w-28 ${
+                  validacao && !validacao.ok ? 'border-rose-300 bg-rose-50' :
+                  dataInicio ? 'border-teal-400 bg-teal-50' : 'border-slate-200 bg-white'
+                }`} />
+              {validacao?.aviso && (
+                <span className={`text-[9px] ${validacao.ok ? 'text-amber-600' : 'text-rose-600'}`}>
+                  {validacao.aviso}
+                </span>
+              )}
+            </div>
+          </td>
+          {/* Nº Dias */}
+          <td className="py-2 px-3 text-center">
+            <input type="number" min={10} max={linha.diasRestantes} value={dias}
+              onChange={e => setDias(e.target.value)}
+              placeholder="dias"
+              className="text-[10px] border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:border-teal-500 bg-white w-14 text-center" />
+          </td>
+          {/* Concessão Fim — calculada automaticamente */}
+          <td className="py-2 px-3 text-xs font-semibold text-teal-700 whitespace-nowrap">
+            {dataFim || '—'}
+          </td>
+          {/* Status + botão salvar */}
+          <td className="py-2 px-3">
+            <button
+              onClick={handleConfirmar}
+              disabled={!podeConfirmar || salvando}
+              className="px-3 py-1 bg-teal-500 hover:bg-teal-400 text-slate-950 text-[9px] font-bold rounded-lg cursor-pointer transition disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
+            >
+              {salvando ? 'Salvando...' : 'Confirmar'}
+            </button>
+          </td>
+          <td className="py-2 px-3"></td>
+        </tr>
+      );
     };
 
     return (
@@ -1648,7 +1790,7 @@ export default function GestaoPessoas({
                   const isFirstRowOfPeriod = isFirstRowOfCol ||
                     linhasFiltradas[rowIdx - 1].anoBase !== l.anoBase ||
                     linhasFiltradas[rowIdx - 1].colaborador.id !== l.colaborador.id;
-                  const concessaoInicio = l.concessaoInicio ? new Date(l.concessaoInicio) : null;
+                  const concessaoInicio = l.concessaoInicio ? new Date(l.concessaoInicio + 'T12:00:00') : null;
                   const concessaoFim = concessaoInicio && l.concessaoDias
                     ? (() => { const d = new Date(concessaoInicio); d.setDate(d.getDate() + (l.concessaoDias! - 1)); return d; })()
                     : null;
@@ -1665,119 +1807,112 @@ export default function GestaoPessoas({
                     { label: 'ATIVO', cls: 'bg-emerald-100 text-emerald-700' };
 
                   return (
-                    <tr key={`${l.colaborador.id}-${l.anoBase}-${l.concessaoFeriasId || 'main'}-${rowIdx}`} className={`border-t border-slate-100 ${bgRow}`}>
-                      <td className="py-2 px-3">
-                        {isFirstRowOfCol && (
-                          <div className="flex items-center gap-2">
-                            <img src={l.colaborador.fotoUrl} alt={l.colaborador.nome} className="w-6 h-6 rounded-full object-cover shrink-0" />
-                            <div>
-                              <p className="font-bold text-slate-800 whitespace-nowrap text-xs">{l.colaborador.nome}</p>
-                              <p className="text-[9px] text-slate-400">{l.setor?.nome}</p>
+                    <React.Fragment key={`${l.colaborador.id}-${l.anoBase}-${l.concessaoFeriasId || 'main'}-${rowIdx}`}>
+                      <tr className={`border-t border-slate-100 ${bgRow}`}>
+                        <td className="py-2 px-3">
+                          {isFirstRowOfCol && (
+                            <div className="flex items-center gap-2">
+                              <img src={l.colaborador.fotoUrl} alt={l.colaborador.nome} className="w-6 h-6 rounded-full object-cover shrink-0" />
+                              <div>
+                                <p className="font-bold text-slate-800 whitespace-nowrap text-xs">{l.colaborador.nome}</p>
+                                <p className="text-[9px] text-slate-400">{l.setor?.nome}</p>
+                              </div>
                             </div>
-                          </div>
-                        )}
-                      </td>
-                      <td className="py-2 px-3 text-slate-500 whitespace-nowrap text-xs">
-                        {isFirstRowOfCol ? new Date(l.colaborador.dataAdmissao).toLocaleDateString('pt-BR') : ''}
-                      </td>
-                      <td className="py-2 px-3 text-slate-600 whitespace-nowrap text-xs">
-                        {isFirstRowOfPeriod ? l.inicioAquisitivo.toLocaleDateString('pt-BR') : ''}
-                      </td>
-                      <td className="py-2 px-3 text-slate-600 whitespace-nowrap text-xs">
-                        {isFirstRowOfPeriod ? l.fimAquisitivo.toLocaleDateString('pt-BR') : ''}
-                      </td>
-                      <td className="py-2 px-3 text-center text-xs">
-                        {isFirstRowOfPeriod && <span className="font-semibold text-slate-700">{l.diasGozados}</span>}
-                      </td>
-                      <td className="py-2 px-3 text-center text-xs">
-                        <span className={`font-bold ${(l.isParcela ? l.concessaoDias! : l.diasRestantes) > 0 ? 'text-emerald-600' : 'text-slate-300'}`}>
-                          {l.isParcela ? l.concessaoDias : (l.diasRestantes > 0 ? l.diasRestantes : '—')}
-                        </span>
-                      </td>
-                      <td className="py-2 px-3 whitespace-nowrap text-xs">
-                        {isFirstRowOfPeriod && (
-                          <span className={l.limiteGozo < hoje && l.diasRestantes > 0 && !l.isParcela ? 'text-rose-600 font-bold' : 'text-slate-600'}>
-                            {l.limiteGozo.toLocaleDateString('pt-BR')}
+                          )}
+                        </td>
+                        <td className="py-2 px-3 text-slate-500 whitespace-nowrap text-xs">
+                          {isFirstRowOfCol ? new Date(l.colaborador.dataAdmissao).toLocaleDateString('pt-BR') : ''}
+                        </td>
+                        <td className="py-2 px-3 text-slate-600 whitespace-nowrap text-xs">
+                          {isFirstRowOfPeriod ? l.inicioAquisitivo.toLocaleDateString('pt-BR') : ''}
+                        </td>
+                        <td className="py-2 px-3 text-slate-600 whitespace-nowrap text-xs">
+                          {isFirstRowOfPeriod ? l.fimAquisitivo.toLocaleDateString('pt-BR') : ''}
+                        </td>
+                        <td className="py-2 px-3 text-center text-xs">
+                          {isFirstRowOfPeriod && <span className="font-semibold text-slate-700">{l.diasGozados}</span>}
+                        </td>
+                        <td className="py-2 px-3 text-center text-xs">
+                          <span className={`font-bold ${(l.isParcela ? l.concessaoDias! : l.diasRestantes) > 0 ? 'text-emerald-600' : 'text-slate-300'}`}>
+                            {l.isParcela ? l.concessaoDias : (l.diasRestantes > 0 ? l.diasRestantes : '—')}
                           </span>
-                        )}
-                      </td>
-                      <td className="py-2 px-3">
-                        {l.concessaoFeriasId ? (
-                          <div className="flex flex-col gap-0.5">
-                            <input type="date" defaultValue={l.concessaoInicio || ''}
-                              onChange={async (e) => {
+                        </td>
+                        <td className="py-2 px-3 whitespace-nowrap text-xs">
+                          {isFirstRowOfPeriod && (
+                            <span className={l.limiteGozo < hoje && l.diasRestantes > 0 && !l.isParcela ? 'text-rose-600 font-bold' : 'text-slate-600'}>
+                              {l.limiteGozo.toLocaleDateString('pt-BR')}
+                            </span>
+                          )}
+                        </td>
+                        {/* Concessão Início — editável se já existe, display se for linha de nova concessão */}
+                        <td className="py-2 px-3">
+                          {l.concessaoFeriasId ? (
+                            <div className="flex flex-col gap-0.5">
+                              <input type="date" defaultValue={l.concessaoInicio || ''}
+                                onBlur={async (e) => {
+                                  if (!e.target.value) return;
+                                  const f = ferias.find(ff => ff.id === l.concessaoFeriasId)!;
+                                  if (!f || e.target.value === f.dataInicio) return;
+                                  const inicio = new Date(e.target.value + 'T12:00:00');
+                                  const fim = new Date(inicio); fim.setDate(fim.getDate() + (f.dias - 1));
+                                  const atualizado = { ...f, dataInicio: e.target.value, dataFim: fim.toISOString().split('T')[0] };
+                                  await DataService.saveFerias(atualizado);
+                                  setFerias(prev => prev.map(ff => ff.id === f.id ? atualizado : ff));
+                                }}
+                                className="text-[10px] border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:border-teal-500 bg-white w-28" />
+                              {validacao?.aviso && <span className={`text-[9px] ${validacao.ok ? 'text-amber-600' : 'text-rose-600'}`}>{validacao.aviso}</span>}
+                            </div>
+                          ) : <span className="text-slate-300 text-xs">—</span>}
+                        </td>
+                        {/* Nº Dias — editável se já existe */}
+                        <td className="py-2 px-3 text-center">
+                          {l.concessaoFeriasId ? (
+                            <input type="number" min={10} max={30} defaultValue={l.concessaoDias || ''}
+                              onBlur={async (e) => {
+                                const dias = parseInt(e.target.value);
+                                if (!dias || dias < 10) return;
                                 const f = ferias.find(ff => ff.id === l.concessaoFeriasId)!;
-                                const atualizado = { ...f, dataInicio: e.target.value };
+                                if (!f || dias === f.dias) return;
+                                const inicio = new Date(f.dataInicio + 'T12:00:00');
+                                const fim = new Date(inicio); fim.setDate(fim.getDate() + dias - 1);
+                                const atualizado = { ...f, dias, dataFim: fim.toISOString().split('T')[0] };
                                 await DataService.saveFerias(atualizado);
                                 setFerias(prev => prev.map(ff => ff.id === f.id ? atualizado : ff));
                               }}
-                              className="text-[10px] border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:border-teal-500 bg-white w-28" />
-                            {validacao?.aviso && <span className={`text-[9px] ${validacao.ok ? 'text-amber-600' : 'text-rose-600'}`}>{validacao.aviso}</span>}
+                              className="text-[10px] border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:border-teal-500 bg-white w-14 text-center" />
+                          ) : <span className="text-slate-300 text-xs">—</span>}
+                        </td>
+                        {/* Concessão Fim */}
+                        <td className="py-2 px-3 text-slate-600 whitespace-nowrap text-xs">
+                          {concessaoFim ? <span className="text-teal-700 font-semibold">{concessaoFim.toLocaleDateString('pt-BR')}</span> : '—'}
+                        </td>
+                        <td className="py-2 px-3 text-center">
+                          <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase whitespace-nowrap ${statusLabel.cls}`}>
+                            {statusLabel.label}
+                          </span>
+                        </td>
+                        <td className="py-2 px-3 whitespace-nowrap">
+                          <div className="flex items-center gap-1">
+                            {l.concessaoFeriasId && (
+                              <button onClick={() => { if (confirm('Remover esta concessão?')) handleRemoverConcessao(l.concessaoFeriasId!); }}
+                                className="text-[9px] text-rose-400 hover:text-rose-700 hover:bg-rose-50 px-2 py-1 rounded-lg cursor-pointer transition">Remover</button>
+                            )}
+                            {!l.jaGozado && !l.concessaoFeriasId && l.status !== 'futuro' && l.diasRestantes > 0 && (
+                              <button onClick={() => handleMarcarJaGozado(l)}
+                                className="text-[9px] text-slate-400 hover:text-amber-700 hover:bg-amber-50 px-2 py-1 rounded-lg cursor-pointer transition whitespace-nowrap">Já Gozado</button>
+                            )}
+                            {l.jaGozado && !l.isParcela && (
+                              <button onClick={() => handleDesfazerJaGozado(l)}
+                                className="text-[9px] text-slate-400 hover:text-teal-700 hover:bg-teal-50 px-2 py-1 rounded-lg cursor-pointer transition whitespace-nowrap">Desfazer</button>
+                            )}
                           </div>
-                        ) : (!l.jaGozado && l.diasRestantes > 0 && l.status !== 'futuro') ? (
-                          <input type="date" id={`ci-${l.colaborador.id}-${l.anoBase}`}
-                            className="text-[10px] border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:border-teal-500 bg-white w-28" />
-                        ) : <span className="text-slate-300 text-xs">—</span>}
-                      </td>
-                      <td className="py-2 px-3 text-center">
-                        {l.concessaoFeriasId ? (
-                          <input type="number" min={10} max={l.concessaoDias || 30} defaultValue={l.concessaoDias || ''}
-                            onChange={async (e) => {
-                              const dias = parseInt(e.target.value); if (!dias || dias < 10) return;
-                              const f = ferias.find(ff => ff.id === l.concessaoFeriasId)!;
-                              const inicio = new Date(f.dataInicio);
-                              const fim = new Date(inicio); fim.setDate(fim.getDate() + dias - 1);
-                              const atualizado = { ...f, dias, dataFim: fim.toISOString().split('T')[0] };
-                              await DataService.saveFerias(atualizado);
-                              setFerias(prev => prev.map(ff => ff.id === f.id ? atualizado : ff));
-                            }}
-                            className="text-[10px] border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:border-teal-500 bg-white w-14 text-center" />
-                        ) : (!l.jaGozado && l.diasRestantes > 0 && l.status !== 'futuro') ? (
-                          <input type="number" min={10} max={l.diasRestantes} id={`nd-${l.colaborador.id}-${l.anoBase}`}
-                            placeholder="dias"
-                            onBlur={async (e) => {
-                              const dias = parseInt(e.target.value); if (!dias || dias < 10) return;
-                              const ciInput = document.getElementById(`ci-${l.colaborador.id}-${l.anoBase}`) as HTMLInputElement;
-                              const dataInicio = ciInput?.value; if (!dataInicio) return;
-                              const dataFimD = new Date(dataInicio); dataFimD.setDate(dataFimD.getDate() + dias - 1);
-                              const novaFeria: Ferias = {
-                                id: `fer-${Date.now()}`, colaboradorId: l.colaborador.id,
-                                periodoAquisitivoId: l.periodoDbId || '', dataInicio,
-                                dataFim: dataFimD.toISOString().split('T')[0], dias, status: 'planejada',
-                                createdAt: new Date().toISOString(),
-                              };
-                              await DataService.saveFerias(novaFeria);
-                              setFerias(prev => [...prev, novaFeria]);
-                              ciInput.value = ''; e.target.value = '';
-                            }}
-                            className="text-[10px] border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:border-teal-500 bg-white w-14 text-center" />
-                        ) : <span className="text-slate-300 text-xs">—</span>}
-                      </td>
-                      <td className="py-2 px-3 text-slate-600 whitespace-nowrap text-xs">
-                        {concessaoFim ? <span className="text-teal-700 font-semibold">{concessaoFim.toLocaleDateString('pt-BR')}</span> : '—'}
-                      </td>
-                      <td className="py-2 px-3 text-center">
-                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase whitespace-nowrap ${statusLabel.cls}`}>
-                          {statusLabel.label}
-                        </span>
-                      </td>
-                      <td className="py-2 px-3 whitespace-nowrap">
-                        <div className="flex items-center gap-1">
-                          {l.concessaoFeriasId && (
-                            <button onClick={() => { if (confirm('Remover esta concessão?')) handleRemoverConcessao(l.concessaoFeriasId!); }}
-                              className="text-[9px] text-rose-400 hover:text-rose-700 hover:bg-rose-50 px-2 py-1 rounded-lg cursor-pointer transition">Remover</button>
-                          )}
-                          {!l.jaGozado && !l.concessaoFeriasId && l.status !== 'futuro' && l.diasRestantes > 0 && (
-                            <button onClick={() => handleMarcarJaGozado(l)}
-                              className="text-[9px] text-slate-400 hover:text-amber-700 hover:bg-amber-50 px-2 py-1 rounded-lg cursor-pointer transition whitespace-nowrap">Já Gozado</button>
-                          )}
-                          {l.jaGozado && !l.isParcela && (
-                            <button onClick={() => handleDesfazerJaGozado(l)}
-                              className="text-[9px] text-slate-400 hover:text-teal-700 hover:bg-teal-50 px-2 py-1 rounded-lg cursor-pointer transition whitespace-nowrap">Desfazer</button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
+                        </td>
+                      </tr>
+                      {/* Linha de nova concessão — aparece logo após linha principal quando há dias restantes */}
+                      {!l.isParcela && !l.jaGozado && l.diasRestantes > 0 && l.status !== 'futuro' && (
+                        <LinhaNovaConcessao linha={l} />
+                      )}
+                    </React.Fragment>
                   );
                 })}
                 {linhasFiltradas.length === 0 && (

@@ -28,6 +28,7 @@ import {
 import { DataService } from '../services/DataService';
 import { PlanejadorFerias, CONFIGURACAO_FERIAS_PADRAO } from './PlanejadorFerias';
 import { SugestaoDistribuicaoModal } from './SugestaoDistribuicaoFerias';
+import RelatorioFerias from './RelatorioFerias';
 import { gerarPeriodosFaltantes } from '../features/disponibilidade/engine/GeradorPeriodosAquisitivos';
 import { recalcularSaldoPeriodo } from '../features/disponibilidade/engine/CalculadoraSaldoPeriodo';
 import { format, addDays, parseISO, differenceInDays, isWithinInterval } from 'date-fns';
@@ -58,7 +59,7 @@ import {
 // ==========================================
 // TIPOS INTERNOS
 // ==========================================
-type SubTab = 'dashboard' | 'calendario' | 'ferias' | 'dayoff' | 'desenvolvimento' | 'config';
+type SubTab = 'dashboard' | 'calendario' | 'ferias' | 'relatorio' | 'dayoff' | 'desenvolvimento' | 'config';
 
 interface AlertaGestaoPessoas {
   id: string;
@@ -1043,6 +1044,7 @@ export default function GestaoPessoas({
         { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
         { id: 'calendario', label: 'Calendário', icon: Calendar },
         { id: 'ferias', label: 'Férias', icon: Palmtree },
+        { id: 'relatorio', label: 'Relatório', icon: TrendingUp },
         { id: 'dayoff', label: 'DayOff', icon: Gift },
         { id: 'desenvolvimento', label: 'Desenvolvimento', icon: TrendingUp },
         { id: 'config', label: 'Config', icon: Settings },
@@ -2170,8 +2172,21 @@ export default function GestaoPessoas({
       return null;
     };
 
-    const getDayOffStatus = (col: Colaborador) =>
-      dayOffs.find(d => d.colaboradorId === col.id && d.ano === anoAtual);
+    // getDayOffStatus: busca o DayOff mais relevante para um colaborador.
+    // NÃO filtra por anoAtual fixo — o anoRef do save pode ser anoAtual+1
+    // para colaboradores cujo mês de aniversário já passou.
+    // Prioriza: utilizado > disponivel > vencido, e dentro de mesmo status, o mais recente.
+    const getDayOffStatus = (col: Colaborador): DayOff | undefined => {
+      const todos = dayOffs.filter(d => d.colaboradorId === col.id);
+      if (todos.length === 0) return undefined;
+      // Prioridade: utilizado (agendado) > disponivel > vencido
+      const prioridade = (s: string) => s === 'utilizado' ? 0 : s === 'disponivel' ? 1 : 2;
+      return todos.sort((a, b) => {
+        const pd = prioridade(a.status) - prioridade(b.status);
+        if (pd !== 0) return pd;
+        return (b.ano || 0) - (a.ano || 0); // mais recente primeiro
+      })[0];
+    };
 
     const getAlertaStatus = (colId: string): string | null => {
       try { return localStorage.getItem(`gc_dayoff_alerta_${mesAtual}_${anoAtual}_${colId}`); } catch { return null; }
@@ -2343,6 +2358,15 @@ export default function GestaoPessoas({
                           className="px-3 py-1.5 bg-violet-500 hover:bg-violet-400 text-white text-[10px] font-bold rounded-lg cursor-pointer transition"
                         >Agendar</button>
                       )}
+                      {dayoff?.status === 'utilizado' && (
+                        <button
+                          onClick={() => {
+                            setDayoffModalAberto({ dayoff, colaboradorId: col.id });
+                            setDayoffDataAgendamento(dayoff.dataUtilizacao?.split('T')[0] || '');
+                          }}
+                          className="px-3 py-1.5 bg-indigo-500 hover:bg-indigo-400 text-white text-[10px] font-bold rounded-lg cursor-pointer transition"
+                        >Editar data</button>
+                      )}
                       <button
                         onClick={() => setAlertaStatus(col.id, 'ciente')}
                         className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-[10px] font-bold rounded-lg cursor-pointer transition border border-emerald-200"
@@ -2422,24 +2446,42 @@ export default function GestaoPessoas({
                       </span>
                     </td>
                     <td className="py-2.5 px-4 text-slate-600">
-                      {dayoff?.dataUtilizacao ? new Date(dayoff.dataUtilizacao).toLocaleDateString('pt-BR') : '—'}
+                      {dayoff?.dataUtilizacao
+                        ? new Date(dayoff.dataUtilizacao + (dayoff.dataUtilizacao.includes('T') ? '' : 'T12:00:00')).toLocaleDateString('pt-BR')
+                        : '—'}
                     </td>
-                    <td className="py-2.5 px-4 text-center">
-                      {/* Agendar: aparece para qualquer colaborador com aniversário cadastrado
-                          que ainda não tem DayOff utilizado — cria o registro no banco se não existir */}
-                      {colaborador.dataNascimento && dayoff?.status !== 'utilizado' && (
-                        <button
-                          onClick={() => { setDayoffModalAberto({ dayoff: dayoff || null, colaboradorId: colaborador.id }); setDayoffDataAgendamento(''); }}
-                          className="px-3 py-1 bg-violet-500 hover:bg-violet-400 text-white text-[10px] font-semibold rounded-lg cursor-pointer transition"
-                        >Agendar</button>
-                      )}
-                      {dayoff?.status === 'utilizado' && (
-                        <button
-                          onClick={() => handleCancelarDayOff(dayoff)}
-                          className="px-3 py-1 bg-slate-100 hover:bg-rose-50 text-slate-500 hover:text-rose-600 text-[10px] font-semibold rounded-lg cursor-pointer transition"
-                          title="Desfazer agendamento"
-                        >Desfazer</button>
-                      )}
+                    <td className="py-2.5 px-4">
+                      <div className="flex items-center gap-1.5">
+                        {/* Agendar — para quem tem aniversário mas sem dayoff agendado */}
+                        {colaborador.dataNascimento && dayoff?.status !== 'utilizado' && (
+                          <button
+                            onClick={() => { setDayoffModalAberto({ dayoff: dayoff || null, colaboradorId: colaborador.id }); setDayoffDataAgendamento(''); }}
+                            className="px-3 py-1 bg-violet-500 hover:bg-violet-400 text-white text-[10px] font-semibold rounded-lg cursor-pointer transition"
+                          >Agendar</button>
+                        )}
+                        {/* Editar — quando já há data agendada */}
+                        {dayoff?.status === 'utilizado' && (
+                          <button
+                            onClick={() => {
+                              setDayoffModalAberto({ dayoff, colaboradorId: colaborador.id });
+                              // Preencher o modal com a data atual para edição
+                              const dataAtual = dayoff.dataUtilizacao
+                                ? dayoff.dataUtilizacao.split('T')[0]
+                                : '';
+                              setDayoffDataAgendamento(dataAtual);
+                            }}
+                            className="px-3 py-1 bg-indigo-500 hover:bg-indigo-400 text-white text-[10px] font-semibold rounded-lg cursor-pointer transition"
+                          >Editar</button>
+                        )}
+                        {/* Desfazer — cancela o agendamento */}
+                        {dayoff?.status === 'utilizado' && (
+                          <button
+                            onClick={() => handleCancelarDayOffGlobal(dayoff)}
+                            className="px-3 py-1 bg-slate-100 hover:bg-rose-50 text-slate-500 hover:text-rose-600 text-[10px] font-semibold rounded-lg cursor-pointer transition"
+                            title="Desfazer agendamento"
+                          >Desfazer</button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );
@@ -2995,6 +3037,14 @@ export default function GestaoPessoas({
       {subTab === 'dashboard' && renderDashboard()}
       {subTab === 'calendario' && renderCalendario()}
       {subTab === 'ferias' && renderFerias()}
+      {subTab === 'relatorio' && (
+        <RelatorioFerias
+          colaboradores={colaboradores}
+          ferias={ferias}
+          setores={setores}
+          periodosAquisitivos={periodosAquisitivos}
+        />
+      )}
       {subTab === 'dayoff' && renderDayOff()}
       {subTab === 'desenvolvimento' && renderDesenvolvimento()}
       {subTab === 'config' && renderConfig()}

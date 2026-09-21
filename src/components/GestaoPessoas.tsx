@@ -24,11 +24,20 @@ import {
   Inscricao,
   InscricaoEtapa,
   AlertaInteligente,
+  CapacidadeBiblioteca,
+  CompetenciaBiblioteca,
+  EscalaDominio,
+  GrauDominio,
+  TipoEvidenciaCapacidade,
+  GravidadeOcorrencia,
+  MatrizVersao,
 } from '../types';
 import { DataService } from '../services/DataService';
 import { PlanejadorFerias, CONFIGURACAO_FERIAS_PADRAO } from './PlanejadorFerias';
 import { SugestaoDistribuicaoModal } from './SugestaoDistribuicaoFerias';
 import RelatorioFerias from './RelatorioFerias';
+import PainelDesenvolvimento from '../features/desenvolvimento-colaboradores/PainelDesenvolvimento';
+import PainelAnaliseIA from './PainelAnaliseIA';
 import { gerarPeriodosFaltantes } from '../features/disponibilidade/engine/GeradorPeriodosAquisitivos';
 import { recalcularSaldoPeriodo } from '../features/disponibilidade/engine/CalculadoraSaldoPeriodo';
 import { format, addDays, parseISO, differenceInDays, isWithinInterval } from 'date-fns';
@@ -54,6 +63,7 @@ import {
   LayoutDashboard,
   Sparkles,
   Search,
+  ExternalLink,
 } from 'lucide-react';
 
 // ==========================================
@@ -395,6 +405,14 @@ interface GestaoPessoasProps {
   currentUserId: string;
   onSelectColaborador?: (id: string) => void;
   onNavigateToColaborador?: (colaboradorId: string, aba?: string) => void;
+  // Dados do Motor de Desenvolvimento — para o Drawer do Radar
+  capacidades?: CapacidadeBiblioteca[];
+  competencias?: CompetenciaBiblioteca[];
+  escalas?: EscalaDominio[];
+  graus?: GrauDominio[];
+  tiposEvidencia?: TipoEvidenciaCapacidade[];
+  gravidadesOcorrencia?: GravidadeOcorrencia[];
+  matrizVersoes?: MatrizVersao[];
 }
 
 export default function GestaoPessoas({
@@ -408,8 +426,22 @@ export default function GestaoPessoas({
   currentUserId,
   onSelectColaborador,
   onNavigateToColaborador,
+  capacidades = [],
+  competencias = [],
+  escalas = [],
+  graus = [],
+  tiposEvidencia = [],
+  gravidadesOcorrencia = [],
+  matrizVersoes = [],
 }: GestaoPessoasProps) {
   const [subTab, setSubTab] = useState<SubTab>('dashboard');
+
+  // ── Drawer de Desenvolvimento — abre ao clicar num card do Radar ────────
+  // Mostra PainelDesenvolvimento + PainelAnaliseIA sem sair da tela do Radar.
+  const [drawerColaboradorId, setDrawerColaboradorId] = useState<string | null>(null);
+  const drawerColaborador = drawerColaboradorId
+    ? colaboradores.find(c => c.id === drawerColaboradorId) || null
+    : null;
   const [ferias, setFerias] = useState<Ferias[]>([]);
   const [dayOffs, setDayOffs] = useState<DayOff[]>([]);
   const [folgas, setFolgas] = useState<Folga[]>([]);
@@ -2598,14 +2630,14 @@ export default function GestaoPessoas({
 
       return (
         <button
-          onClick={() => onNavigateToColaborador?.(d.colaborador.id, 'desenvolvimento')}
-          className={`flex flex-col gap-2.5 p-4 rounded-2xl border text-left cursor-pointer hover:shadow-sm transition group w-full ${
+          onClick={() => setDrawerColaboradorId(d.colaborador.id)}
+          className={`flex flex-col gap-2.5 p-4 rounded-2xl border text-left cursor-pointer hover:shadow-md transition group w-full ${
             modoDesenvolvimento === 'ciclo5meses' ? corBorda : 'border-slate-100 bg-white hover:border-slate-200'
           }`}
         >
           <div className="flex items-center gap-2.5 w-full">
             <img src={d.colaborador.fotoUrl} alt={d.colaborador.nome}
-              className="w-9 h-9 rounded-full object-cover shrink-0" />
+              className="w-9 h-9 rounded-full object-cover shrink-0 ring-2 ring-white group-hover:ring-teal-200 transition" />
             <div className="flex-1 min-w-0">
               <p className="font-bold text-slate-800 text-xs truncate group-hover:text-teal-700 transition">
                 {d.colaborador.nome}
@@ -2638,8 +2670,10 @@ export default function GestaoPessoas({
             </div>
           )}
 
-          <div className="text-[10px] text-teal-600 font-semibold group-hover:underline flex items-center gap-1">
-            Ver desenvolvimento →
+          {/* Hint visual — mostra que é clicável e o que abre */}
+          <div className="flex items-center gap-1 text-[10px] text-teal-600 font-semibold group-hover:gap-2 transition-all">
+            <span>Ver competências e evidências</span>
+            <span className="opacity-0 group-hover:opacity-100 transition">→</span>
           </div>
         </button>
       );
@@ -3036,7 +3070,110 @@ export default function GestaoPessoas({
 
       {subTab === 'dashboard' && renderDashboard()}
       {subTab === 'calendario' && renderCalendario()}
-      {subTab === 'ferias' && renderFerias()}
+      {/* PWA / outros componentes... */}
+
+      {/* ── DRAWER DE DESENVOLVIMENTO ─────────────────────────────────────────
+          Abre pela direita ao clicar num card do Radar de Desenvolvimento.
+          Mostra PainelDesenvolvimento + PainelAnaliseIA sem sair da tela.
+          ─────────────────────────────────────────────────────────────────── */}
+      {drawerColaborador && (
+        <>
+          {/* Overlay escurecido — clicar fora fecha */}
+          <div
+            className="fixed inset-0 bg-slate-950/40 backdrop-blur-[2px] z-40"
+            onClick={() => setDrawerColaboradorId(null)}
+          />
+
+          {/* Painel lateral */}
+          <div className="fixed top-0 right-0 h-full w-full max-w-2xl bg-white shadow-2xl z-50 flex flex-col"
+            style={{ animation: 'slideInRight 0.25s ease-out' }}>
+
+            <style>{`
+              @keyframes slideInRight {
+                from { transform: translateX(100%); opacity: 0; }
+                to   { transform: translateX(0);    opacity: 1; }
+              }
+            `}</style>
+
+            {/* Header do drawer */}
+            <div className="flex items-center gap-4 px-6 py-4 border-b border-slate-100 shrink-0 bg-gradient-to-r from-teal-50/60 to-transparent">
+              <img
+                src={drawerColaborador.fotoUrl}
+                alt={drawerColaborador.nome}
+                className="w-11 h-11 rounded-full object-cover ring-2 ring-teal-200 shrink-0"
+              />
+              <div className="flex-1 min-w-0">
+                <h2 className="font-extrabold text-slate-900 text-sm truncate">{drawerColaborador.nome}</h2>
+                <p className="text-[11px] text-slate-400 truncate">
+                  {cargos.find(c => c.id === drawerColaborador.cargoId)?.nome || 'Sem cargo'} ·{' '}
+                  {setores.find(s => s.id === drawerColaborador.setorId)?.nome || '—'}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                {/* Abrir perfil completo */}
+                <button
+                  onClick={() => {
+                    setDrawerColaboradorId(null);
+                    onNavigateToColaborador?.(drawerColaborador.id, 'desenvolvimento');
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-teal-700 bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-xl cursor-pointer transition"
+                  title="Abrir perfil completo"
+                >
+                  <ExternalLink size={12} /> Perfil completo
+                </button>
+                <button
+                  onClick={() => setDrawerColaboradorId(null)}
+                  className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl cursor-pointer transition"
+                  aria-label="Fechar"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            {/* Conteúdo scrollável */}
+            <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
+              {capacidades.length > 0 ? (
+                <>
+                  <PainelDesenvolvimento
+                    colaborador={drawerColaborador}
+                    capacidades={capacidades}
+                    competencias={competencias}
+                    escalas={escalas}
+                    graus={graus}
+                    tiposEvidencia={tiposEvidencia}
+                    gravidadesOcorrencia={gravidadesOcorrencia}
+                    matrizVersoes={matrizVersoes}
+                    setores={setores}
+                    currentUserId={currentUserId}
+                  />
+                  <PainelAnaliseIA
+                    colaborador={drawerColaborador}
+                    timeline={timeline.filter(t => t.colaboradorId === drawerColaborador.id)}
+                    capacidades={capacidades}
+                    competencias={competencias}
+                  />
+                </>
+              ) : (
+                <div className="text-center py-16 text-slate-400">
+                  <TrendingUp size={36} className="mx-auto mb-3 opacity-20" />
+                  <p className="font-semibold text-sm">Motor de Desenvolvimento não configurado</p>
+                  <p className="text-xs mt-1">Configure a Trilha &amp; Matriz em Configurações Gerais para ver as competências aqui.</p>
+                  <button
+                    onClick={() => {
+                      setDrawerColaboradorId(null);
+                      onNavigateToColaborador?.(drawerColaborador.id, 'desenvolvimento');
+                    }}
+                    className="mt-4 px-4 py-2 bg-teal-500 hover:bg-teal-400 text-slate-950 text-xs font-bold rounded-xl cursor-pointer transition"
+                  >
+                    Abrir perfil completo →
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
       {subTab === 'relatorio' && (
         <RelatorioFerias
           colaboradores={colaboradores}

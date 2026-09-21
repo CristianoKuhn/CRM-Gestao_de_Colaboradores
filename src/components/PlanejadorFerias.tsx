@@ -54,6 +54,9 @@ export const CONFIGURACAO_FERIAS_PADRAO: ConfiguracaoFerias = {
   permitirVendaFerias: true,
   diasVendidosMaximo: 10,
   bloquearSobreposicao: false,
+  validarProximidadeRSR: true,
+  diasAntesRSR: 2,
+  recomendarTercaQuinta: true,
 };
 
 function gerarAlertasFerias(

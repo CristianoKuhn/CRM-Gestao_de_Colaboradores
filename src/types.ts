@@ -680,6 +680,11 @@ export interface ConfiguracaoFerias {
   permitirVendaFerias: boolean; // "Abono pecuniário"
   diasVendidosMaximo: number; // Geralmente até 10 dias (1/3 do período de 30)
   bloquearSobreposicao: boolean; // true = impede salvar; false = só avisa
+  // ── Regras de início de férias (parametrizáveis em Config) ──────────────
+  // Nunca travam a concessão — apenas exibem avisos coloridos para o gestor.
+  validarProximidadeRSR: boolean;   // Avisar quando início estiver próximo de RSR/domingo
+  diasAntesRSR: number;             // Quantos dias antes do RSR geram aviso (CLT: 2)
+  recomendarTercaQuinta: boolean;   // Avisar quando início não for entre terça e quinta
 }
 
 // Dashboard Macro de Férias (visão anual)

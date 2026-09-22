@@ -45,6 +45,7 @@ export default function Tarefas({
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<'Todas' | 'Pendentes' | 'Concluídas' | 'Atrasadas'>('Pendentes');
   const [filterCidade, setFilterCidade] = useState('');
+  const [filterLider, setFilterLider] = useState('');
 
   // Cidades únicas derivadas dos colaboradores vinculados — aparece o filtro
   // apenas quando há mais de uma cidade distinta (comportamento igual a Colaboradores).
@@ -140,7 +141,10 @@ export default function Tarefas({
       ? colaboradores.find((c) => c.id === task.colaboradorId)?.cidadeBase?.trim().toLowerCase() === filterCidade.toLowerCase()
       : true;
 
-    return matchesSearch && matchesStatus && matchesCidade;
+    // Filtro por Líder Direto: responsavelId da tarefa
+    const matchesLider = filterLider ? task.responsavelId === filterLider : true;
+
+    return matchesSearch && matchesStatus && matchesCidade && matchesLider;
   });
 
   const handleSubmitTarefa = (e: React.FormEvent) => {
@@ -342,6 +346,21 @@ export default function Tarefas({
               </button>
             ))}
           </div>
+
+          {/* Filtro por Líder Responsável */}
+          <select
+            value={filterLider}
+            onChange={(e) => setFilterLider(e.target.value)}
+            className="px-3 py-1.5 bg-slate-100 border-0 rounded-xl text-xs font-semibold text-slate-600 focus:outline-none focus:ring-2 focus:ring-teal-500/20 cursor-pointer"
+          >
+            <option value="">Todos os Líderes</option>
+            {lideres
+              .filter(l => tarefas.some(t => t.responsavelId === l.id))
+              .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
+              .map((l) => (
+                <option key={l.id} value={l.id}>{l.nome}</option>
+              ))}
+          </select>
 
           {cidadesUnicas.length > 1 && (
             <select

@@ -624,6 +624,11 @@ export interface IDataService {
   anexarEvidencia(evidencia: Evidencia): Promise<void>;
   // Reconstrução Multi-Departamento — Etapas 2/3/4
   getPerfilCapacidades(colaboradorId: string): Promise<PerfilCapacidade[]>;
+  avaliarCapacidade(dados: {
+    colaboradorId: string; capacidadeId: string; competenciaId?: string;
+    escalaId?: string; grauId: string; grauOrdem: number; avaliadoPor: string;
+    contexto?: string; data: string; matrizVersaoId?: string;
+  }): Promise<void>;
   getOcorrencias(colaboradorId: string): Promise<Ocorrencia[]>;
   criarOcorrencia(dados: Partial<Ocorrencia>): Promise<Ocorrencia>;
   mudarEstadoOcorrencia(id: string, novoEstado: string, observacao?: string): Promise<ResultadoMudancaEstadoOcorrencia>;
@@ -1416,6 +1421,7 @@ export class LocalDataService implements IDataService {
   }
   // ── Reconstrução Multi-Departamento — Etapas 2/3/4 (stubs locais) ─────
   async getPerfilCapacidades(_colaboradorId: string): Promise<PerfilCapacidade[]> { return []; }
+  async avaliarCapacidade(_dados: Parameters<GoogleScriptDataService['avaliarCapacidade']>[0]): Promise<void> {}
   async getOcorrencias(_colaboradorId: string): Promise<Ocorrencia[]> { return []; }
   async criarOcorrencia(_dados: Partial<Ocorrencia>): Promise<Ocorrencia> { throw new Error('criarOcorrencia não implementado no modo local.'); }
   async mudarEstadoOcorrencia(_id: string, _novoEstado: string, _obs?: string): Promise<ResultadoMudancaEstadoOcorrencia> { throw new Error('mudarEstadoOcorrencia não implementado no modo local.'); }
@@ -4504,6 +4510,77 @@ export class GoogleScriptDataService implements IDataService {
     }
   }
 
+  // Avalia uma capacidade: atualiza PerfilCapacidade + registra Evidencia de avaliação
+  // A Evidencia fica na aba Evidencias (banco) — NÃO na timeline do colaborador.
+  async avaliarCapacidade(dados: {
+    colaboradorId: string;
+    capacidadeId: string;
+    competenciaId?: string;
+    escalaId?: string;
+    grauId: string;        // GrauDominio.id
+    grauOrdem: number;     // 0-4
+    avaliadoPor: string;   // userId do gestor
+    contexto?: string;     // texto de contextualização (opcional)
+    data: string;          // YYYY-MM-DD
+    matrizVersaoId?: string;
+  }): Promise<void> {
+    const perfilId = `perf-${dados.colaboradorId}-${dados.capacidadeId}`;
+    const perfil: PerfilCapacidade = {
+      id: perfilId,
+      colaboradorId: dados.colaboradorId,
+      capacidadeId: dados.capacidadeId,
+      escalaId: dados.escalaId,
+      grauAtual: dados.grauId,
+      matrizVersaoId: dados.matrizVersaoId,
+      treinado: dados.grauOrdem >= 1,
+      avaliado: dados.grauOrdem >= 1,
+      demonstrado: dados.grauOrdem >= 2,
+      atualizadoEm: new Date().toISOString(),
+      atualizadoPor: dados.avaliadoPor,
+    };
+    // Salvar PerfilCapacidade via saveRow no backend
+    try {
+      await this.request('savePerfilCapacidade', { data: {
+        id: perfilId,
+        colaborador_id: dados.colaboradorId,
+        capacidade_id: dados.capacidadeId,
+        escala_id: dados.escalaId || '',
+        grau_atual: dados.grauId,
+        matriz_versao_id: dados.matrizVersaoId || '',
+        treinado: perfil.treinado,
+        avaliado: perfil.avaliado,
+        demonstrado: perfil.demonstrado,
+        atualizado_em: perfil.atualizadoEm,
+        atualizado_por: dados.avaliadoPor,
+      }});
+    } catch (e) {
+      console.warn('[avaliarCapacidade] savePerfilCapacidade falhou, usando fallback:', e);
+    }
+    // Registrar Evidencia de avaliação — fica na aba Evidencias, NÃO na timeline
+    const evidenciaId = `ev-aval-${Date.now()}-${Math.random().toString(36).slice(2,6)}`;
+    const evidencia: Evidencia = {
+      id: evidenciaId,
+      entidadeTipo: 'capacidade' as EntidadeTipoEvidencia,
+      entidadeId: dados.capacidadeId,
+      tipo: 'observacao' as Evidencia['tipo'],
+      texto: dados.contexto || `Grau avaliado manualmente pelo gestor em ${dados.data}.`,
+      anexadoPor: dados.avaliadoPor,
+      data: dados.data,
+      status: 'validada' as Evidencia['status'],
+      validadoPor: dados.avaliadoPor,
+      dataValidacao: new Date().toISOString(),
+      colaboradorId: dados.colaboradorId,
+      competenciaId: dados.competenciaId,
+      capacidadeId: dados.capacidadeId,
+      grauDemonstrado: dados.grauId,
+    };
+    try {
+      await this.anexarEvidencia(evidencia);
+    } catch (e) {
+      console.warn('[avaliarCapacidade] anexarEvidencia falhou:', e);
+    }
+  }
+
   async getOcorrencias(colaboradorId: string): Promise<Ocorrencia[]> {
     try {
       const raw = await this.request<any[]>('getOcorrencias', { colaboradorId });
@@ -5381,6 +5458,9 @@ class DynamicDataService implements IDataService {
   // ── Reconstrução Multi-Departamento — Etapas 2/3/4 ────────────────────
   async getPerfilCapacidades(colaboradorId: string): Promise<PerfilCapacidade[]> {
     return this.getService().getPerfilCapacidades(colaboradorId);
+  }
+  async avaliarCapacidade(dados: Parameters<GoogleScriptDataService['avaliarCapacidade']>[0]): Promise<void> {
+    return this.getService().avaliarCapacidade(dados);
   }
   async getOcorrencias(colaboradorId: string): Promise<Ocorrencia[]> {
     return this.getService().getOcorrencias(colaboradorId);

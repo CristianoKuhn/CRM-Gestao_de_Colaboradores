@@ -1,22 +1,18 @@
 /**
- * Service Worker — Gestão360 PWA
+ * Service Worker — Gestão360 PWA  v2.1
  *
- * Estratégia:
- *  - Shell do app (HTML, CSS, JS) → Cache First com atualização em background
- *  - Chamadas ao Google Apps Script (backend) → Network First com fallback de cache
- *  - Assets estáticos (ícones, fontes) → Cache First permanente
- *  - API Vercel (/api/*) → Network Only (dados sempre frescos)
- *
- * O SW permite que o app carregue instantaneamente após o primeiro acesso,
- * mesmo com conexão lenta, e mostre uma tela de offline amigável quando
- * não há conexão em vez de uma página de erro do navegador.
+ * Estratégias:
+ *  - Shell (HTML/CSS/JS) → Cache First com atualização em background
+ *  - Google Apps Script (POST) → Network Only (Cache API não aceita POST)
+ *  - Google Apps Script (GET)  → Network First com fallback 5min
+ *  - Assets estáticos          → Cache First permanente
+ *  - API Vercel (/api/*)       → Network Only (dados sempre frescos)
  */
 
-const CACHE_VERSION = 'gestao360-v2';
+const CACHE_VERSION = 'gestao360-v2.1';
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const DATA_CACHE  = `${CACHE_VERSION}-data`;
 
-// Recursos do shell do app — carregados no install para garantir offline
 const SHELL_URLS = [
   '/',
   '/index.html',
@@ -26,49 +22,79 @@ const SHELL_URLS = [
   '/favicon.svg',
 ];
 
-// ── Install: pré-cacheia o shell ─────────────────────────────────────────────
+// ── Install ───────────────────────────────────────────────────────────────────
 self.addEventListener('install', (event) => {
+  // skipWaiting força ativação imediata — substitui o SW antigo sem esperar
+  // fechar todas as abas.
+  self.skipWaiting();
   event.waitUntil(
     caches.open(SHELL_CACHE)
       .then((cache) => cache.addAll(SHELL_URLS))
-      .then(() => self.skipWaiting())
-      .catch((err) => console.warn('[SW] Falha no install:', err))
+      .catch((err) => console.warn('[SW] Falha no pré-cache do shell:', err))
   );
 });
 
-// ── Activate: remove caches antigos ──────────────────────────────────────────
+// ── Activate: limpa TODOS os caches de versões anteriores ─────────────────────
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys()
       .then((keys) => Promise.all(
         keys
           .filter((key) => key.startsWith('gestao360-') && key !== SHELL_CACHE && key !== DATA_CACHE)
-          .map((key) => caches.delete(key))
+          .map((key) => {
+            console.log('[SW] Removendo cache antigo:', key);
+            return caches.delete(key);
+          })
       ))
+      // claim() faz o SW novo controlar imediatamente todas as abas abertas
       .then(() => self.clients.claim())
+      .then(() => {
+        // Avisa todas as abas que o SW foi atualizado
+        self.clients.matchAll({ type: 'window' }).then((clients) => {
+          clients.forEach((client) => client.postMessage({ type: 'SW_UPDATED', version: CACHE_VERSION }));
+        });
+      })
   );
 });
 
-// ── Fetch: estratégias por tipo de recurso ────────────────────────────────────
+// ── Mensagens do cliente → SW ─────────────────────────────────────────────────
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+  if (event.data?.type === 'GET_VERSION') {
+    event.source?.postMessage({ type: 'SW_VERSION', version: CACHE_VERSION });
+  }
+});
+
+// ── Fetch ─────────────────────────────────────────────────────────────────────
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // Ignorar extensões do navegador e requests não-HTTP
+  // Ignorar não-HTTP (chrome-extension://, etc.)
   if (!url.protocol.startsWith('http')) return;
 
-  // API Vercel (/api/*) → Network Only: dados sempre frescos
-  if (url.pathname.startsWith('/api/')) {
-    return; // deixa o navegador tratar normalmente
-  }
+  // Vercel API → Network Only sempre
+  if (url.pathname.startsWith('/api/')) return;
 
-  // Google Apps Script → Network First com fallback de cache de 5 minutos
-  if (url.hostname.includes('script.google.com') || url.hostname.includes('googleapis.com')) {
-    event.respondWith(networkFirstWithCache(request, DATA_CACHE, 300));
+  // Google Apps Script:
+  //   POST → NUNCA cachear (Cache API proíbe; body é único por chamada)
+  //   GET  → Network First com fallback de cache 5min
+  if (
+    url.hostname.includes('script.google.com') ||
+    url.hostname.includes('googleapis.com') ||
+    url.hostname.includes('googleusercontent.com')
+  ) {
+    if (request.method === 'POST') {
+      event.respondWith(networkOnly(request));
+    } else {
+      event.respondWith(networkFirstWithCache(request, DATA_CACHE, 300));
+    }
     return;
   }
 
-  // Assets estáticos (JS, CSS, ícones, fontes) → Cache First
+  // Assets estáticos → Cache First
   if (
     url.pathname.match(/\.(js|css|svg|png|jpg|jpeg|woff2?|ttf|otf)$/) ||
     url.pathname.startsWith('/assets/')
@@ -77,21 +103,38 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Navegação (HTML) → Network First com fallback para shell
+  // Navegação HTML → Network First com fallback para shell
   if (request.mode === 'navigate') {
     event.respondWith(
-      fetch(request)
-        .catch(() => caches.match('/index.html').then((r) => r || offlinePage()))
+      fetch(request).catch(() =>
+        caches.match('/index.html').then((r) => r || offlinePage())
+      )
     );
     return;
   }
 
-  // Demais requests → Stale While Revalidate
-  event.respondWith(staleWhileRevalidate(request, SHELL_CACHE));
+  // Restante → Stale While Revalidate (apenas GET)
+  if (request.method === 'GET') {
+    event.respondWith(staleWhileRevalidate(request, SHELL_CACHE));
+  }
+  // POST restantes → deixa o browser tratar normalmente (sem interceptar)
 });
 
-// ── Estratégias de cache ──────────────────────────────────────────────────────
+// ── Estratégias ───────────────────────────────────────────────────────────────
 
+// Network Only — para POST ao GAS (resultado único, nunca cachear)
+async function networkOnly(request) {
+  try {
+    return await fetch(request);
+  } catch {
+    return new Response(
+      JSON.stringify({ success: false, offline: true, message: 'Sem conexão com a internet.' }),
+      { headers: { 'Content-Type': 'application/json' }, status: 503 }
+    );
+  }
+}
+
+// Cache First — shell e assets estáticos (apenas GET)
 async function cacheFirst(request, cacheName) {
   if (request.method !== 'GET') return fetch(request);
   const cached = await caches.match(request);
@@ -108,29 +151,17 @@ async function cacheFirst(request, cacheName) {
   }
 }
 
+// Network First com cache — GET ao GAS com TTL
 async function networkFirstWithCache(request, cacheName, maxAgeSeconds) {
-  // A Cache API não suporta requests POST (restrição da spec do browser).
-  // Requests POST ao GAS são sempre Network Only — o resultado varia por payload.
-  if (request.method !== 'GET') {
-    try {
-      return await fetch(request);
-    } catch {
-      return new Response(
-        JSON.stringify({ success: false, offline: true, message: 'Sem conexão com a internet.' }),
-        { headers: { 'Content-Type': 'application/json' }, status: 503 }
-      );
-    }
-  }
-
-  // Apenas GET: Network First com fallback de cache
+  if (request.method !== 'GET') return networkOnly(request);
   try {
     const response = await fetch(request.clone());
     if (response.ok) {
       const cache = await caches.open(cacheName);
-      const responseToCache = response.clone();
-      const headers = new Headers(responseToCache.headers);
+      const blob = await response.clone().blob();
+      const headers = new Headers(response.headers);
       headers.set('sw-cached-at', Date.now().toString());
-      cache.put(request, new Response(await responseToCache.blob(), { headers, status: response.status }));
+      cache.put(request, new Response(blob, { headers, status: response.status }));
     }
     return response;
   } catch {
@@ -146,22 +177,18 @@ async function networkFirstWithCache(request, cacheName, maxAgeSeconds) {
   }
 }
 
+// Stale While Revalidate — apenas GET
 async function staleWhileRevalidate(request, cacheName) {
-  // POST não pode ser cacheado — Network Only
-  if (request.method !== 'GET') {
-    return fetch(request).catch(() =>
-      new Response('Sem conexão.', { status: 503 })
-    );
-  }
+  if (request.method !== 'GET') return fetch(request);
   const cache = await caches.open(cacheName);
   const cached = await cache.match(request);
-  const fetchPromise = fetch(request).then((response) => {
-    if (response.ok) cache.put(request, response.clone());
-    return response;
-  }).catch(() => null);
-  return cached || fetchPromise || offlinePage();
+  const fetchPromise = fetch(request)
+    .then((response) => { if (response.ok) cache.put(request, response.clone()); return response; })
+    .catch(() => null);
+  return cached || await fetchPromise || offlinePage();
 }
 
+// Página de offline
 function offlinePage() {
   return new Response(`<!DOCTYPE html>
 <html lang="pt-BR">
@@ -192,31 +219,21 @@ function offlinePage() {
     <button onclick="window.location.reload()">Tentar novamente</button>
   </div>
 </body>
-</html>`, {
-    headers: { 'Content-Type': 'text/html; charset=utf-8' },
-    status: 200,
-  });
+</html>`, { headers: { 'Content-Type': 'text/html; charset=utf-8' }, status: 200 });
 }
 
-// ── Background Sync (futuro) ──────────────────────────────────────────────────
+// ── Sync e Push (futuro) ──────────────────────────────────────────────────────
 self.addEventListener('sync', (event) => {
-  if (event.tag === 'sync-pendentes') {
-    // Placeholder para sincronização de dados pendentes quando a conexão voltar
-    event.waitUntil(Promise.resolve());
-  }
+  if (event.tag === 'sync-pendentes') event.waitUntil(Promise.resolve());
 });
 
-// ── Push Notifications (futuro) ──────────────────────────────────────────────
 self.addEventListener('push', (event) => {
   if (!event.data) return;
   const data = event.data.json();
   event.waitUntil(
     self.registration.showNotification(data.title || 'Gestão360', {
-      body: data.body || '',
-      icon: '/icon-192x192.svg',
-      badge: '/icon-72x72.svg',
-      tag: data.tag || 'gestao360',
-      data: { url: data.url || '/' },
+      body: data.body || '', icon: '/icon-192x192.svg', badge: '/icon-72x72.svg',
+      tag: data.tag || 'gestao360', data: { url: data.url || '/' },
     })
   );
 });

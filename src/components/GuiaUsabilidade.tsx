@@ -363,6 +363,30 @@ const SECOES = [
     id: 'desenvolvimento', titulo: 'Motor de Desenvolvimento', emoji: '📈',
     conteudo: (
       <div>
+        <H3>Graus de Domínio — Legenda Oficial</H3>
+        <P>Todos os colaboradores iniciam no grau 0. O gestor avalia e atualiza o grau diretamente na aba Desenvolvimento, clicando em cada capacidade. O histórico de quem avaliou e quando fica salvo nas Evidências.</P>
+        <div className="grid grid-cols-1 sm:grid-cols-5 gap-2 my-3">
+          {[
+            { ordem: 0, nome: 'Não Iniciado', desc: 'Não avaliado. Ponto de partida de todo colaborador.', cor: '#94a3b8', bg: '#f1f5f9', txt: '#475569' },
+            { ordem: 1, nome: 'Consciente', desc: 'Sei que existe, mas ainda não sei usar.', cor: '#3b82f6', bg: '#eff6ff', txt: '#1d4ed8' },
+            { ordem: 2, nome: 'Aplicado', desc: 'Resolve necessidades simples com apoio da wiki.', cor: '#10b981', bg: '#ecfdf5', txt: '#065f46' },
+            { ordem: 3, nome: 'Avançado', desc: 'Resolve problemas avançados sem consultar documentação.', cor: '#f59e0b', bg: '#fffbeb', txt: '#92400e' },
+            { ordem: 4, nome: 'Referência', desc: 'Nível avançado + capacidade de treinar novos colaboradores.', cor: '#8b5cf6', bg: '#f5f3ff', txt: '#5b21b6' },
+          ].map(g => (
+            <div key={g.ordem} className="rounded-xl p-2.5 text-center" style={{ background: g.bg, border: `1px solid ${g.cor}40` }}>
+              <div className="w-6 h-6 rounded-full mx-auto mb-1.5 flex items-center justify-center text-white text-[10px] font-extrabold" style={{ background: g.cor }}>
+                {g.ordem}
+              </div>
+              <p className="text-[10px] font-extrabold mb-0.5" style={{ color: g.txt }}>{g.nome}</p>
+              <p className="text-[9px] leading-tight" style={{ color: g.txt, opacity: 0.8 }}>{g.desc}</p>
+            </div>
+          ))}
+        </div>
+
+        <Box tipo="regra" titulo="Como funciona a avaliação de grau">
+          <p>Na aba Desenvolvimento do colaborador, clique em qualquer capacidade da lista. Um seletor visual com os 5 graus aparece — clique no grau desejado. Opcionalmente, adicione uma contextualização (ex.: "Resolveu o chamado #1234 sem usar wiki"). A avaliação é salva no banco com data, responsável e contexto — mas <strong>não aparece na timeline de feedbacks/CRM</strong>. O histórico completo de avaliações fica na aba <strong>Evidências</strong> do Desenvolvimento.</p>
+        </Box>
+
         <H3>Arquitetura do Motor</H3>
         <P>O Motor de Desenvolvimento é o conjunto de funcionalidades que permite definir quais competências cada cargo exige, registrar evidências reais de evolução e calcular automaticamente se um colaborador está pronto para o próximo nível.</P>
         <Box tipo="regra" titulo="Regra de ouro">

@@ -4521,8 +4521,24 @@ export class GoogleScriptDataService implements IDataService {
     }
   }
 
+  async ping(): Promise<{ versao: string; status: string } | null> {
+    try {
+      return await this.request<{ versao: string; status: string }>('ping');
+    } catch { return null; }
+  }
+
   async deleteEvidencia(id: string, usuarioId?: string): Promise<void> {
-    await this.request('deleteEvidencia', { data: { id, usuario_id: usuarioId || '' } });
+    try {
+      await this.request('deleteEvidencia', { data: { id, usuario_id: usuarioId || '' } });
+    } catch (e: any) {
+      if (e?.message?.includes('Ação desconhecida') || e?.message?.includes('desconhecida')) {
+        throw new Error(
+          'O backend do Apps Script está desatualizado. Faça o deploy da versão 1.36.0 em ' +
+          'Projeto → Gerenciar implantações → Editar → Nova versão, e atualize a página.'
+        );
+      }
+      throw e;
+    }
   }
 
   async editarEvidencia(id: string, patch: EdicaoEvidencia, usuarioId?: string): Promise<void> {
@@ -4533,7 +4549,17 @@ export class GoogleScriptDataService implements IDataService {
     if (patch.grauDemonstrado !== undefined) data.grau_demonstrado = patch.grauDemonstrado;
     if (patch.escalaId !== undefined) data.escala_id = patch.escalaId;
     if (patch.data !== undefined) data.data = patch.data;
-    await this.request('editarEvidencia', { data });
+    try {
+      await this.request('editarEvidencia', { data });
+    } catch (e: any) {
+      if (e?.message?.includes('Ação desconhecida') || e?.message?.includes('desconhecida')) {
+        throw new Error(
+          'O backend do Apps Script está desatualizado. Faça o deploy da versão 1.36.0 em ' +
+          'Projeto → Gerenciar implantações → Editar → Nova versão, e atualize a página.'
+        );
+      }
+      throw e;
+    }
   }
 
   // ── Reconstrução Multi-Departamento — Etapas 2/3/4 ────────────────────

@@ -39,7 +39,290 @@ import {
   Layers,
   Target,
   ClipboardList,
+  Edit3,
+  Save,
+  X,
 } from 'lucide-react';
+
+// ══════════════════════════════════════════════════════════════════
+// LEGENDA FIXA DE GRAUS — 0 a 4
+// Usada quando a escala do banco não está disponível ou como padrão.
+// Exibida no painel e no Guia de Usabilidade.
+// ══════════════════════════════════════════════════════════════════
+export const GRAUS_FIXOS = [
+  {
+    ordem: 0,
+    nome: 'Não Iniciado',
+    descricao: 'Não avaliado — todos começam aqui por padrão.',
+    cor: '#94a3b8',    // slate-400
+    corBg: '#f1f5f9',  // slate-100
+    corTexto: '#475569',
+  },
+  {
+    ordem: 1,
+    nome: 'Consciente',
+    descricao: 'Sei que existe, mas não sei usar.',
+    cor: '#3b82f6',    // blue-500
+    corBg: '#eff6ff',
+    corTexto: '#1d4ed8',
+  },
+  {
+    ordem: 2,
+    nome: 'Aplicado',
+    descricao: 'Sei avaliar e tratar necessidades simples, como avaliar problemas e configurar com uso da wiki.',
+    cor: '#10b981',    // emerald-500
+    corBg: '#ecfdf5',
+    corTexto: '#065f46',
+  },
+  {
+    ordem: 3,
+    nome: 'Avançado',
+    descricao: 'Saber identificar problemas avançados, configurar do zero sem uso da wiki.',
+    cor: '#f59e0b',    // amber-500
+    corBg: '#fffbeb',
+    corTexto: '#92400e',
+  },
+  {
+    ordem: 4,
+    nome: 'Referência',
+    descricao: 'Ter o nível avançado e ainda poder compartilhar conhecimento, treinando novos colaboradores de forma eficiente.',
+    cor: '#8b5cf6',    // violet-500
+    corBg: '#f5f3ff',
+    corTexto: '#5b21b6',
+  },
+];
+
+// ══════════════════════════════════════════════════════════════════
+// Componente: LinhaCapacidadeAvaliavel
+// Seletor visual de grau inline com mini-modal de contextualização.
+// Persiste: PerfilCapacidade (grau) + Evidencia (histórico de quem/quando).
+// A evidência NÃO vai para a timeline do colaborador — fica na aba Evidencias.
+// ══════════════════════════════════════════════════════════════════
+interface LinhaCapacidadeAvaliavelProps {
+  pc: PerfilCapacidade;
+  cap?: CapacidadeBiblioteca;
+  comp?: CompetenciaBiblioteca;
+  grauAtual?: GrauDominio;
+  grauFixoAtual: typeof GRAUS_FIXOS[0];
+  grausDaEscala: GrauDominio[];
+  colaborador: Colaborador;
+  currentUserId: string;
+  onAtualizado: () => void;
+}
+
+function LinhaCapacidadeAvaliavel({
+  pc, cap, comp, grauAtual, grauFixoAtual, grausDaEscala,
+  colaborador, currentUserId, onAtualizado,
+}: LinhaCapacidadeAvaliavelProps) {
+  const [expandido, setExpandido] = useState(false);
+  const [grauSelecionado, setGrauSelecionado] = useState<number>(
+    grauAtual ? (grauAtual.ordem ?? 0) : 0
+  );
+  const [contexto, setContexto] = useState('');
+  const [data, setData] = useState(new Date().toISOString().split('T')[0]);
+  const [salvando, setSalvando] = useState(false);
+  const [sucesso, setSucesso] = useState(false);
+
+  // Usar os graus da escala do banco se disponíveis, senão usar GRAUS_FIXOS
+  const grausDisponiveis: Array<{ ordem: number; nome: string; cor: string; corBg: string; corTexto: string; id?: string; descricao?: string }> =
+    grausDaEscala.length > 0
+      ? grausDaEscala.map(g => {
+          const fixo = GRAUS_FIXOS[g.ordem] || GRAUS_FIXOS[0];
+          return { ordem: g.ordem, nome: g.nome, cor: g.cor || fixo.cor, corBg: fixo.corBg, corTexto: fixo.corTexto, id: g.id, descricao: fixo.descricao };
+        })
+      : GRAUS_FIXOS.map(g => ({ ...g }));
+
+  const grauAtualOrdem = grauAtual?.ordem ?? 0;
+  const mudou = grauSelecionado !== grauAtualOrdem;
+
+  const handleSalvar = async () => {
+    if (!mudou || salvando) return;
+    setSalvando(true);
+    try {
+      // Encontrar o GrauDominio correspondente se houver escala no banco
+      const grauDb = grausDaEscala.find(g => g.ordem === grauSelecionado);
+      const grauId = grauDb?.id || `grau-fixo-${grauSelecionado}`;
+      await DataService.avaliarCapacidade({
+        colaboradorId: colaborador.id,
+        capacidadeId: pc.capacidadeId,
+        competenciaId: comp?.id,
+        escalaId: pc.escalaId,
+        grauId,
+        grauOrdem: grauSelecionado,
+        avaliadoPor: currentUserId,
+        contexto: contexto || undefined,
+        data,
+        matrizVersaoId: pc.matrizVersaoId,
+      });
+      setSucesso(true);
+      setContexto('');
+      setTimeout(() => {
+        setSucesso(false);
+        setExpandido(false);
+        onAtualizado();
+      }, 1200);
+    } catch (e) {
+      console.error('[LinhaCapacidadeAvaliavel] Erro ao salvar:', e);
+    } finally {
+      setSalvando(false);
+    }
+  };
+
+  const grauAtualDisplay = grausDisponiveis.find(g => g.ordem === grauAtualOrdem) || grausDisponiveis[0];
+
+  return (
+    <div className={`rounded-2xl border transition-all ${expandido ? 'border-teal-200 bg-teal-50/20' : 'border-slate-100 bg-white'}`}>
+      {/* Linha principal — clicável para expandir */}
+      <div
+        className="flex items-center gap-3 px-3 py-2.5 cursor-pointer"
+        onClick={() => setExpandido(e => !e)}
+      >
+        {/* Indicador de grau atual */}
+        <div
+          className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[10px] font-extrabold shrink-0"
+          style={{ background: grauAtualDisplay.cor }}
+          title={`Grau atual: ${grauAtualDisplay.nome}`}
+        >
+          {grauAtualOrdem}
+        </div>
+
+        {/* Nome da capacidade + competência pai */}
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-bold text-slate-700 truncate">{cap?.nome || pc.capacidadeId}</p>
+          {comp && <p className="text-[9px] text-slate-400 truncate">{comp.nome}</p>}
+        </div>
+
+        {/* Badge do grau atual */}
+        <span
+          className="text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0"
+          style={{ background: grauAtualDisplay.corBg, color: grauAtualDisplay.corTexto }}
+        >
+          {grauAtualDisplay.nome}
+        </span>
+
+        {/* Ícone de editar */}
+        <Edit3 size={12} className={`shrink-0 transition ${expandido ? 'text-teal-500' : 'text-slate-300'}`} />
+      </div>
+
+      {/* Painel de avaliação expandido */}
+      {expandido && (
+        <div className="px-3 pb-3 space-y-3 border-t border-slate-100 pt-3">
+          {/* Seletor visual de grau */}
+          <div>
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">
+              Selecionar novo grau
+            </p>
+            <div className="flex gap-1.5 flex-wrap">
+              {grausDisponiveis.map(g => {
+                const selecionado = grauSelecionado === g.ordem;
+                const ehAtual = grauAtualOrdem === g.ordem;
+                return (
+                  <button
+                    key={g.ordem}
+                    onClick={e => { e.stopPropagation(); setGrauSelecionado(g.ordem); }}
+                    className={`relative flex flex-col items-center gap-0.5 px-3 py-2 rounded-xl border-2 cursor-pointer transition-all ${
+                      selecionado
+                        ? 'scale-105 shadow-md'
+                        : 'hover:scale-102 hover:shadow-sm opacity-70 hover:opacity-100'
+                    }`}
+                    style={{
+                      borderColor: selecionado ? g.cor : '#e2e8f0',
+                      background: selecionado ? g.corBg : '#f8fafc',
+                    }}
+                    title={g.descricao || g.nome}
+                  >
+                    <span
+                      className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[10px] font-extrabold"
+                      style={{ background: g.cor }}
+                    >
+                      {g.ordem}
+                    </span>
+                    <span className="text-[9px] font-bold whitespace-nowrap" style={{ color: g.corTexto }}>
+                      {g.nome}
+                    </span>
+                    {ehAtual && (
+                      <span className="absolute -top-1.5 -right-1.5 text-[8px] bg-slate-700 text-white px-1 rounded-full font-bold">
+                        atual
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            {/* Descrição do grau selecionado */}
+            {grausDisponiveis[grauSelecionado] && (
+              <p className="text-[10px] text-slate-500 mt-2 italic">
+                {grausDisponiveis[grauSelecionado].descricao || grausDisponiveis[grauSelecionado].nome}
+              </p>
+            )}
+          </div>
+
+          {/* Contextualização — opcional mas incentivada */}
+          {mudou && (
+            <div className="space-y-2">
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                Contextualização <span className="font-normal text-slate-400 normal-case">(opcional — ajuda no histórico)</span>
+              </p>
+              <textarea
+                value={contexto}
+                onChange={e => setContexto(e.target.value)}
+                placeholder={
+                  grauSelecionado === 0 ? 'Ex.: Capacidade ainda não trabalhada com o colaborador.' :
+                  grauSelecionado === 1 ? 'Ex.: Colaborador já foi apresentado ao tema mas ainda não aplicou.' :
+                  grauSelecionado === 2 ? 'Ex.: Resolveu o chamado #1234 seguindo a wiki de configuração.' :
+                  grauSelecionado === 3 ? 'Ex.: Configurou o ambiente do zero sem consultar documentação.' :
+                  'Ex.: Treinou o novo colaborador Fulano no tema com sucesso.'
+                }
+                rows={2}
+                className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-500/20 resize-none placeholder:text-slate-300"
+              />
+              <div className="flex items-center gap-2">
+                <label className="text-[10px] text-slate-500 font-semibold">Data da avaliação:</label>
+                <input
+                  type="date"
+                  value={data}
+                  onChange={e => setData(e.target.value)}
+                  className="text-[10px] border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:border-teal-500"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Botões */}
+          <div className="flex items-center gap-2">
+            {mudou && !sucesso && (
+              <button
+                onClick={e => { e.stopPropagation(); handleSalvar(); }}
+                disabled={salvando}
+                className="flex items-center gap-1.5 px-4 py-1.5 bg-teal-500 hover:bg-teal-400 text-white text-xs font-bold rounded-xl cursor-pointer transition disabled:opacity-50"
+              >
+                <Save size={12} />
+                {salvando ? 'Salvando...' : 'Salvar avaliação'}
+              </button>
+            )}
+            {sucesso && (
+              <span className="flex items-center gap-1.5 text-xs text-emerald-600 font-bold">
+                <CheckCircle size={14} /> Salvo! Histórico atualizado.
+              </span>
+            )}
+            <button
+              onClick={e => { e.stopPropagation(); setExpandido(false); setGrauSelecionado(grauAtualOrdem); setContexto(''); }}
+              className="flex items-center gap-1 text-xs text-slate-400 hover:text-slate-600 cursor-pointer transition"
+            >
+              <X size={12} /> Cancelar
+            </button>
+          </div>
+
+          {/* Info sobre onde fica salvo */}
+          <p className="text-[9px] text-slate-300 leading-relaxed">
+            A avaliação fica registrada na aba <strong className="text-slate-400">Evidências</strong> do desenvolvimento deste colaborador —
+            não aparece na timeline de feedbacks/CRM. Registra automaticamente quem avaliou e quando.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ══════════════════════════════════════════════════════════════════
 // Componente: ModalEvidencia
@@ -669,37 +952,66 @@ export default function PainelDesenvolvimento({
         <div className="p-4">
           {/* Capacidades */}
           {abaAtiva === 'capacidades' && (
-            <div className="space-y-2">
-              <div className="flex justify-end">
+            <div className="space-y-3">
+
+              {/* Legenda de graus */}
+              <details className="bg-slate-50 border border-slate-100 rounded-2xl overflow-hidden">
+                <summary className="px-4 py-2.5 text-xs font-bold text-slate-600 cursor-pointer flex items-center gap-2 hover:bg-slate-100 transition">
+                  <Award size={13} className="text-violet-500" />
+                  Legenda dos Graus de Domínio
+                  <span className="ml-auto text-[10px] text-slate-400 font-normal">clique para expandir</span>
+                </summary>
+                <div className="px-4 pb-4 grid grid-cols-1 sm:grid-cols-5 gap-2 pt-2">
+                  {GRAUS_FIXOS.map(g => (
+                    <div key={g.ordem} className="rounded-xl p-2.5 text-center" style={{ background: g.corBg, border: `1px solid ${g.cor}30` }}>
+                      <div className="w-6 h-6 rounded-full mx-auto mb-1.5 flex items-center justify-center text-white text-[10px] font-extrabold" style={{ background: g.cor }}>
+                        {g.ordem}
+                      </div>
+                      <p className="text-[10px] font-extrabold mb-0.5" style={{ color: g.corTexto }}>{g.nome}</p>
+                      <p className="text-[9px] leading-tight" style={{ color: g.corTexto, opacity: 0.8 }}>{g.descricao}</p>
+                    </div>
+                  ))}
+                </div>
+              </details>
+
+              <div className="flex items-center justify-between">
+                <p className="text-[11px] text-slate-400 font-semibold">
+                  {perfilCapacidades.length} capacidade(s) avaliada(s)
+                </p>
                 <button onClick={() => setModalEvidencia(true)} className="flex items-center gap-1.5 px-3 py-1.5 bg-teal-500 text-white text-xs font-bold rounded-xl cursor-pointer hover:bg-teal-600">
                   <Plus size={13} /> Registrar Evidência
                 </button>
               </div>
+
+              {/* Lista de capacidades com seletor de grau */}
               {perfilCapacidades.length === 0 ? (
-                <p className="text-xs text-slate-400 text-center py-8">Nenhuma capacidade avaliada ainda.</p>
+                <div className="text-center py-8 space-y-2">
+                  <p className="text-xs text-slate-400">Nenhuma capacidade avaliada ainda.</p>
+                  <p className="text-[10px] text-slate-300">Clique em qualquer capacidade da Matriz acima para avaliar.</p>
+                </div>
               ) : (
                 <div className="space-y-2">
                   {perfilCapacidades.map(pc => {
                     const cap = capacidades.find(c => c.id === pc.capacidadeId);
+                    const comp = competencias.find(c => c.id === cap?.competenciaId);
                     const grauAtual = graus.find(g => g.id === pc.grauAtual);
+                    const grauFixoAtual = GRAUS_FIXOS.find(g => g.nome === grauAtual?.nome) || GRAUS_FIXOS[0];
+                    const grausDaEscala = pc.escalaId
+                      ? graus.filter(g => g.escalaId === pc.escalaId).sort((a, b) => a.ordem - b.ordem)
+                      : [];
                     return (
-                      <div key={pc.id} className="flex items-center gap-3 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2.5">
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs font-bold text-slate-700 truncate">{cap?.nome || pc.capacidadeId}</p>
-                          <div className="flex items-center gap-2 mt-1 flex-wrap">
-                            {pc.treinado && <span className="text-[10px] bg-blue-50 text-blue-600 font-bold px-1.5 py-0.5 rounded">Treinado</span>}
-                            {pc.demonstrado && <span className="text-[10px] bg-emerald-50 text-emerald-600 font-bold px-1.5 py-0.5 rounded">Demonstrado</span>}
-                            {!pc.treinado && !pc.demonstrado && <span className="text-[10px] text-slate-400">Não iniciado</span>}
-                          </div>
-                        </div>
-                        {grauAtual && (
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: grauAtual.cor || '#94a3b8' }} />
-                            <span className="text-xs font-bold text-slate-700">{grauAtual.nome}</span>
-                          </div>
-                        )}
-                        {!grauAtual && pc.treinado && <span className="text-xs text-slate-400 shrink-0">Aguardando avaliação</span>}
-                      </div>
+                      <LinhaCapacidadeAvaliavel
+                        key={pc.id}
+                        pc={pc}
+                        cap={cap}
+                        comp={comp}
+                        grauAtual={grauAtual}
+                        grauFixoAtual={grauFixoAtual}
+                        grausDaEscala={grausDaEscala}
+                        colaborador={colaborador}
+                        currentUserId={currentUserId}
+                        onAtualizado={carregarDados}
+                      />
                     );
                   })}
                 </div>

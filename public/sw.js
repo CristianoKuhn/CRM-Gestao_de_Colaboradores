@@ -12,7 +12,7 @@
  * não há conexão em vez de uma página de erro do navegador.
  */
 
-const CACHE_VERSION = 'gestao360-v1';
+const CACHE_VERSION = 'gestao360-v2';
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const DATA_CACHE  = `${CACHE_VERSION}-data`;
 
@@ -93,6 +93,7 @@ self.addEventListener('fetch', (event) => {
 // ── Estratégias de cache ──────────────────────────────────────────────────────
 
 async function cacheFirst(request, cacheName) {
+  if (request.method !== 'GET') return fetch(request);
   const cached = await caches.match(request);
   if (cached) return cached;
   try {
@@ -108,11 +109,24 @@ async function cacheFirst(request, cacheName) {
 }
 
 async function networkFirstWithCache(request, cacheName, maxAgeSeconds) {
+  // A Cache API não suporta requests POST (restrição da spec do browser).
+  // Requests POST ao GAS são sempre Network Only — o resultado varia por payload.
+  if (request.method !== 'GET') {
+    try {
+      return await fetch(request);
+    } catch {
+      return new Response(
+        JSON.stringify({ success: false, offline: true, message: 'Sem conexão com a internet.' }),
+        { headers: { 'Content-Type': 'application/json' }, status: 503 }
+      );
+    }
+  }
+
+  // Apenas GET: Network First com fallback de cache
   try {
     const response = await fetch(request.clone());
     if (response.ok) {
       const cache = await caches.open(cacheName);
-      // Grava com timestamp para controle de validade
       const responseToCache = response.clone();
       const headers = new Headers(responseToCache.headers);
       headers.set('sw-cached-at', Date.now().toString());
@@ -125,14 +139,20 @@ async function networkFirstWithCache(request, cacheName, maxAgeSeconds) {
       const cachedAt = parseInt(cached.headers.get('sw-cached-at') || '0');
       if (Date.now() - cachedAt < maxAgeSeconds * 1000) return cached;
     }
-    return new Response(JSON.stringify({ success: false, offline: true, message: 'Sem conexão com a internet.' }), {
-      headers: { 'Content-Type': 'application/json' },
-      status: 503,
-    });
+    return new Response(
+      JSON.stringify({ success: false, offline: true, message: 'Sem conexão com a internet.' }),
+      { headers: { 'Content-Type': 'application/json' }, status: 503 }
+    );
   }
 }
 
 async function staleWhileRevalidate(request, cacheName) {
+  // POST não pode ser cacheado — Network Only
+  if (request.method !== 'GET') {
+    return fetch(request).catch(() =>
+      new Response('Sem conexão.', { status: 503 })
+    );
+  }
   const cache = await caches.open(cacheName);
   const cached = await cache.match(request);
   const fetchPromise = fetch(request).then((response) => {

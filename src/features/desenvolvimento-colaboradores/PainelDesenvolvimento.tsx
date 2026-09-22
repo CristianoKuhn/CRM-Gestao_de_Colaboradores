@@ -935,6 +935,8 @@ export default function PainelDesenvolvimento({
   const [ocorrencias, setOcorrencias] = useState<Ocorrencia[]>([]);
   const [pdis, setPdis] = useState<PerfilObjetivo[]>([]);
   const [carregando, setCarregando] = useState(true);
+  const [versaoBackend, setVersaoBackend] = useState<string | null>(null);
+  const VERSAO_MINIMA = '1.36.0';
   const [modalEvidencia, setModalEvidencia] = useState(false);
   const [modalOcorrencia, setModalOcorrencia] = useState(false);
   const [modalPDI, setModalPDI] = useState(false);
@@ -948,6 +950,13 @@ export default function PainelDesenvolvimento({
   const carregarDados = async (silencioso = false) => {
     if (!silencioso) setCarregando(true);
     try {
+      // Verificar versão do backend uma vez (silencioso)
+      if (!versaoBackend) {
+        try {
+          const ping = await (DataService as any).ping?.() || null;
+          if (ping?.versao) setVersaoBackend(ping.versao);
+        } catch { /* backend antigo não tem ping */ }
+      }
       const [pront, perfil, matriz, evids, ocorrs, pdisList] = await Promise.allSettled([
         DataService.getProntidaoProximoNivel(colaborador.id),
         DataService.getPerfilCapacidades(colaborador.id),
@@ -1049,6 +1058,8 @@ export default function PainelDesenvolvimento({
   const evidenciaEhTreinamento = (ev: Evidencia) =>
     ev.tipoEvidenciaId === 'certificado' || !!tiposEvidencia.find(t => t.id === ev.tipoEvidenciaId)?.contaComoTreinamento;
 
+  const backendDesatualizado = versaoBackend !== null && versaoBackend < VERSAO_MINIMA;
+
   if (carregando) return (
     <div className="flex items-center justify-center py-16 gap-2 text-slate-400">
       <Loader2 size={20} className="animate-spin" />
@@ -1066,6 +1077,21 @@ export default function PainelDesenvolvimento({
 
   return (
     <div className="space-y-6">
+
+      {/* Banner de backend desatualizado — aparece quando versão < 1.36.0 */}
+      {backendDesatualizado && (
+        <div className="bg-amber-50 border border-amber-300 rounded-2xl px-4 py-3 flex items-start gap-3">
+          <AlertTriangle size={16} className="text-amber-600 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-xs font-bold text-amber-800">Backend desatualizado (v{versaoBackend} → v1.36.0 necessária)</p>
+            <p className="text-[11px] text-amber-700 mt-0.5 leading-relaxed">
+              As avaliações e evidências <strong>não serão salvas</strong> até o deploy ser feito.{' '}
+              Abra o Apps Script → Gerenciar implantações → ✏️ Editar → "Nova versão" → Implantar.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Card de Prontidão */}
       <div>
         <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2">

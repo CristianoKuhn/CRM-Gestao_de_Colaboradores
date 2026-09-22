@@ -1478,6 +1478,19 @@ export interface Evidencia {
   certificadoInstituicao?: string; // instituição emissora
   certificadoCargaHoraria?: number; // carga horária em horas
   certificadoDataConclusao?: string; // data de conclusão (ISO)
+  // Transiente (não persiste como coluna): pede ao servidor para registrar a
+  // evidência já validada e recalcular o Perfil de Capacidade na mesma chamada.
+  autoValidar?: boolean;
+}
+
+// Campos editáveis de uma Evidência já registrada (correção de engano).
+export interface EdicaoEvidencia {
+  texto?: string;
+  situacaoObservada?: string;
+  observacaoGestor?: string;
+  grauDemonstrado?: string;
+  escalaId?: string;
+  data?: string;
 }
 
 // ── Perfil de Capacidade — cache derivado (Etapa 2) ───────────────────────

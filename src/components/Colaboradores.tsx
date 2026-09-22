@@ -73,6 +73,7 @@ export default function Colaboradores({
   const [filterCargo, setFilterCargo] = useState('');
   const [filterSituacao, setFilterSituacao] = useState<string>(preselectedFilters.situacao || 'Ativo');
   const [filterCidade, setFilterCidade] = useState('');
+  const [filterLider, setFilterLider] = useState('');
 
   // Modais de Cadastro
   const [isColModalOpen, setIsColModalOpen] = useState(false);
@@ -190,8 +191,9 @@ export default function Colaboradores({
     const matchesCidade = filterCidade
       ? (col.cidadeBase?.trim().toLowerCase() === filterCidade.toLowerCase())
       : true;
+    const matchesLider = filterLider ? col.liderId === filterLider : true;
 
-    return matchesSearch && matchesSetor && matchesCargo && matchesSituacao && matchesCidade;
+    return matchesSearch && matchesSetor && matchesCargo && matchesSituacao && matchesCidade && matchesLider;
   });
 
   const handleSaveColaborador = (e: React.FormEvent) => {
@@ -413,6 +415,22 @@ export default function Colaboradores({
             <option value="">Todas as Situações</option>
             <option value="Ativo">Ativo</option>
             <option value="Desligado">Desligado</option>
+          </select>
+
+          {/* Filtro por Líder Direto */}
+          <select
+            id="filter-lider"
+            value={filterLider}
+            onChange={(e) => setFilterLider(e.target.value)}
+            className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none text-slate-700 cursor-pointer"
+          >
+            <option value="">Todos os Líderes</option>
+            {lideres
+              .filter(l => colaboradores.some(c => c.liderId === l.id)) // só líderes que têm colaboradores
+              .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
+              .map((l) => (
+                <option key={l.id} value={l.id}>{l.nome}</option>
+              ))}
           </select>
 
           {cidadesUnicas.length > 1 && (

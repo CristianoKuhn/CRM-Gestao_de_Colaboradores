@@ -15,6 +15,7 @@ import {
   EscalaDominio,
   GrauDominio,
   MatrizVersao,
+  MatrizCapacidadeCargo,
   GravidadeOcorrencia,
   TipoEvidenciaCapacidade,
   Colaborador,
@@ -103,16 +104,18 @@ interface LinhaCapacidadeAvaliavelProps {
   cap?: CapacidadeBiblioteca;
   comp?: CompetenciaBiblioteca;
   grauAtual?: GrauDominio;
+  grauMinimo?: GrauDominio;         // grau mínimo exigido pela Matriz
   grauFixoAtual: typeof GRAUS_FIXOS[0];
   grausDaEscala: GrauDominio[];
+  obrigatorio?: boolean;            // se é capacidade obrigatória na Matriz
   colaborador: Colaborador;
   currentUserId: string;
   onAtualizado: () => void;
 }
 
 function LinhaCapacidadeAvaliavel({
-  pc, cap, comp, grauAtual, grauFixoAtual, grausDaEscala,
-  colaborador, currentUserId, onAtualizado,
+  pc, cap, comp, grauAtual, grauMinimo, grauFixoAtual, grausDaEscala,
+  obrigatorio, colaborador, currentUserId, onAtualizado,
 }: LinhaCapacidadeAvaliavelProps) {
   const [expandido, setExpandido] = useState(false);
   const [grauSelecionado, setGrauSelecionado] = useState<number>(
@@ -188,8 +191,22 @@ function LinhaCapacidadeAvaliavel({
 
         {/* Nome da capacidade + competência pai */}
         <div className="flex-1 min-w-0">
-          <p className="text-xs font-bold text-slate-700 truncate">{cap?.nome || pc.capacidadeId}</p>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <p className="text-xs font-bold text-slate-700 truncate">{cap?.nome || pc.capacidadeId}</p>
+            {obrigatorio && (
+              <span className="text-[8px] font-bold bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded-full shrink-0">obrigatória</span>
+            )}
+          </div>
           {comp && <p className="text-[9px] text-slate-400 truncate">{comp.nome}</p>}
+          {/* Grau mínimo exigido */}
+          {grauMinimo && (() => {
+            const fixoMin = GRAUS_FIXOS.find(g => g.nome === grauMinimo.nome) || GRAUS_FIXOS[0];
+            return (
+              <p className="text-[9px] text-slate-400 mt-0.5">
+                Mínimo exigido: <span className="font-bold" style={{ color: fixoMin.corTexto }}>{fixoMin.nome}</span>
+              </p>
+            );
+          })()}
         </div>
 
         {/* Badge do grau atual */}
@@ -834,6 +851,7 @@ export default function PainelDesenvolvimento({
 }: PainelDesenvolvimentoProps) {
   const [prontidao, setProntidao] = useState<ProjecaoProntidao | null>(null);
   const [perfilCapacidades, setPerfilCapacidades] = useState<PerfilCapacidade[]>([]);
+  const [matrizCargo, setMatrizCargo] = useState<MatrizCapacidadeCargo[]>([]);
   const [evidencias, setEvidencias] = useState<Evidencia[]>([]);
   const [ocorrencias, setOcorrencias] = useState<Ocorrencia[]>([]);
   const [pdis, setPdis] = useState<PerfilObjetivo[]>([]);
@@ -848,16 +866,26 @@ export default function PainelDesenvolvimento({
   const carregarDados = async () => {
     setCarregando(true);
     try {
-      const [pront, perfil, evids, ocorrs, pdisList] = await Promise.allSettled([
+      const [pront, perfil, matriz, evids, ocorrs, pdisList] = await Promise.allSettled([
         DataService.getProntidaoProximoNivel(colaborador.id),
         DataService.getPerfilCapacidades(colaborador.id),
+        // Busca TODAS as capacidades da Matriz do cargo — incluindo as ainda não avaliadas
+        DataService.getMatrizCapacidadesCargo({ cargoId: colaborador.cargoId }),
         DataService.getEvidencias({ colaboradorId: colaborador.id }),
         DataService.getOcorrencias(colaborador.id),
         DataService.getPerfilObjetivos(colaborador.id),
       ]);
       if (pront.status === 'fulfilled') setProntidao(pront.value);
       if (perfil.status === 'fulfilled') setPerfilCapacidades(perfil.value);
-      if (evids.status === 'fulfilled') setEvidencias((evids.value as Evidencia[]).filter(e => e.entidadeTipo === 'capacidade'));
+      if (matriz.status === 'fulfilled') setMatrizCargo(matriz.value as MatrizCapacidadeCargo[]);
+      if (evids.status === 'fulfilled') {
+        const todasEvids = evids.value as Evidencia[];
+        // Filtrar: evidências de capacidade vinculadas a este colaborador
+        setEvidencias(todasEvids.filter(e =>
+          e.colaboradorId === colaborador.id ||
+          (e.entidadeTipo === 'capacidade' && e.entidadeId)
+        ));
+      }
       if (ocorrs.status === 'fulfilled') setOcorrencias(ocorrs.value as Ocorrencia[]);
       if (pdisList.status === 'fulfilled') setPdis(pdisList.value as PerfilObjetivo[]);
     } catch (e) {
@@ -951,6 +979,7 @@ export default function PainelDesenvolvimento({
 
         <div className="p-4">
           {/* Capacidades */}
+          {/* Capacidades — Avaliação Visual de Grau com Matriz do cargo */}
           {abaAtiva === 'capacidades' && (
             <div className="space-y-3">
 
@@ -976,20 +1005,69 @@ export default function PainelDesenvolvimento({
 
               <div className="flex items-center justify-between">
                 <p className="text-[11px] text-slate-400 font-semibold">
-                  {perfilCapacidades.length} capacidade(s) avaliada(s)
+                  {matrizCargo.length > 0
+                    ? `${matrizCargo.length} capacidade(s) no cargo · ${perfilCapacidades.length} avaliada(s)`
+                    : `${perfilCapacidades.length} capacidade(s) avaliada(s)`}
                 </p>
                 <button onClick={() => setModalEvidencia(true)} className="flex items-center gap-1.5 px-3 py-1.5 bg-teal-500 text-white text-xs font-bold rounded-xl cursor-pointer hover:bg-teal-600">
                   <Plus size={13} /> Registrar Evidência
                 </button>
               </div>
 
-              {/* Lista de capacidades com seletor de grau */}
-              {perfilCapacidades.length === 0 ? (
-                <div className="text-center py-8 space-y-2">
-                  <p className="text-xs text-slate-400">Nenhuma capacidade avaliada ainda.</p>
-                  <p className="text-[10px] text-slate-300">Clique em qualquer capacidade da Matriz acima para avaliar.</p>
+              {/* Caso 1: Há Matriz configurada — mostrar TODAS as capacidades do cargo */}
+              {matrizCargo.length > 0 ? (
+                <div className="space-y-2">
+                  {matrizCargo.map(item => {
+                    const cap = capacidades.find(c => c.id === item.capacidadeId);
+                    const comp = competencias.find(c => c.id === cap?.competenciaId);
+                    const pc = perfilCapacidades.find(p => p.capacidadeId === item.capacidadeId);
+                    const grauAtual = pc?.grauAtual ? graus.find(g => g.id === pc.grauAtual) : undefined;
+                    const grauMinimo = item.grauMinimo ? graus.find(g => g.id === item.grauMinimo) : undefined;
+                    const grauFixoAtual = grauAtual
+                      ? (GRAUS_FIXOS.find(g => g.nome === grauAtual.nome) || GRAUS_FIXOS[0])
+                      : GRAUS_FIXOS[0];
+                    const grausDaEscala = item.escalaId
+                      ? graus.filter(g => g.escalaId === item.escalaId).sort((a, b) => a.ordem - b.ordem)
+                      : [];
+                    const pcReal = pc || {
+                      id: `perf-${colaborador.id}-${item.capacidadeId}`,
+                      colaboradorId: colaborador.id,
+                      capacidadeId: item.capacidadeId,
+                      escalaId: item.escalaId,
+                      grauAtual: undefined,
+                      matrizVersaoId: item.matrizVersaoId,
+                      treinado: false, avaliado: false, demonstrado: false,
+                    } as PerfilCapacidade;
+                    return (
+                      <LinhaCapacidadeAvaliavel
+                        key={item.capacidadeId}
+                        pc={pcReal}
+                        cap={cap}
+                        comp={comp}
+                        grauAtual={grauAtual}
+                        grauMinimo={grauMinimo}
+                        grauFixoAtual={grauFixoAtual}
+                        grausDaEscala={grausDaEscala}
+                        obrigatorio={item.obrigatorio}
+                        colaborador={colaborador}
+                        currentUserId={currentUserId}
+                        onAtualizado={carregarDados}
+                      />
+                    );
+                  })}
+                </div>
+              ) : perfilCapacidades.length === 0 ? (
+                /* Caso 2: Sem Matriz nem avaliações */
+                <div className="text-center py-10 space-y-2 bg-slate-50 rounded-2xl border border-slate-100">
+                  <Layers size={28} className="mx-auto text-slate-300" />
+                  <p className="text-xs text-slate-500 font-semibold">Nenhuma capacidade configurada para este cargo.</p>
+                  <p className="text-[10px] text-slate-400 leading-relaxed max-w-xs mx-auto">
+                    Configure a Matriz em <strong>Configurações Gerais → Trilha & Matriz</strong>.
+                    Ou use <strong>"Registrar Evidência"</strong> para registrar manualmente.
+                  </p>
                 </div>
               ) : (
+                /* Caso 3: Apenas perfilCapacidades (sem Matriz) */
                 <div className="space-y-2">
                   {perfilCapacidades.map(pc => {
                     const cap = capacidades.find(c => c.id === pc.capacidadeId);
@@ -1019,7 +1097,7 @@ export default function PainelDesenvolvimento({
             </div>
           )}
 
-          {/* Evidências */}
+          {/* Evidências — histórico de avaliações e registros, com deletar */}
           {abaAtiva === 'evidencias' && (
             <div className="space-y-2">
               <div className="flex justify-end">
@@ -1028,27 +1106,67 @@ export default function PainelDesenvolvimento({
                 </button>
               </div>
               {evidencias.length === 0 ? (
-                <p className="text-xs text-slate-400 text-center py-8">Nenhuma evidência de capacidade registrada.</p>
+                <div className="text-center py-10 bg-slate-50 rounded-2xl border border-slate-100">
+                  <FileText size={24} className="mx-auto text-slate-300 mb-2" />
+                  <p className="text-xs text-slate-400">Nenhuma evidência registrada ainda.</p>
+                  <p className="text-[10px] text-slate-300 mt-1">Avaliações de grau e evidências de treinamento aparecem aqui.</p>
+                </div>
               ) : (
                 <div className="space-y-2">
                   {[...evidencias].sort((a, b) => new Date(b.data || 0).getTime() - new Date(a.data || 0).getTime()).map(ev => {
                     const cap = capacidades.find(c => c.id === ev.capacidadeId);
                     const tipo = tiposEvidencia.find(t => t.id === ev.tipoEvidenciaId);
                     const grauEv = graus.find(g => g.id === ev.grauDemonstrado);
-                    const statusCor = ev.status === 'validada' ? 'text-emerald-600' : ev.status === 'rejeitada' ? 'text-rose-600' : 'text-amber-600';
+                    const grauFixoEv = grauEv
+                      ? (GRAUS_FIXOS.find(g => g.nome === grauEv.nome) || null)
+                      : null;
+                    const ehAvaliacao = ev.tipo === 'observacao' && !!ev.validadoPor;
+                    const statusCor = ev.status === 'validada'
+                      ? 'text-emerald-600 bg-emerald-50'
+                      : ev.status === 'rejeitada' ? 'text-rose-600 bg-rose-50' : 'text-amber-600 bg-amber-50';
                     return (
-                      <div key={ev.id} className="bg-slate-50 border border-slate-100 rounded-xl p-3 space-y-1.5">
+                      <div key={ev.id} className="bg-white border border-slate-100 rounded-2xl p-3 space-y-2">
                         <div className="flex items-start justify-between gap-2">
-                          <div>
-                            <p className="text-xs font-bold text-slate-700">{cap?.nome || ev.capacidadeId}</p>
-                            <p className="text-[10px] text-slate-400">{tipo?.nome} • {ev.data ? new Date(ev.data).toLocaleDateString('pt-BR') : '—'}</p>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              {cap && <span className="text-xs font-bold text-slate-700">{cap.nome}</span>}
+                              {ehAvaliacao
+                                ? <span className="text-[9px] bg-violet-100 text-violet-700 font-bold px-1.5 py-0.5 rounded-full">Avaliação manual</span>
+                                : tipo && <span className="text-[9px] bg-slate-100 text-slate-600 font-semibold px-1.5 py-0.5 rounded-full">{tipo.nome}</span>
+                              }
+                            </div>
+                            <p className="text-[10px] text-slate-400 mt-0.5">
+                              {ev.data ? new Date(ev.data + 'T12:00:00').toLocaleDateString('pt-BR', { day:'2-digit', month:'short', year:'numeric' }) : '—'}
+                              {ev.anexadoPor && ` · por ${ev.anexadoPor}`}
+                            </p>
                           </div>
                           <div className="flex items-center gap-2 shrink-0">
-                            {grauEv && <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full" style={{ backgroundColor: grauEv.cor || '#94a3b8' }} /><span className="text-[10px] font-bold text-slate-700">{grauEv.nome}</span></div>}
-                            <span className={`text-[10px] font-bold capitalize ${statusCor}`}>{ev.status}</span>
+                            {grauFixoEv && (
+                              <div className="flex items-center gap-1">
+                                <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: grauFixoEv.cor }} />
+                                <span className="text-[10px] font-bold" style={{ color: grauFixoEv.corTexto }}>{grauFixoEv.nome}</span>
+                              </div>
+                            )}
+                            <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full capitalize ${statusCor}`}>{ev.status}</span>
+                            <button
+                              onClick={async () => {
+                                if (!confirm('Remover esta evidência? Esta ação não pode ser desfeita.')) return;
+                                await DataService.deleteEvidencia(ev.id);
+                                setEvidencias(prev => prev.filter(e => e.id !== ev.id));
+                              }}
+                              className="text-slate-300 hover:text-rose-500 transition cursor-pointer p-0.5 rounded hover:bg-rose-50"
+                              title="Remover evidência"
+                            >
+                              <X size={13} />
+                            </button>
                           </div>
                         </div>
-                        {ev.situacaoObservada && <p className="text-[11px] text-slate-600 line-clamp-2">{ev.situacaoObservada}</p>}
+                        {ev.texto && (
+                          <p className="text-[11px] text-slate-600 leading-relaxed bg-slate-50 rounded-xl px-3 py-2">{ev.texto}</p>
+                        )}
+                        {ev.situacaoObservada && (
+                          <p className="text-[10px] text-slate-500 italic">{ev.situacaoObservada}</p>
+                        )}
                       </div>
                     );
                   })}

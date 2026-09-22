@@ -65,6 +65,7 @@ import {
   ResultadoDecisaoAprovacaoEtapa,
   Evidencia,
   EntidadeTipoEvidencia,
+  EdicaoEvidencia,
   PerfilCompetencia,
   AvaliacaoCompetenciaResultado,
   PerfilObjetivo,
@@ -654,7 +655,8 @@ export interface IDataService {
   deleteGrupoMeta?(id: string): Promise<void>;
   validarEvidencia(id: string, validadoPor?: string): Promise<void>;
   rejeitarEvidencia(id: string, validadoPor?: string): Promise<void>;
-  deleteEvidencia(id: string): Promise<void>;
+  deleteEvidencia(id: string, usuarioId?: string): Promise<void>;
+  editarEvidencia(id: string, patch: EdicaoEvidencia, usuarioId?: string): Promise<void>;
 
   // ── Motor de Desenvolvimento de Colaboradores — Perfil (Aggregate Root) ──
   // Sem "savePerfilCompetencia" genérico: toda mudança de nível passa por
@@ -1468,9 +1470,13 @@ export class LocalDataService implements IDataService {
     }
   }
 
-  async deleteEvidencia(id: string): Promise<void> {
+  async deleteEvidencia(id: string, _usuarioId?: string): Promise<void> {
     const evidencias = itensLocalGetArray<Evidencia>('evidencias').filter(e => e.id !== id);
     localStorage.setItem('evidencias', JSON.stringify(evidencias));
+  }
+  async editarEvidencia(id: string, patch: EdicaoEvidencia, _usuarioId?: string): Promise<void> {
+    const evidencia = itensLocalGetArray<Evidencia>('evidencias').find(e => e.id === id);
+    if (evidencia) itensLocalSaveItem('evidencias', { ...evidencia, ...patch });
   }
 
   // ── Motor de Desenvolvimento de Colaboradores — Perfil (Aggregate Root) ──
@@ -4449,6 +4455,10 @@ export class GoogleScriptDataService implements IDataService {
         situacaoObservada: e.situacao_observada || undefined,
         observacaoGestor: e.observacao_gestor || undefined,
         matrizVersaoId: e.matriz_versao_id || undefined,
+        certificadoCursoNome: e.certificado_curso_nome || undefined,
+        certificadoInstituicao: e.certificado_instituicao || undefined,
+        certificadoCargaHoraria: e.certificado_carga_horaria !== '' && e.certificado_carga_horaria != null ? Number(e.certificado_carga_horaria) : undefined,
+        certificadoDataConclusao: e.certificado_data_conclusao || undefined,
       }));
     } catch (e) {
       return this.localFallback.getEvidencias(filtro);
@@ -4468,6 +4478,23 @@ export class GoogleScriptDataService implements IDataService {
         anexado_por: evidencia.anexadoPor || '',
         data: evidencia.data || '',
         status: evidencia.status || 'pendente',
+        // Campos da Evidência de Capacidade — sem eles a evidência fica "órfã"
+        // (não aparece no painel do colaborador e não move o Perfil).
+        colaborador_id: evidencia.colaboradorId || '',
+        competencia_id: evidencia.competenciaId || '',
+        capacidade_id: evidencia.capacidadeId || '',
+        tipo_evidencia_id: evidencia.tipoEvidenciaId || '',
+        escala_id: evidencia.escalaId || '',
+        grau_demonstrado: evidencia.grauDemonstrado || '',
+        situacao_observada: evidencia.situacaoObservada || '',
+        observacao_gestor: evidencia.observacaoGestor || '',
+        matriz_versao_id: evidencia.matrizVersaoId || '',
+        certificado_curso_nome: evidencia.certificadoCursoNome || '',
+        certificado_instituicao: evidencia.certificadoInstituicao || '',
+        certificado_carga_horaria: evidencia.certificadoCargaHoraria ?? '',
+        certificado_data_conclusao: evidencia.certificadoDataConclusao || '',
+        // Registro feito pelo gestor já nasce validado e recalcula o Perfil
+        auto_validar: evidencia.autoValidar === true,
       };
       await this.request('anexarEvidencia', { data: body });
     } catch (e) {
@@ -4494,12 +4521,19 @@ export class GoogleScriptDataService implements IDataService {
     }
   }
 
-  async deleteEvidencia(id: string): Promise<void> {
-    try {
-      await this.request('deleteEvidencia', { data: { id } });
-    } catch (e) {
-      console.warn('Erro ao deletar Evidência:', e);
-    }
+  async deleteEvidencia(id: string, usuarioId?: string): Promise<void> {
+    await this.request('deleteEvidencia', { data: { id, usuario_id: usuarioId || '' } });
+  }
+
+  async editarEvidencia(id: string, patch: EdicaoEvidencia, usuarioId?: string): Promise<void> {
+    const data: Record<string, any> = { id, usuario_id: usuarioId || '' };
+    if (patch.texto !== undefined) data.texto = patch.texto;
+    if (patch.situacaoObservada !== undefined) data.situacao_observada = patch.situacaoObservada;
+    if (patch.observacaoGestor !== undefined) data.observacao_gestor = patch.observacaoGestor;
+    if (patch.grauDemonstrado !== undefined) data.grau_demonstrado = patch.grauDemonstrado;
+    if (patch.escalaId !== undefined) data.escala_id = patch.escalaId;
+    if (patch.data !== undefined) data.data = patch.data;
+    await this.request('editarEvidencia', { data });
   }
 
   // ── Reconstrução Multi-Departamento — Etapas 2/3/4 ────────────────────
@@ -4524,10 +4558,10 @@ export class GoogleScriptDataService implements IDataService {
     }
   }
 
-  // Avalia uma capacidade diretamente: chama a action `avaliarCapacidade` do backend
-  // que executa evoluirGrauCapacidade_ — salva PerfilCapacidade + registra evento de domínio.
-  // Depois registra a Evidencia de contextualização (texto do gestor) via anexarEvidencia.
-  // NÃO chama savePerfilCapacidade (action inexistente no backend).
+  // Avaliação direta de grau pelo gestor. Uma única chamada: registra uma
+  // Evidência já validada (histórico de quem/quando/contexto) e o servidor
+  // recalcula o Perfil de Capacidade na mesma requisição (recalcularPerfilCapacidade_).
+  // A evidência fica só no Desenvolvimento — nunca na timeline/CRM.
   async avaliarCapacidade(dados: {
     colaboradorId: string;
     capacidadeId: string;
@@ -4540,62 +4574,30 @@ export class GoogleScriptDataService implements IDataService {
     data: string;
     matrizVersaoId?: string;
   }): Promise<void> {
-    // 1. Chamar a action `avaliarCapacidade` do backend (evoluirGrauCapacidade_)
-    //    Requer: colaborador_id, capacidade_id, grau_id, escala_id, usuario_id
-    //    Se não há escalaId no banco, usamos um id sintético baseado na ordem
-    const escalaIdEfetiva = dados.escalaId || `escala-fixo`;
-    const grauIdEfetivo = dados.grauId.startsWith('grau-fixo-')
-      ? `grau-fixo-${dados.grauOrdem}` // fallback quando não há escala real
-      : dados.grauId;
-
-    try {
-      await this.request('avaliarCapacidade', {
-        data: {
-          colaborador_id: dados.colaboradorId,
-          capacidade_id: dados.capacidadeId,
-          grau_id: grauIdEfetivo,
-          escala_id: escalaIdEfetiva,
-          usuario_id: dados.avaliadoPor,
-          origem_id: `aval-manual-${Date.now()}`,
-          matriz_versao_id: dados.matrizVersaoId || '',
-        }
-      });
-    } catch (e) {
-      console.warn('[avaliarCapacidade] backend retornou erro (pode ser escala não configurada):', e);
-      // Mesmo com erro no backend (ex.: escala não encontrada), continua
-      // para registrar a evidência de contextualização
+    if (!dados.escalaId || !dados.grauId) {
+      throw new Error('Esta capacidade não tem uma Escala de Domínio configurada na Matriz. Configure em Configurações → Trilha & Matriz.');
     }
-
-    // 2. Registrar Evidencia de contextualização — APENAS se há texto do gestor.
-    //    A evidência fica na aba Evidencias com status `validada` (avaliação manual).
-    //    NÃO vai para a timeline de feedbacks/CRM do colaborador.
-    if (dados.contexto) {
-      const evidenciaId = `ev-aval-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-      const evidencia: Evidencia = {
-        id: evidenciaId,
-        entidadeTipo: 'capacidade' as EntidadeTipoEvidencia,
-        entidadeId: dados.capacidadeId,
-        tipo: 'observacao' as Evidencia['tipo'],
-        texto: dados.contexto,
-        anexadoPor: dados.avaliadoPor,
-        data: dados.data,
-        status: 'validada' as Evidencia['status'],
-        validadoPor: dados.avaliadoPor,
-        dataValidacao: new Date().toISOString(),
-        colaboradorId: dados.colaboradorId,
-        competenciaId: dados.competenciaId,
-        capacidadeId: dados.capacidadeId,
-        grauDemonstrado: grauIdEfetivo,
-      };
-      try {
-        await this.anexarEvidencia(evidencia);
-        // Marcar como validada imediatamente (sem etapa de aprovação)
-        await this.validarEvidencia(evidenciaId, dados.avaliadoPor);
-      } catch (e) {
-        console.warn('[avaliarCapacidade] registro de evidência falhou:', e);
-      }
-    }
+    await this.anexarEvidencia({
+      id: `ev-aval-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      entidadeTipo: 'capacidade' as EntidadeTipoEvidencia,
+      entidadeId: dados.capacidadeId,
+      tipo: 'observacao' as Evidencia['tipo'],
+      texto: dados.contexto || '',
+      situacaoObservada: 'Avaliação manual de grau',
+      anexadoPor: dados.avaliadoPor,
+      data: dados.data,
+      status: 'validada' as Evidencia['status'],
+      colaboradorId: dados.colaboradorId,
+      competenciaId: dados.competenciaId,
+      capacidadeId: dados.capacidadeId,
+      tipoEvidenciaId: 'avaliacao_manual',
+      escalaId: dados.escalaId,
+      grauDemonstrado: dados.grauId,
+      matrizVersaoId: dados.matrizVersaoId,
+      autoValidar: true,
+    });
   }
+
 
   async getOcorrencias(colaboradorId: string): Promise<Ocorrencia[]> {
     try {
@@ -5471,8 +5473,11 @@ class DynamicDataService implements IDataService {
   async rejeitarEvidencia(id: string, validadoPor?: string): Promise<void> {
     await this.getService().rejeitarEvidencia(id, validadoPor);
   }
-  async deleteEvidencia(id: string): Promise<void> {
-    await this.getService().deleteEvidencia(id);
+  async deleteEvidencia(id: string, usuarioId?: string): Promise<void> {
+    await this.getService().deleteEvidencia(id, usuarioId);
+  }
+  async editarEvidencia(id: string, patch: EdicaoEvidencia, usuarioId?: string): Promise<void> {
+    await this.getService().editarEvidencia(id, patch, usuarioId);
   }
   // ── Reconstrução Multi-Departamento — Etapas 2/3/4 ────────────────────
   async getPerfilCapacidades(colaboradorId: string): Promise<PerfilCapacidade[]> {

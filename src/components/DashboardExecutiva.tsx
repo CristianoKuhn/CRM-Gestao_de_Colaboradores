@@ -135,11 +135,12 @@ export default function DashboardExecutiva(props: DashboardExecutivaProps) {
     temposDeCasaMeses.length > 0 ? Math.round(temposDeCasaMeses.reduce((a, b) => a + b, 0) / temposDeCasaMeses.length) : 0;
 
   // ── Desenvolvimento — motor atual (Prontidão por Capacidades) ─────────
-  const colaboradoresComLacunas = valorIndicador('colaboradores_com_lacunas', 'empresa')
-    ?? colaboradoresComGapCritico;
-  const colaboradoresProntos = valorIndicador('colaboradores_prontos', 'empresa')
-    ?? (colaboradoresAtivos.length - colaboradoresComGapCritico);
-  // Ciclos iminentes: colaboradores com alerta de "avaliar_evidencias_prontidao" pendente
+  const colaboradoresComLacunasRaw = valorIndicador('colaboradores_com_lacunas', 'empresa');
+  const colaboradoresProntosRaw    = valorIndicador('colaboradores_prontos', 'empresa');
+  // Só mostra número se o indicador foi calculado pelo backend.
+  // Se não há dados, exibe '—' para não enganar com fallback incorreto.
+  const colaboradoresComLacunas = colaboradoresComLacunasRaw ?? colaboradoresComGapCritico;
+  const colaboradoresProntos    = colaboradoresProntosRaw !== null ? colaboradoresProntosRaw : null;
   const ciclosIminentes = alertas.filter(
     (a) => a.status === 'pendente' && a.tipo === 'avaliar_evidencias_prontidao'
   ).length;
@@ -276,7 +277,9 @@ export default function DashboardExecutiva(props: DashboardExecutivaProps) {
                 <dl className="space-y-1.5 text-xs">
                   <div className="flex justify-between">
                     <dt className="text-slate-400">Prontos para avançar</dt>
-                    <dd className="font-bold text-emerald-600">{colaboradoresProntos}</dd>
+                    <dd className="font-bold text-emerald-600">
+                      {colaboradoresProntos !== null ? colaboradoresProntos : <span className="text-slate-300 text-[10px]">Calculando...</span>}
+                    </dd>
                   </div>
                   <div className="flex justify-between">
                     <dt className="text-slate-400">Com lacunas críticas</dt>

@@ -148,22 +148,40 @@ export default async function handler(req: any, res: any) {
       { role: 'user', parts: [{ text: mensagem }] },
     ];
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents,
-      config: {
-        systemInstruction: SYSTEM_INSTRUCTION,
-        tools: [{ functionDeclarations: [navegarParaDeclaration] }],
-        // A família Gemini 3 vem com "thinking" (raciocínio interno) ligado
-        // por padrão em nível "medium", o que custa tempo e tokens extras a
-        // cada resposta. Para um chat rápido com uma única ferramenta simples
-        // (navegar), "low" já é suficiente e reduz bastante a latência —
-        // sem isso, cada mensagem "pensa" mais do que precisa antes de responder.
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
-      },
-    });
+    // Tenta o modelo mais capaz primeiro; se não disponível, usa o modelo estável.
+    // Isso isola o endpoint de mudanças de disponibilidade da API do Google.
+    const MODELOS_EM_ORDEM = [
+      'gemini-2.5-flash-preview-05-20',  // preview mais recente (mais capaz)
+      'gemini-2.5-flash-lite-preview-06-17', // lite preview (menor custo)
+      'gemini-2.5-flash',                // estável (pode estar indisponível para novos)
+    ];
+    let response: Awaited<ReturnType<typeof ai.models.generateContent>> | null = null;
+    let ultimoErro: Error | null = null;
+    for (const modelo of MODELOS_EM_ORDEM) {
+      try {
+        response = await ai.models.generateContent({
+          model: modelo,
+          contents,
+          config: {
+            systemInstruction: SYSTEM_INSTRUCTION,
+            tools: [{ functionDeclarations: [navegarParaDeclaration] }],
+            thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+          },
+        });
+        break; // sucesso — sai do loop
+      } catch (e: any) {
+        ultimoErro = e;
+        // 404 ou "no longer available" → tenta o próximo modelo
+        if (e?.status === 404 || String(e?.message || '').includes('no longer available') || String(e?.message || '').includes('NOT_FOUND')) {
+          console.warn(`[api/lisa] Modelo ${modelo} indisponível, tentando próximo...`);
+          continue;
+        }
+        throw e; // outro erro (auth, quota, etc.) — propaga imediatamente
+      }
+    }
+    if (!response) throw ultimoErro || new Error('Nenhum modelo Gemini disponível no momento.');
 
-    const chamadasDeFuncao = (response.functionCalls || [])
+    const chamadasDeFuncao = (response!.functionCalls || [])
       .filter((fc) => fc.name === 'navegarPara')
       .map((fc) => ({
         tela: (fc.args as any)?.tela as string,
@@ -172,7 +190,7 @@ export default async function handler(req: any, res: any) {
 
     return res.status(200).json({
       success: true,
-      texto: response.text || null,
+      texto: response!.text || null,
       acoes: chamadasDeFuncao,
     });
   } catch (error: any) {

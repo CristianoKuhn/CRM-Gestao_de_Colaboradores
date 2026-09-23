@@ -9,7 +9,7 @@
 // e pode pedir para o app NAVEGAR até uma tela ou até o perfil de um
 // colaborador. Ela nunca cria, edita ou apaga nada sozinha — quem decide e
 // clica em salvar continua sendo sempre uma pessoa.
-import { GoogleGenAI, Type, FunctionDeclaration, Content, ThinkingLevel } from '@google/genai';
+import { GoogleGenAI, Type, FunctionDeclaration, Content } from '@google/genai';
 
 // Preciso ficar em sincronia manualmente com os ids de aba do Sidebar
 // (src/components/Sidebar.tsx) — não há como importar o frontend aqui.
@@ -148,14 +148,15 @@ export default async function handler(req: any, res: any) {
       { role: 'user', parts: [{ text: mensagem }] },
     ];
 
-    // Modelo recomendado pelo Google como substituto do gemini-2.5-flash descontinuado.
+    // gemini-2.5-flash: mesmo modelo usado em resumo-timeline.ts (funciona em produção).
+    // thinkingConfig removido: incompatível com tools (function calling) neste modelo —
+    // a combinação tools + thinkingConfig causa erro 404 no gemini-2.5-flash.
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
       contents,
       config: {
         systemInstruction: SYSTEM_INSTRUCTION,
         tools: [{ functionDeclarations: [navegarParaDeclaration] }],
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
       },
     });
 

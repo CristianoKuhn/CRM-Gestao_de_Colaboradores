@@ -3070,7 +3070,7 @@ export default function GestaoPessoas({
 
       {subTab === 'dashboard' && renderDashboard()}
       {subTab === 'calendario' && renderCalendario()}
-      {/* PWA / outros componentes... */}
+      {subTab === 'ferias' && renderFerias()}
 
       {/* ── DRAWER DE DESENVOLVIMENTO ─────────────────────────────────────────
           Abre pela direita ao clicar num card do Radar de Desenvolvimento.

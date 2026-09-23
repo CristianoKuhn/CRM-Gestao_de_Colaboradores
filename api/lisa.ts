@@ -148,40 +148,18 @@ export default async function handler(req: any, res: any) {
       { role: 'user', parts: [{ text: mensagem }] },
     ];
 
-    // Tenta o modelo mais capaz primeiro; se não disponível, usa o modelo estável.
-    // Isso isola o endpoint de mudanças de disponibilidade da API do Google.
-    const MODELOS_EM_ORDEM = [
-      'gemini-2.5-flash-preview-05-20',  // preview mais recente (mais capaz)
-      'gemini-2.5-flash-lite-preview-06-17', // lite preview (menor custo)
-      'gemini-2.5-flash',                // estável (pode estar indisponível para novos)
-    ];
-    let response: Awaited<ReturnType<typeof ai.models.generateContent>> | null = null;
-    let ultimoErro: Error | null = null;
-    for (const modelo of MODELOS_EM_ORDEM) {
-      try {
-        response = await ai.models.generateContent({
-          model: modelo,
-          contents,
-          config: {
-            systemInstruction: SYSTEM_INSTRUCTION,
-            tools: [{ functionDeclarations: [navegarParaDeclaration] }],
-            thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
-          },
-        });
-        break; // sucesso — sai do loop
-      } catch (e: any) {
-        ultimoErro = e;
-        // 404 ou "no longer available" → tenta o próximo modelo
-        if (e?.status === 404 || String(e?.message || '').includes('no longer available') || String(e?.message || '').includes('NOT_FOUND')) {
-          console.warn(`[api/lisa] Modelo ${modelo} indisponível, tentando próximo...`);
-          continue;
-        }
-        throw e; // outro erro (auth, quota, etc.) — propaga imediatamente
-      }
-    }
-    if (!response) throw ultimoErro || new Error('Nenhum modelo Gemini disponível no momento.');
+    // Modelo recomendado pelo Google como substituto do gemini-2.5-flash descontinuado.
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents,
+      config: {
+        systemInstruction: SYSTEM_INSTRUCTION,
+        tools: [{ functionDeclarations: [navegarParaDeclaration] }],
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+      },
+    });
 
-    const chamadasDeFuncao = (response!.functionCalls || [])
+    const chamadasDeFuncao = (response.functionCalls || [])
       .filter((fc) => fc.name === 'navegarPara')
       .map((fc) => ({
         tela: (fc.args as any)?.tela as string,

@@ -82,8 +82,7 @@ export default async function handler(req: any, res: any) {
     { role: 'user', parts: [{ text: mensagem }] },
   ];
 
-  // Modelo: gemini-2.5-flash — conforme recomendação explícita do Google
-  // API REST direta (v1beta) — sem biblioteca intermediária
+  // gemini-2.5-flash: modelo atual recomendado pelo Google para esta chave de API
   const MODEL = 'gemini-2.5-flash';
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${apiKey}`;
 

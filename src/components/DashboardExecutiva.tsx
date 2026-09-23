@@ -134,9 +134,15 @@ export default function DashboardExecutiva(props: DashboardExecutivaProps) {
   const tempoMedioDeCasaMeses =
     temposDeCasaMeses.length > 0 ? Math.round(temposDeCasaMeses.reduce((a, b) => a + b, 0) / temposDeCasaMeses.length) : 0;
 
-  // ── Desenvolvimento ───────────────────────────────────────────────────
-  const programasAtivos = valorIndicador('programas_ativos', 'empresa') ?? programas.filter((p) => p.ativo).length;
-  const taxaAtrasoGeral = valorIndicador('taxa_atraso_geral', 'empresa') ?? 0;
+  // ── Desenvolvimento — motor atual (Prontidão por Capacidades) ─────────
+  const colaboradoresComLacunas = valorIndicador('colaboradores_com_lacunas', 'empresa')
+    ?? colaboradoresComGapCritico;
+  const colaboradoresProntos = valorIndicador('colaboradores_prontos', 'empresa')
+    ?? (colaboradoresAtivos.length - colaboradoresComGapCritico);
+  // Ciclos iminentes: colaboradores com alerta de "avaliar_evidencias_prontidao" pendente
+  const ciclosIminentes = alertas.filter(
+    (a) => a.status === 'pendente' && a.tipo === 'avaliar_evidencias_prontidao'
+  ).length;
 
   // ── Competências ────────────────────────────────────────────────────
   const gapsPorSetor = indicadores.filter((i) => i.tipoIndicador === 'gap_medio_setor' && i.escopoTipo === 'setor');
@@ -268,8 +274,18 @@ export default function DashboardExecutiva(props: DashboardExecutivaProps) {
                   <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wide">Desenvolvimento</h3>
                 </div>
                 <dl className="space-y-1.5 text-xs">
-                  <div className="flex justify-between"><dt className="text-slate-400">Programas ativos</dt><dd className="font-bold text-slate-700">{programasAtivos}</dd></div>
-                  <div className="flex justify-between"><dt className="text-slate-400">Etapas atrasadas</dt><dd className="font-bold text-slate-700">{taxaAtrasoGeral}%</dd></div>
+                  <div className="flex justify-between">
+                    <dt className="text-slate-400">Prontos para avançar</dt>
+                    <dd className="font-bold text-emerald-600">{colaboradoresProntos}</dd>
+                  </div>
+                  <div className="flex justify-between">
+                    <dt className="text-slate-400">Com lacunas críticas</dt>
+                    <dd className={`font-bold ${colaboradoresComLacunas > 0 ? 'text-rose-600' : 'text-slate-700'}`}>{colaboradoresComLacunas}</dd>
+                  </div>
+                  <div className="flex justify-between">
+                    <dt className="text-slate-400">Ciclos iminentes</dt>
+                    <dd className={`font-bold ${ciclosIminentes > 0 ? 'text-amber-600' : 'text-slate-700'}`}>{ciclosIminentes}</dd>
+                  </div>
                 </dl>
               </div>
 
@@ -308,12 +324,32 @@ export default function DashboardExecutiva(props: DashboardExecutivaProps) {
                   <p className="text-xs text-slate-400">Nenhum alerta pendente.</p>
                 ) : (
                   <dl className="space-y-1.5 text-xs">
-                    {topAlertas.map(([tipo, total]) => (
-                      <div key={tipo} className="flex justify-between gap-2">
-                        <dt className="text-slate-400 truncate">{tipo.replace(/_/g, ' ')}</dt>
-                        <dd className="font-bold text-slate-700 shrink-0">{total}</dd>
-                      </div>
-                    ))}
+                    {topAlertas.map(([tipo, total]) => {
+                        const labelAlerta = tipo
+                          .split('_')
+                          .map((p: string) =>
+                            p === 'de' || p === 'a' || p === 'em'
+                              ? p
+                              : p.charAt(0).toUpperCase() + p.slice(1)
+                          )
+                          .join(' ')
+                          // Substituições para textos mais profissionais
+                          .replace('Aniversario Casa', 'Aniversário de Empresa')
+                          .replace('Aniversario Nascimento', 'Aniversário de Nascimento')
+                          .replace('Avaliar Evidencias Prontidao', 'Evidências para Avaliar')
+                          .replace('Avaliar Evidencias', 'Evidências para Avaliar')
+                          .replace('Sem Interacao', 'Sem Interação Recente')
+                          .replace('Ferias Vencendo', 'Férias a Vencer')
+                          .replace('Ferias 90dias', 'Férias — 90 Dias')
+                          .replace('Dayoff Pendente', 'DayOff Pendente')
+                          .replace('Ciclo Pendente', 'Ciclo de Avaliação');
+                        return (
+                          <div key={tipo} className="flex justify-between gap-2">
+                            <dt className="text-slate-600 truncate">{labelAlerta}</dt>
+                            <dd className="font-bold text-amber-600 shrink-0">{total}</dd>
+                          </div>
+                        );
+                      })}
                   </dl>
                 )}
                 <p className="text-[10px] text-slate-400 mt-2 pt-2 border-t border-slate-50">

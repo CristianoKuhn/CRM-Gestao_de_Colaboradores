@@ -204,32 +204,14 @@ ${listaRegistros}
 
 Analise os registros acima, mapeie competências identificadas, padrões de comportamento e recomendações de treinamento. Retorne APENAS o JSON estruturado conforme as instruções.`;
 
-    const MODELOS_ANALISE = [
-      'gemini-2.5-flash-preview-05-20',
-      'gemini-2.5-flash-lite-preview-06-17',
-      'gemini-2.5-flash',
-    ];
-    let response: Awaited<ReturnType<typeof ai.models.generateContent>> | null = null;
-    for (const modelo of MODELOS_ANALISE) {
-      try {
-        response = await ai.models.generateContent({
-          model: modelo,
-          contents: [{ role: 'user', parts: [{ text: prompt }] }],
-          config: {
-            systemInstruction: SYSTEM_INSTRUCTION,
-            thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
-          },
-        });
-        break;
-      } catch (e: any) {
-        if (e?.status === 404 || String(e?.message || '').includes('no longer available') || String(e?.message || '').includes('NOT_FOUND')) {
-          console.warn(`[api/analise-colaborador] Modelo ${modelo} indisponível.`);
-          continue;
-        }
-        throw e;
-      }
-    }
-    if (!response) throw new Error('Nenhum modelo Gemini disponível para análise.');
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      config: {
+        systemInstruction: SYSTEM_INSTRUCTION,
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+      },
+    });
 
     const textoResposta = response.text || '';
 

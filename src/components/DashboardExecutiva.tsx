@@ -134,15 +134,31 @@ export default function DashboardExecutiva(props: DashboardExecutivaProps) {
   const tempoMedioDeCasaMeses =
     temposDeCasaMeses.length > 0 ? Math.round(temposDeCasaMeses.reduce((a, b) => a + b, 0) / temposDeCasaMeses.length) : 0;
 
-  // ── Desenvolvimento — motor atual (Prontidão por Capacidades) ─────────
+  // ── Desenvolvimento — derivado dos alertas (sem cache de indicadores) ─────
+  // O cache IndicadoresDesenvolvimentoCache exige job de recálculo manual.
+  // Em vez disso, derivamos das informações que já chegam via alertas:
+  //   - prontidao_proximo_nivel  → colaborador atingiu todos os requisitos
+  //   - avaliar_evidencias_prontidao → ciclo de 5 meses prestes a vencer
+  // valorIndicador é mantido como fallback se o cache eventualmente for populado.
+  const colaboradoresProntosRaw = valorIndicador('colaboradores_prontos', 'empresa');
   const colaboradoresComLacunasRaw = valorIndicador('colaboradores_com_lacunas', 'empresa');
-  const colaboradoresProntosRaw    = valorIndicador('colaboradores_prontos', 'empresa');
-  // Só mostra número se o indicador foi calculado pelo backend.
-  // Se não há dados, exibe '—' para não enganar com fallback incorreto.
-  const colaboradoresComLacunas = colaboradoresComLacunasRaw ?? colaboradoresComGapCritico;
-  const colaboradoresProntos    = colaboradoresProntosRaw !== null ? colaboradoresProntosRaw : null;
+
+  // Contagem real por alertas ativos (pendentes/reconhecidos)
+  const idsComProntidao = new Set(
+    alertas
+      .filter(a => a.tipo === 'prontidao_proximo_nivel' && a.status !== 'resolvido')
+      .map(a => a.colaboradorId)
+  );
+  const idsComLacuna = new Set(
+    alertas
+      .filter(a => a.tipo === 'avaliar_evidencias_prontidao' && a.status === 'pendente')
+      .map(a => a.colaboradorId)
+  );
+
+  const colaboradoresProntos    = colaboradoresProntosRaw    ?? idsComProntidao.size;
+  const colaboradoresComLacunas = colaboradoresComLacunasRaw ?? (colaboradoresComGapCritico || idsComLacuna.size);
   const ciclosIminentes = alertas.filter(
-    (a) => a.status === 'pendente' && a.tipo === 'avaliar_evidencias_prontidao'
+    a => a.status === 'pendente' && a.tipo === 'avaliar_evidencias_prontidao'
   ).length;
 
   // ── Competências ────────────────────────────────────────────────────
@@ -277,9 +293,7 @@ export default function DashboardExecutiva(props: DashboardExecutivaProps) {
                 <dl className="space-y-1.5 text-xs">
                   <div className="flex justify-between">
                     <dt className="text-slate-400">Prontos para avançar</dt>
-                    <dd className="font-bold text-emerald-600">
-                      {colaboradoresProntos !== null ? colaboradoresProntos : <span className="text-slate-300 text-[10px]">Calculando...</span>}
-                    </dd>
+                    <dd className="font-bold text-emerald-600">{colaboradoresProntos}</dd>
                   </div>
                   <div className="flex justify-between">
                     <dt className="text-slate-400">Com lacunas críticas</dt>

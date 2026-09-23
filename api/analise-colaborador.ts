@@ -205,7 +205,7 @@ ${listaRegistros}
 Analise os registros acima, mapeie competências identificadas, padrões de comportamento e recomendações de treinamento. Retorne APENAS o JSON estruturado conforme as instruções.`;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.6-flash',
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
       config: {
         systemInstruction: SYSTEM_INSTRUCTION,

@@ -154,8 +154,21 @@ const LisaWidget: React.FC<LisaWidgetProps> = ({ onNavegarPara, resumoDiario, us
       const salvo = localStorage.getItem(POSICAO_STORAGE_KEY);
       if (salvo) {
         const { x, y } = JSON.parse(salvo);
-        posX.set(x);
-        posY.set(y);
+        // Validar se a posição ainda está dentro da viewport
+        // (o usuário pode ter redimensionado a janela ou arrastado para fora)
+        const maxX = window.innerWidth - 80;
+        const maxY = window.innerHeight - 80;
+        const xValido = Math.min(Math.max(x, -(window.innerWidth - 80)), 0);
+        const yValido = Math.min(Math.max(y, -(window.innerHeight - 80)), 0);
+        // Se a posição salva colocaria o botão fora da tela visível, reseta
+        if (x < -maxX || x > maxX || y < -maxY || y > maxY) {
+          posX.set(0);
+          posY.set(0);
+          try { localStorage.removeItem(POSICAO_STORAGE_KEY); } catch { /* ok */ }
+        } else {
+          posX.set(xValido);
+          posY.set(yValido);
+        }
       }
     } catch {
       // localStorage indisponível — segue com a posição padrão, sem quebrar nada.

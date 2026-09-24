@@ -18,6 +18,7 @@ import {
   AlertaInteligente,
   ConfiguracaoAlertas,
   Documento,
+  PastaDocumento,
   TipoReconhecimento,
   Reconhecimento,
   ConfiguracaoReconhecimento,
@@ -53,6 +54,7 @@ const KEYS = {
   CONFIG_ALERTAS: 'gc_config_alertas',
   // P3: Documentos
   DOCUMENTOS: 'gc_documentos',
+  PASTAS: 'gc_pastas_documentos',
   RESUMOS_LINHA_TEMPO: 'gc_resumos_linha_tempo',
   // P4: Reconhecimento
   CONFIG_RECONHECIMENTO: 'gc_config_reconhecimento',
@@ -874,6 +876,27 @@ export const StorageAPI = {
   deleteDocumento: (id: string) => {
     const docs = StorageAPI.getDocumentos().filter(d => d.id !== id);
     set(KEYS.DOCUMENTOS, docs);
+  },
+
+  // ── Pastas de Documentos ─────────────────────────────────────────────────
+  getPastas: (): PastaDocumento[] => {
+    return get<PastaDocumento>(KEYS.PASTAS);
+  },
+
+  savePasta: (pasta: PastaDocumento) => {
+    const pastas = StorageAPI.getPastas();
+    const index = pastas.findIndex(p => p.id === pasta.id);
+    if (index >= 0) {
+      pastas[index] = pasta;
+    } else {
+      pastas.push(pasta);
+    }
+    set(KEYS.PASTAS, pastas);
+  },
+
+  deletePasta: (id: string) => {
+    const pastas = StorageAPI.getPastas().filter(p => p.id !== id);
+    set(KEYS.PASTAS, pastas);
   },
 
   // ========== RESUMO DA LINHA DO TEMPO (IA, incremental) ==========

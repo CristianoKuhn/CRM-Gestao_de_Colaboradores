@@ -94,7 +94,16 @@ export default function CentralDocumentos({
 
   const pastasVirtuaisColaborador: PastaDocumento[] = useMemo(() => {
     if (!modoGlobal) return [];
-    const colsComDocs = new Set(documentos.map(d => d.colaboradorId).filter(Boolean));
+    const colsComDocs = new Set(
+      documentos
+        .map(d => d.colaboradorId)
+        .filter(cid =>
+          // Excluir sentinelas de departamento e pessoal — não geram pasta virtual
+          cid &&
+          !cid.startsWith('departamento:') &&
+          cid !== 'pessoal'
+        )
+    );
     const pastasCriadasColIds = new Set(
       pastasProp.filter(p => p.tipo === 'colaborador').map(p => p.colaboradorId)
     );
@@ -111,9 +120,15 @@ export default function CentralDocumentos({
   }, [documentos, pastasProp, colaboradores, modoGlobal]);
 
   const todasPastas: PastaDocumento[] = useMemo(() => {
+    const isAdmin = currentUser?.perfil === 'Administrador' || currentUser?.perfil === 'Coordenador';
     const criadas = pastasProp.filter(p => {
       if (p.tipo === 'pessoal') return p.donoId === currentUserId;
-      if (p.tipo === 'departamento') return !setorAtualId || p.setorId === setorAtualId || (currentUser?.perfil === 'Administrador');
+      if (p.tipo === 'departamento') {
+        // Admin e Coordenador veem todas as pastas de departamento
+        if (isAdmin) return true;
+        // Demais: veem apenas do seu setor
+        return !setorAtualId || p.setorId === setorAtualId;
+      }
       return true; // colaborador — visibilidade controlada nos documentos
     });
     return [...criadas, ...pastasVirtuaisColaborador];
@@ -139,11 +154,12 @@ export default function CentralDocumentos({
         (!d.pastaId && d.uploadedPor === currentUserId && d.colaboradorId === 'pessoal')
       );
     } else {
-      // Departamento: vinculados à pasta OU com sentinel 'departamento:<setorId>'
+      // Departamento: a fonte de verdade é pastaId.
+      // O sentinel colaboradorId='departamento:setorId' é backup para docs sem pastaId.
       const sentinela = `departamento:${p.setorId || ''}`;
       docs = documentos.filter(d =>
         d.pastaId === p.id ||
-        (!d.pastaId && (d.colaboradorId === sentinela || d.colaboradorId === `departamento:${p.setorId}`))
+        (!d.pastaId && d.colaboradorId === sentinela)
       );
     }
 

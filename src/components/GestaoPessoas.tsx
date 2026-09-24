@@ -472,7 +472,7 @@ export default function GestaoPessoas({
   const [alertasEtapasAtrasadas, setAlertasEtapasAtrasadas] = useState<AlertaInteligente[]>([]);
   
   // Filtros
-  const [filtroAno, setFiltroAno] = useState(ANO_ATUAL);
+  const [filtroAno, setFiltroAno] = useState<number | null>(ANO_ATUAL);
   const [filtroMes, setFiltroMes] = useState<number | null>(new Date().getMonth());
   const [filtroSetor, setFiltroSetor] = useState<string | null>(null);
   const [filtroTipoEvento, setFiltroTipoEvento] = useState<string | null>(null);
@@ -663,21 +663,18 @@ export default function GestaoPessoas({
       }
     });
     
-    // Detectar conflitos de férias no mesmo setor usando sobreposição REAL de intervalos
-    // Regras:
-    //  1. Só considera férias cujo início está no ANO ATUAL ou ANO ATUAL+1
-    //  2. Sobreposição real: intervalos se sobrepõem quando A.inicio <= B.fim E A.fim >= B.inicio
-    //  3. Alerta apenas quando há ≥2 colaboradores simultaneamente ausentes no mesmo setor
-    //     (não basta estar no mesmo mês — precisam se sobrepor de fato)
+    // Detectar conflitos REAIS de férias no mesmo setor
+    // Algoritmo de varredura dia-a-dia com deduplicação por colaboradorId:
+    //   sobreposição ESTRITA: d >= ini AND d < fim
+    //   (quem termina hoje já retornou — dia-a-dia correto pela CLT)
     const anoAtualConflito = new Date().getFullYear();
-    const feriasPlanejadas = ferias.filter(f =>
-      (f.status === 'planejada' || f.status === 'em_gozo') &&
-      new Date(f.dataInicio).getFullYear() >= anoAtualConflito &&
-      new Date(f.dataInicio).getFullYear() <= anoAtualConflito + 1
-    );
+    const feriasPlanejadas = ferias.filter(f => {
+      const anoInicio = new Date(f.dataInicio.includes('T') ? f.dataInicio : f.dataInicio + 'T12:00:00').getFullYear();
+      return (f.status === 'planejada' || f.status === 'em_gozo') &&
+        anoInicio >= anoAtualConflito && anoInicio <= anoAtualConflito + 1;
+    });
 
-    // Agrupar por setor
-    const feriasPorSetor: Record<string, Array<{ colNome: string; ini: Date; fim: Date }>> = {};
+    const feriasPorSetor: Record<string, Array<{ colId: string; colNome: string; ini: Date; fim: Date }>> = {};
     feriasPlanejadas.forEach(f => {
       const col = colaboradores.find(c => c.id === f.colaboradorId);
       if (!col || col.situacao === 'Desligado') return;
@@ -685,47 +682,40 @@ export default function GestaoPessoas({
       const fim = new Date(f.dataFim.includes('T') ? f.dataFim : f.dataFim + 'T12:00:00');
       if (isNaN(ini.getTime()) || isNaN(fim.getTime())) return;
       if (!feriasPorSetor[col.setorId]) feriasPorSetor[col.setorId] = [];
-      feriasPorSetor[col.setorId].push({ colNome: col.nome, ini, fim });
+      feriasPorSetor[col.setorId].push({ colId: col.id, colNome: col.nome, ini, fim });
     });
 
     Object.entries(feriasPorSetor).forEach(([setorId, listaIntervalos]) => {
       if (listaIntervalos.length < 2) return;
       const setor = setores.find(s => s.id === setorId);
-
-      // Para cada par de férias, verificar sobreposição real
       const conflitosDetectados = new Set<string>();
-      for (let i = 0; i < listaIntervalos.length; i++) {
-        const a = listaIntervalos[i];
-        const simultaneos: typeof listaIntervalos = [a];
-        for (let j = i + 1; j < listaIntervalos.length; j++) {
-          const b = listaIntervalos[j];
-          // Sobreposição real: a.ini <= b.fim E a.fim >= b.ini
-          if (a.ini <= b.fim && a.fim >= b.ini) {
-            simultaneos.push(b);
-          }
-        }
-        if (simultaneos.length >= 2) {
-          // Calcular o período de sobreposição comum
-          const iniSobrep = new Date(Math.max(...simultaneos.map(s => s.ini.getTime())));
-          // Chave única: setor + mês/ano da sobreposição para evitar duplicatas
-          const chave = `${setorId}-${iniSobrep.getFullYear()}-${iniSobrep.getMonth()}`;
+      const todasDatas = listaIntervalos.flatMap(x => [x.ini.getTime(), x.fim.getTime()]);
+      const dMin = new Date(Math.min(...todasDatas));
+      const dMax = new Date(Math.max(...todasDatas));
+
+      for (let d = new Date(dMin); d <= dMax; d.setDate(d.getDate() + 1)) {
+        const presentes = listaIntervalos.filter(x => d >= x.ini && d < x.fim);
+        // Deduplicar: colaborador com múltiplos registros conta apenas 1 vez por dia
+        const unicos = Array.from(new Map(presentes.map(x => [x.colId, x])).values());
+        if (unicos.length >= 2) {
+          const chave = `${setorId}-${d.getFullYear()}-${d.getMonth()}`;
           if (!conflitosDetectados.has(chave)) {
             conflitosDetectados.add(chave);
-            const mes = getMesesDoAno()[iniSobrep.getMonth()];
-            const ano = iniSobrep.getFullYear();
+            const mes = getMesesDoAno()[d.getMonth()];
+            const ano = d.getFullYear();
             listaAlertas.push({
               id: `conflito-${chave}`,
               tipo: 'conflito_setor',
               titulo: `Sobreposição de férias — ${setor?.nome}`,
-              descricao: `${simultaneos.length} colaboradores do setor ${setor?.nome} têm férias simultâneas em ${mes}/${ano}: ${simultaneos.map(s => s.colNome).join(', ')}`,
+              descricao: `${unicos.length} colaboradores do setor ${setor?.nome} têm férias simultâneas em ${mes}/${ano}: ${unicos.map(x => x.colNome).join(', ')}`,
               setorId,
-              nivel: simultaneos.length >= 3 ? 'urgent' : 'warning',
+              nivel: unicos.length >= 3 ? 'urgent' : 'warning',
             });
           }
         }
       }
     });
-    
+
     // Etapas de Desenvolvimento atrasadas (PDI, capacitação, carreira...) —
     // o alerta já vem pronto do backend (marcarEtapasAtrasadas_, dentro do
     // job diário gerarAlertasAutomaticos), com título/descrição formatados;
@@ -1742,11 +1732,16 @@ export default function GestaoPessoas({
       if (feriasFiltroPlanejamento === 'pendente' && (l.concessaoFeriasId || l.jaGozado)) return false;
       if (feriasFiltroPlanejamento === 'planejado' && !l.concessaoFeriasId && !l.jaGozado) return false;
       if (l.jaGozado && feriasFilterStatusPeriodo === 'ativo') return false;
-      // Filtro por mês de concessão início
-      if (feriasFilterMesConcessao !== -1) {
-        if (!l.concessaoInicio) return false;
-        const ini = parseDataSegura(l.concessaoInicio);
-        if (!ini || ini.getMonth() !== feriasFilterMesConcessao) return false;
+      // Filtro por mês e/ou ano de concessão início
+      if (feriasFilterMesConcessao !== -1 || filtroAno !== null) {
+        if (!l.concessaoInicio) {
+          if (feriasFilterMesConcessao !== -1) return false;
+        } else {
+          const ini = parseDataSegura(l.concessaoInicio);
+          if (!ini) return false;
+          if (feriasFilterMesConcessao !== -1 && ini.getMonth() !== feriasFilterMesConcessao) return false;
+          if (filtroAno !== null && ini.getFullYear() !== filtroAno) return false;
+        }
       }
       return true;
     });
@@ -2046,6 +2041,13 @@ export default function GestaoPessoas({
               </button>
             ))}
           </div>
+          <select value={filtroAno ?? ''} onChange={e => setFiltroAno(e.target.value ? parseInt(e.target.value) : null)}
+            className="text-xs border border-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:border-teal-500 bg-white">
+            <option value="">Todos os anos</option>
+            {[ANO_ATUAL - 1, ANO_ATUAL, ANO_ATUAL + 1, ANO_ATUAL + 2].map(a => (
+              <option key={a} value={a}>{a}</option>
+            ))}
+          </select>
           <select value={feriasFilterMesConcessao} onChange={e => setFeriasFilterMesConcessao(parseInt(e.target.value))}
             className="text-xs border border-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:border-teal-500 bg-white">
             <option value={-1}>Todos os meses</option>

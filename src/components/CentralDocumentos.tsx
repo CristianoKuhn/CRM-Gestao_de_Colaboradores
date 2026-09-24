@@ -127,21 +127,24 @@ export default function CentralDocumentos({
     let docs: Documento[];
     if (p.tipo === 'colaborador') {
       const colId = p.colaboradorId;
-      docs = documentos.filter(d => {
-        if (d.pastaId) return d.pastaId === p.id;
-        return d.colaboradorId === colId && !documentos.some(
-          d2 => d2.id !== d.id && d2.pastaId && todasPastas.find(pp => pp.id === d2.pastaId)?.colaboradorId === colId
-        );
-      });
       if (!p.id.startsWith('virtual-')) {
         docs = documentos.filter(d => d.pastaId === p.id || (!d.pastaId && d.colaboradorId === colId));
       } else {
         docs = documentos.filter(d => d.colaboradorId === colId && !d.pastaId);
       }
     } else if (p.tipo === 'pessoal') {
-      docs = documentos.filter(d => d.pastaId === p.id || (!d.pastaId && d.uploadedPor === currentUserId && d.colaboradorId === 'pessoal'));
+      // Documentos pessoais: vinculados à pasta OU com sentinel 'pessoal' enviados pelo dono
+      docs = documentos.filter(d =>
+        d.pastaId === p.id ||
+        (!d.pastaId && d.uploadedPor === currentUserId && d.colaboradorId === 'pessoal')
+      );
     } else {
-      docs = documentos.filter(d => d.pastaId === p.id);
+      // Departamento: vinculados à pasta OU com sentinel 'departamento:<setorId>'
+      const sentinela = `departamento:${p.setorId || ''}`;
+      docs = documentos.filter(d =>
+        d.pastaId === p.id ||
+        (!d.pastaId && (d.colaboradorId === sentinela || d.colaboradorId === `departamento:${p.setorId}`))
+      );
     }
 
     if (searchTerm)
@@ -166,15 +169,37 @@ export default function CentralDocumentos({
 
   const handleUpload = async () => {
     if (!selectedFile || !uploadData.nome.trim()) return;
-    const colId = modoGlobal ? uploadColaboradorId : colaborador.id;
-    if (modoGlobal && !colId && !pastaSelecionada) return;
+
+    // Determinar colaboradorId correto pelo TIPO da pasta ou pelo contexto:
+    //   'colaborador' → colaboradorId da pasta (ou selecionado no modal)
+    //   'departamento' → usa sentinel 'departamento:<setorId>' para rastrear sem colaborador
+    //   'pessoal'      → usa sentinel 'pessoal' (o donoId da pasta já protege a visibilidade)
+    //   sem pasta, modoGlobal → colaborador selecionado no modal (obrigatório)
+    //   sem pasta, perfil individual → colaborador do contexto
+    let colId: string;
+    if (pastaSelecionada) {
+      if (pastaSelecionada.tipo === 'colaborador') {
+        colId = pastaSelecionada.colaboradorId || uploadColaboradorId || '';
+      } else if (pastaSelecionada.tipo === 'departamento') {
+        colId = `departamento:${pastaSelecionada.setorId || ''}`;
+      } else {
+        // pessoal
+        colId = 'pessoal';
+      }
+    } else if (modoGlobal) {
+      colId = uploadColaboradorId || '';
+      if (!colId) return; // sem pasta e sem colaborador selecionado — bloquear
+    } else {
+      colId = colaborador.id;
+    }
+
     setIsUploading(true);
     try {
       const folderName = 'documentos';
       const url = await DataService.uploadFile(selectedFile, folderName, uploadData.nome.trim());
       const novoDoc: Documento = {
         id: `doc-${Date.now()}`,
-        colaboradorId: colId || (pastaSelecionada?.tipo === 'colaborador' ? pastaSelecionada.colaboradorId || '' : 'pessoal'),
+        colaboradorId: colId,
         pastaId: pastaSelecionada?.id,
         nome: uploadData.nome.trim(),
         categoria: uploadData.categoria,
@@ -222,11 +247,21 @@ export default function CentralDocumentos({
   const handleMoverDoc = (novaPastaId: string) => {
     if (!showMoverModal) return;
     const novaPastaObj = todasPastas.find(p => p.id === novaPastaId);
-    const colId = novaPastaObj?.tipo === 'colaborador' ? novaPastaObj.colaboradorId || showMoverModal.colaboradorId : showMoverModal.colaboradorId;
+    // Determinar o colaboradorId correto pelo tipo da pasta de destino
+    let novoColaboradorId = showMoverModal.colaboradorId;
+    if (novaPastaObj) {
+      if (novaPastaObj.tipo === 'colaborador') {
+        novoColaboradorId = novaPastaObj.colaboradorId || showMoverModal.colaboradorId;
+      } else if (novaPastaObj.tipo === 'departamento') {
+        novoColaboradorId = `departamento:${novaPastaObj.setorId || ''}`;
+      } else if (novaPastaObj.tipo === 'pessoal') {
+        novoColaboradorId = 'pessoal';
+      }
+    }
     const docAtualizado: Documento = {
       ...showMoverModal,
       pastaId: novaPastaId,
-      colaboradorId: colId,
+      colaboradorId: novoColaboradorId,
     };
     onUpdateDocumento?.(docAtualizado);
     setShowMoverModal(null);
@@ -587,7 +622,16 @@ function ModalCriarPasta({ colaboradores, setores, currentUserId, currentUser, n
 }
 
 function ModalUpload({ modoGlobal, colaboradores, pastaSelecionada, uploadColaboradorId, setUploadColaboradorId, uploadData, setUploadData, selectedFile, setSelectedFile, fileInputRef, isUploading, isDragging, setIsDragging, handleFileSelect, onUpload, onFechar }: any) {
-  const podeEnviar = selectedFile && uploadData.nome.trim() && (!modoGlobal || uploadColaboradorId || pastaSelecionada?.colaboradorId);
+  // Colaborador só é necessário quando:
+  //   - Modo global E sem pasta selecionada (upload avulso)
+  //   - Modo global E pasta é de colaborador (sem colaboradorId definido)
+  // NÃO é necessário para pastas de departamento nem pessoal
+  const pastaExigeCaborador = modoGlobal && (!pastaSelecionada || pastaSelecionada.tipo === 'colaborador');
+  const colaboradorJaDefinido = !!pastaSelecionada?.colaboradorId;
+  const mostrarSelectColaborador = pastaExigeCaborador && !colaboradorJaDefinido;
+  const podeEnviar = selectedFile && uploadData.nome.trim() && (
+    !mostrarSelectColaborador || uploadColaboradorId
+  );
   return (
     <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-6">
@@ -626,7 +670,7 @@ function ModalUpload({ modoGlobal, colaboradores, pastaSelecionada, uploadColabo
               placeholder="Nome do documento..."
               className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20" />
           </div>
-          {modoGlobal && !pastaSelecionada?.colaboradorId && (
+          {mostrarSelectColaborador && (
             <div>
               <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">Colaborador</label>
               <select value={uploadColaboradorId} onChange={e => setUploadColaboradorId(e.target.value)}
@@ -634,6 +678,22 @@ function ModalUpload({ modoGlobal, colaboradores, pastaSelecionada, uploadColabo
                 <option value="">Selecionar colaborador...</option>
                 {colaboradores.map((c: Colaborador) => <option key={c.id} value={c.id}>{c.nome}</option>)}
               </select>
+            </div>
+          )}
+          {pastaSelecionada?.tipo === 'departamento' && (
+            <div className="flex items-center gap-2 px-3 py-2 bg-teal-50 border border-teal-200 rounded-xl">
+              <Building2 size={13} className="text-teal-600 shrink-0" />
+              <p className="text-xs text-teal-700 font-semibold">
+                Documento de departamento — visível a todos do setor.
+              </p>
+            </div>
+          )}
+          {pastaSelecionada?.tipo === 'pessoal' && (
+            <div className="flex items-center gap-2 px-3 py-2 bg-indigo-50 border border-indigo-200 rounded-xl">
+              <Lock size={13} className="text-indigo-600 shrink-0" />
+              <p className="text-xs text-indigo-700 font-semibold">
+                Documento pessoal — visível apenas a você.
+              </p>
             </div>
           )}
           <div>

@@ -350,72 +350,74 @@ export default function Analytics({
       {/* TAB 1: VISÃO GERAL */}
       {activeTab === 'geral' && (
         <div className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            {/* Evolução Mensal */}
-            <div className="lg:col-span-8 bg-white border border-slate-100 p-6 rounded-3xl shadow-sm space-y-4">
-              <div className="flex items-center gap-2">
-                <Calendar size={18} className="text-indigo-500" />
-                <h3 className="font-extrabold text-slate-950 text-sm uppercase tracking-wider">Evolução Mensal de Ações de Liderança</h3>
-              </div>
-              <div className="h-72 w-full text-xs">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={dadosEvolucaoMensal} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="colorFeedbacks" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#0d9488" stopOpacity={0.2} />
-                        <stop offset="95%" stopColor="#0d9488" stopOpacity={0} />
-                      </linearGradient>
-                      <linearGradient id="colorPDIs" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#6366f1" stopOpacity={0.2} />
-                        <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                    <XAxis dataKey="mes" tickLine={false} tick={{ fontSize: 10 }} />
-                    <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 10 }} />
-                    <Tooltip />
-                    <Legend />
-                    <Area type="monotone" dataKey="Feedbacks" stroke="#0d9488" fillOpacity={1} fill="url(#colorFeedbacks)" strokeWidth={2.5} />
-                    <Area type="monotone" dataKey="PDIs" stroke="#6366f1" fillOpacity={1} fill="url(#colorPDIs)" strokeWidth={2.5} />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
+
+          {/* Evolução Mensal — largura total */}
+          <div className="bg-white border border-slate-100 p-6 rounded-3xl shadow-sm space-y-4">
+            <div className="flex items-center gap-2">
+              <Calendar size={18} className="text-indigo-500" />
+              <h3 className="font-extrabold text-slate-950 text-sm uppercase tracking-wider">Evolução Mensal de Ações de Liderança</h3>
             </div>
+            <div className="h-72 w-full text-xs">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={dadosEvolucaoMensal} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="colorFeedbacks" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#0d9488" stopOpacity={0.2} />
+                      <stop offset="95%" stopColor="#0d9488" stopOpacity={0} />
+                    </linearGradient>
+                    <linearGradient id="colorPDIs" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#6366f1" stopOpacity={0.2} />
+                      <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  <XAxis dataKey="mes" tickLine={false} tick={{ fontSize: 10 }} />
+                  <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 10 }} />
+                  <Tooltip />
+                  <Legend />
+                  <Area type="monotone" dataKey="Feedbacks" stroke="#0d9488" fillOpacity={1} fill="url(#colorFeedbacks)" strokeWidth={2.5} />
+                  <Area type="monotone" dataKey="PDIs" stroke="#6366f1" fillOpacity={1} fill="url(#colorPDIs)" strokeWidth={2.5} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
 
-            {/* Mix de Registros — INTERATIVO */}
-            <div className="lg:col-span-4 bg-white border border-slate-100 p-6 rounded-3xl shadow-sm space-y-4 flex flex-col">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <PieChartIcon size={18} className="text-teal-500" />
-                  <h3 className="font-extrabold text-slate-950 text-sm uppercase tracking-wider">Mix de Registros (%)</h3>
-                </div>
-                {tipoSelecionado && (
-                  <button
-                    onClick={() => { setTipoSelecionado(null); setDrillAberto(false); }}
-                    className="text-[10px] text-slate-400 hover:text-slate-600 transition"
-                  >
-                    ✕ Limpar
-                  </button>
-                )}
+          {/* Mix de Registros — bloco próprio, largura total, donut grande */}
+          <div className="bg-white border border-slate-100 p-6 rounded-3xl shadow-sm">
+            {/* Header */}
+            <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center gap-2">
+                <PieChartIcon size={18} className="text-teal-500" />
+                <h3 className="font-extrabold text-slate-950 text-sm uppercase tracking-wider">Mix de Registros (%)</h3>
               </div>
+              {tipoSelecionado && (
+                <button
+                  onClick={() => { setTipoSelecionado(null); setDrillAberto(false); }}
+                  className="text-xs text-slate-400 hover:text-slate-600 transition px-2 py-1 hover:bg-slate-100 rounded-lg"
+                >
+                  ✕ Limpar seleção
+                </button>
+              )}
+            </div>
+            <p className="text-[11px] text-slate-400 mb-5">
+              Clique em uma fatia ou item da legenda para ver os detalhes dos registros ↓
+            </p>
 
-              <p className="text-[10px] text-slate-400 -mt-2">
-                Clique em uma fatia para ver os detalhes dos registros ↓
-              </p>
-
-              <div className="h-52 w-full text-xs flex-1 flex items-center justify-center relative">
-                {dadosDistribuicao.length === 0 ? (
-                  <p className="text-slate-400 text-center">Aguardando dados...</p>
-                ) : (
+            {dadosDistribuicao.length === 0 ? (
+              <p className="text-slate-400 text-center py-8">Aguardando dados...</p>
+            ) : (
+              <div className="flex flex-col md:flex-row items-center gap-6">
+                {/* Donut — ocupa metade esquerda */}
+                <div className="w-full md:w-1/2 shrink-0" style={{ height: 320 }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie
                         data={dadosDistribuicao}
                         cx="50%"
                         cy="50%"
-                        innerRadius={50}
-                        outerRadius={75}
-                        paddingAngle={4}
+                        innerRadius={80}
+                        outerRadius={130}
+                        paddingAngle={3}
                         dataKey="value"
                         onClick={handleFatiaClick}
                         cursor="pointer"
@@ -424,38 +426,56 @@ export default function Analytics({
                           <Cell
                             key={`cell-${index}`}
                             fill={corParaTipo(entry.name, index)}
-                            opacity={tipoSelecionado && tipoSelecionado !== entry.name ? 0.35 : 1}
+                            opacity={tipoSelecionado && tipoSelecionado !== entry.name ? 0.3 : 1}
                             stroke={tipoSelecionado === entry.name ? '#1e293b' : 'transparent'}
-                            strokeWidth={tipoSelecionado === entry.name ? 2 : 0}
+                            strokeWidth={tipoSelecionado === entry.name ? 3 : 0}
                           />
                         ))}
                       </Pie>
                       <Tooltip />
                     </PieChart>
                   </ResponsiveContainer>
-                )}
-              </div>
+                </div>
 
-              {/* Legenda clicável */}
-              <div className="grid grid-cols-1 gap-1 text-[10px] text-slate-500 mt-1 border-t border-slate-50 pt-3 max-h-36 overflow-y-auto">
-                {dadosDistribuicao.map((item, index) => (
-                  <button
-                    key={item.name}
-                    onClick={() => handleFatiaClick(item)}
-                    className={`flex items-center gap-1.5 min-w-0 text-left rounded-lg px-1.5 py-1 transition hover:bg-slate-50 ${
-                      tipoSelecionado === item.name ? 'bg-slate-100 font-bold text-slate-800' : ''
-                    }`}
-                  >
-                    <span
-                      className="w-2.5 h-2.5 rounded-full shrink-0"
-                      style={{ backgroundColor: corParaTipo(item.name, index) }}
-                    />
-                    <span className="truncate flex-1">{item.name}</span>
-                    <span className="font-bold shrink-0 ml-1">({item.value})</span>
-                  </button>
-                ))}
+                {/* Legenda clicável — metade direita, duas colunas */}
+                <div className="w-full md:w-1/2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {dadosDistribuicao.map((item, index) => {
+                    const total = dadosDistribuicao.reduce((s, d) => s + d.value, 0);
+                    const pct = total > 0 ? Math.round((item.value / total) * 100) : 0;
+                    const selecionado = tipoSelecionado === item.name;
+                    return (
+                      <button
+                        key={item.name}
+                        onClick={() => handleFatiaClick(item)}
+                        className={`flex items-center gap-2.5 text-left rounded-xl px-3 py-2.5 border transition ${
+                          selecionado
+                            ? 'border-slate-300 bg-slate-100 shadow-sm'
+                            : 'border-slate-100 hover:border-slate-200 hover:bg-slate-50'
+                        }`}
+                      >
+                        <span
+                          className="w-3 h-3 rounded-full shrink-0"
+                          style={{ backgroundColor: corParaTipo(item.name, index) }}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className={`text-xs font-semibold truncate ${selecionado ? 'text-slate-900' : 'text-slate-600'}`}>
+                            {item.name}
+                          </p>
+                          <p className="text-[10px] text-slate-400 font-mono">
+                            {item.value} registros · {pct}%
+                          </p>
+                        </div>
+                        {selecionado && (
+                          <span className="text-[9px] font-bold bg-slate-800 text-white px-1.5 py-0.5 rounded-full shrink-0">
+                            ✓
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
           {/* ── PAINEL DE DRILL-DOWN ── */}

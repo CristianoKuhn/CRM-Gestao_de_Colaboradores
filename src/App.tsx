@@ -771,8 +771,13 @@ export default function App() {
 
   // P3: Handlers de Documentos
   const handleAddDocumento = async (doc: Documento) => {
-    await DataService.saveDocumento(doc);
-    loadAllData();
+    // Adiciona imediatamente ao estado local para aparecer na UI sem delay
+    setDocumentos(prev => {
+      const existe = prev.find(d => d.id === doc.id);
+      return existe ? prev : [...prev, doc];
+    });
+    // Persiste no banco em background — não bloqueia a UI
+    DataService.saveDocumento(doc).catch(e => console.error('Erro ao salvar documento:', e));
   };
 
   const handleDeleteDocumento = async (id: string) => {

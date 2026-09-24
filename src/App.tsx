@@ -257,13 +257,14 @@ export default function App() {
         DataService.getUsuarios(),             // 7 — exige Administrador; pode retornar [] se sessão ainda não validada
         DataService.getAvaliacoesExperiencia(), // 8
         DataService.getDocumentos(),           // 9
-        DataService.getReconhecimentos(),      // 10
-        DataService.getConfiguracaoReconhecimento(), // 11
-        DataService.getMetasLideranca(),       // 12
-        DataService.getMetasSetor(),           // 13
-        DataService.getAcompanhamentos(),      // 14
-        DataService.getAlertasInteligentes(),  // 15
-        DataService.getConfiguracaoAlertas(),  // 16
+        DataService.getPastas(),               // 10
+        DataService.getReconhecimentos(),      // 11
+        DataService.getConfiguracaoReconhecimento(), // 12
+        DataService.getMetasLideranca(),       // 13
+        DataService.getMetasSetor(),           // 14
+        DataService.getAcompanhamentos(),      // 15
+        DataService.getAlertasInteligentes(),  // 16
+        DataService.getConfiguracaoAlertas(),  // 17
       ]);
 
       const ok = <T,>(r: PromiseSettledResult<T>, fallback: T): T =>
@@ -279,13 +280,14 @@ export default function App() {
       const usuariosData    = ok(resultados[7], [] as any[]);
       const avaliacoesExpData = ok(resultados[8], [] as any[]);
       const docsData        = ok(resultados[9], [] as any[]);
-      const recsData        = ok(resultados[10], [] as any[]);
-      const configRecData   = ok(resultados[11], null as any);
-      const metasLidData    = ok(resultados[12], [] as any[]);
-      const metasSetData    = ok(resultados[13], [] as any[]);
-      const acompData       = ok(resultados[14], [] as any[]);
-      const alertasData     = ok(resultados[15], [] as any[]);
-      const configAlertasData = ok(resultados[16], null as any);
+      const pastasData      = ok(resultados[10], [] as any[]);
+      const recsData        = ok(resultados[11], [] as any[]);
+      const configRecData   = ok(resultados[12], null as any);
+      const metasLidData    = ok(resultados[13], [] as any[]);
+      const metasSetData    = ok(resultados[14], [] as any[]);
+      const acompData       = ok(resultados[15], [] as any[]);
+      const alertasData     = ok(resultados[16], [] as any[]);
+      const configAlertasData = ok(resultados[17], null as any);
 
       setColaboradores(cols);
       setTimeline(timelineData);
@@ -297,11 +299,14 @@ export default function App() {
       setUsuarios(usuariosData);
       setAvaliacoesExperiencia(avaliacoesExpData);
 
-      // P3: Documentos
+      // P3: Documentos e Pastas
       setDocumentos(docsData);
+      setPastas(pastasData);
 
       // P4: Reconhecimento
       setReconhecimentos(recsData);
+      const configRecDefined = configRecData;
+      if (configRecDefined) setConfigReconhecimento(configRecDefined);
       // Alertas e config — antes eram ignorados por falta de desestruturação
       if (alertasData && alertasData.length !== undefined) setAlertas(alertasData);
       if (configAlertasData) setConfigAlertas(configAlertasData);
@@ -332,17 +337,13 @@ export default function App() {
         if (grausRes.status === 'fulfilled') setGraus(grausRes.value as GrauDominio[]);
         if (gruposMetaRes && gruposMetaRes.status === 'fulfilled') setGruposMeta(gruposMetaRes.value as GrupoMeta[]);
       }).catch(() => {/* dados de desenvolvimento não disponíveis — UI fica funcional com arrays vazios */});
-      setConfigReconhecimento(configRecData);
 
       // P5: Metas
       setMetasLideranca(metasLidData);
       setMetasSetor(metasSetData);
       setAcompanhamentos(acompData);
 
-      // Sistema de Notificações
-      setAlertas(await DataService.getAlertasInteligentes());
-      setConfigAlertas(await DataService.getConfiguracaoAlertas());
-      
+      // Alertas e config já aplicados acima (indices 16/17)
       setSupabaseConfig(StorageAPI.getSupabaseConfig());
       setGoogleScriptConfig(StorageAPI.getGoogleScriptConfig());
       setActiveProvider(StorageAPI.getDataSourceProvider());
@@ -1309,7 +1310,13 @@ export default function App() {
               setores={setores}
               currentUser={currentUser || undefined}
               pastas={pastas}
-              onAddPasta={(pasta) => setPastas(prev => [...prev, pasta])}
+              onAddPasta={async (pasta) => {
+                await DataService.savePasta(pasta);
+                setPastas(prev => {
+                  const existe = prev.find(p => p.id === pasta.id);
+                  return existe ? prev.map(p => p.id === pasta.id ? pasta : p) : [...prev, pasta];
+                });
+              }}
               onAddDocumento={handleAddDocumento}
               onDeleteDocumento={handleDeleteDocumento}
               onUpdateDocumento={async (doc) => { await DataService.saveDocumento(doc); setDocumentos(prev => prev.map(d => d.id === doc.id ? doc : d)); }}

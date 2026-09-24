@@ -1216,6 +1216,7 @@ export default function App() {
                 reconhecimentos={reconhecimentos}
                 alertas={alertasVisiveis}
                 setores={setoresVisiveis}
+                lideres={lideres}
                 onNavigateToList={handleNavigateFromDashboard}
                 onSelectColaborador={handleSelectColaborador}
                 onOpenNewRegistroModal={handleQuickFeedbackTrigger}
@@ -1306,6 +1307,7 @@ export default function App() {
               timeline={timelineVisivel}
               setores={setoresVisiveis}
               tarefas={tarefasVisiveis}
+              lideres={lideres}
             />
           )}
 

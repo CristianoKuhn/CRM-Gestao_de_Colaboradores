@@ -26,6 +26,7 @@
 // automaticamente em background.
 
 import { GoogleGenAI, ThinkingLevel } from '@google/genai';
+import { callGeminiWithRetry, isTransientError } from './_gemini';
 
 // ── Tipos de entrada ─────────────────────────────────────────────────────────
 
@@ -204,14 +205,17 @@ ${listaRegistros}
 
 Analise os registros acima, mapeie competências identificadas, padrões de comportamento e recomendações de treinamento. Retorne APENAS o JSON estruturado conforme as instruções.`;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.6-flash',
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      config: {
-        systemInstruction: SYSTEM_INSTRUCTION,
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
-      },
-    });
+    const response = await callGeminiWithRetry(() =>
+      ai.models.generateContent({
+        model: 'gemini-3.6-flash',
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        config: {
+          systemInstruction: SYSTEM_INSTRUCTION,
+          thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+        },
+      }),
+      '[api/analise-colaborador]',
+    );
 
     const textoResposta = response.text || '';
 
@@ -244,9 +248,12 @@ Analise os registros acima, mapeie competências identificadas, padrões de comp
     return res.status(200).json({ success: true, resultado });
   } catch (error: any) {
     console.error('[api/analise-colaborador] Erro:', error);
-    return res.status(500).json({
+    const transitorio = isTransientError(error);
+    return res.status(transitorio ? 503 : 500).json({
       success: false,
-      message: error?.message || 'Erro ao analisar o colaborador. Tente novamente em instantes.',
+      message: transitorio
+        ? 'A IA está com alta demanda no momento. Aguarde alguns segundos e tente novamente.'
+        : (error?.message || 'Erro ao analisar o colaborador. Tente novamente em instantes.'),
     });
   }
 }

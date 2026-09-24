@@ -179,22 +179,33 @@ function calcularElegibilidadeFerias(dataAdmissao: string | undefined): { elegiv
   };
 }
 
-function calcularPrazoMaximoFerias(dataAdmissao: string | undefined): { data: string; diasRestantes: number } {
-  if (!dataAdmissao) return { data: '', diasRestantes: 0 };
-  
-  const admissao = new Date(dataAdmissao);
-  if (isNaN(admissao.getTime())) return { data: '', diasRestantes: 0 };
-  
-  const prazoMaximo = new Date(admissao);
-  prazoMaximo.setDate(prazoMaximo.getDate() + 730); // 2 anos para gozar
-  
-  const diffMs = prazoMaximo.getTime() - HOJE.getTime();
-  const diasRestantes = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
-  
-  return {
-    data: prazoMaximo.toISOString().split('T')[0],
-    diasRestantes,
-  };
+function calcularPrazoMaximoFerias(
+  _dataAdmissao: string | undefined,
+  periodosAquisitivos?: PeriodoAquisitivo[],
+  colaboradorId?: string,
+  prazoConcessivoMeses = 12,
+): { data: string; diasRestantes: number } {
+  // Prazo correto: fim do período aquisitivo ATIVO + prazoConcessivoMeses (CLT = 12)
+  // Fallback: se não há períodos, não há prazo calculável
+  if (periodosAquisitivos && colaboradorId) {
+    const hoje = HOJE;
+    // Buscar período com dias disponíveis não zerados (ativo ou vencido mas com saldo)
+    const periodoComSaldo = periodosAquisitivos
+      .filter(p => p.colaboradorId === colaboradorId && (p.diasDisponiveis - p.diasUsados) > 0)
+      .sort((a, b) => new Date(a.dataFim).getTime() - new Date(b.dataFim).getTime())[0];
+    if (periodoComSaldo?.dataFim) {
+      const fimAquisitivo = new Date(periodoComSaldo.dataFim.includes('T')
+        ? periodoComSaldo.dataFim
+        : periodoComSaldo.dataFim + 'T12:00:00');
+      const limiteGozo = new Date(fimAquisitivo);
+      limiteGozo.setMonth(limiteGozo.getMonth() + prazoConcessivoMeses);
+      const diffMs = limiteGozo.getTime() - hoje.getTime();
+      const diasRestantes = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+      return { data: limiteGozo.toISOString().split('T')[0], diasRestantes };
+    }
+  }
+  // Sem períodos aquisitivos carregados — não exibir prazo enganoso
+  return { data: '', diasRestantes: 0 };
 }
 
 function getMesesDoAno(): string[] {
@@ -652,41 +663,66 @@ export default function GestaoPessoas({
       }
     });
     
-    // Verificar conflitos de férias no mesmo setor
-    const feriasPlanejadas = ferias.filter(f => f.status === 'planejada');
-    const colaboradoresPorSetor: Record<string, Ferias[]> = {};
+    // Detectar conflitos de férias no mesmo setor usando sobreposição REAL de intervalos
+    // Regras:
+    //  1. Só considera férias cujo início está no ANO ATUAL ou ANO ATUAL+1
+    //  2. Sobreposição real: intervalos se sobrepõem quando A.inicio <= B.fim E A.fim >= B.inicio
+    //  3. Alerta apenas quando há ≥2 colaboradores simultaneamente ausentes no mesmo setor
+    //     (não basta estar no mesmo mês — precisam se sobrepor de fato)
+    const anoAtualConflito = new Date().getFullYear();
+    const feriasPlanejadas = ferias.filter(f =>
+      (f.status === 'planejada' || f.status === 'em_gozo') &&
+      new Date(f.dataInicio).getFullYear() >= anoAtualConflito &&
+      new Date(f.dataInicio).getFullYear() <= anoAtualConflito + 1
+    );
+
+    // Agrupar por setor
+    const feriasPorSetor: Record<string, Array<{ colNome: string; ini: Date; fim: Date }>> = {};
     feriasPlanejadas.forEach(f => {
       const col = colaboradores.find(c => c.id === f.colaboradorId);
-      if (col) {
-        if (!colaboradoresPorSetor[col.setorId]) {
-          colaboradoresPorSetor[col.setorId] = [];
-        }
-        colaboradoresPorSetor[col.setorId].push(f);
-      }
+      if (!col || col.situacao === 'Desligado') return;
+      const ini = new Date(f.dataInicio.includes('T') ? f.dataInicio : f.dataInicio + 'T12:00:00');
+      const fim = new Date(f.dataFim.includes('T') ? f.dataFim : f.dataFim + 'T12:00:00');
+      if (isNaN(ini.getTime()) || isNaN(fim.getTime())) return;
+      if (!feriasPorSetor[col.setorId]) feriasPorSetor[col.setorId] = [];
+      feriasPorSetor[col.setorId].push({ colNome: col.nome, ini, fim });
     });
-    
-    Object.entries(colaboradoresPorSetor).forEach(([setorId, listaFerias]) => {
-      if (listaFerias.length >= 2) {
-        // Agrupar por mês
-        const porMes: Record<string, number> = {};
-        listaFerias.forEach(f => {
-          const mes = new Date(f.dataInicio).getMonth();
-          porMes[mes] = (porMes[mes] || 0) + 1;
-        });
-        
-        Object.entries(porMes).forEach(([mes, count]) => {
-          if (count >= 2) {
-            const setor = setores.find(s => s.id === setorId);
+
+    Object.entries(feriasPorSetor).forEach(([setorId, listaIntervalos]) => {
+      if (listaIntervalos.length < 2) return;
+      const setor = setores.find(s => s.id === setorId);
+
+      // Para cada par de férias, verificar sobreposição real
+      const conflitosDetectados = new Set<string>();
+      for (let i = 0; i < listaIntervalos.length; i++) {
+        const a = listaIntervalos[i];
+        const simultaneos: typeof listaIntervalos = [a];
+        for (let j = i + 1; j < listaIntervalos.length; j++) {
+          const b = listaIntervalos[j];
+          // Sobreposição real: a.ini <= b.fim E a.fim >= b.ini
+          if (a.ini <= b.fim && a.fim >= b.ini) {
+            simultaneos.push(b);
+          }
+        }
+        if (simultaneos.length >= 2) {
+          // Calcular o período de sobreposição comum
+          const iniSobrep = new Date(Math.max(...simultaneos.map(s => s.ini.getTime())));
+          // Chave única: setor + mês/ano da sobreposição para evitar duplicatas
+          const chave = `${setorId}-${iniSobrep.getFullYear()}-${iniSobrep.getMonth()}`;
+          if (!conflitosDetectados.has(chave)) {
+            conflitosDetectados.add(chave);
+            const mes = getMesesDoAno()[iniSobrep.getMonth()];
+            const ano = iniSobrep.getFullYear();
             listaAlertas.push({
-              id: `conflito-${setorId}-${mes}`,
+              id: `conflito-${chave}`,
               tipo: 'conflito_setor',
-              titulo: `Conflito de férias no setor ${setor?.nome}`,
-              descricao: `${count} colaboradores do setor ${setor?.nome} estão previstos para férias em ${getMesesDoAno()[parseInt(mes)]}`,
+              titulo: `Sobreposição de férias — ${setor?.nome}`,
+              descricao: `${simultaneos.length} colaboradores do setor ${setor?.nome} têm férias simultâneas em ${mes}/${ano}: ${simultaneos.map(s => s.colNome).join(', ')}`,
               setorId,
-              nivel: 'warning',
+              nivel: simultaneos.length >= 3 ? 'urgent' : 'warning',
             });
           }
-        });
+        }
       }
     });
     
@@ -1292,7 +1328,15 @@ export default function GestaoPessoas({
           setor={setores.find(s => s.id === colaboradorDetalhe.setorId)}
           cargo={cargos.find(c => c.id === colaboradorDetalhe.cargoId)}
           periodoAtivo={periodosAquisitivos.find(p => p.colaboradorId === colaboradorDetalhe.id && p.status === 'ativo')}
-          prazoMaximoFerias={calcularPrazoMaximoFerias(colaboradorDetalhe.dataAdmissao)}
+          todosOsPeriodos={periodosAquisitivos.filter(p => p.colaboradorId === colaboradorDetalhe.id)}
+          feriasDoColaborador={ferias.filter(f => f.colaboradorId === colaboradorDetalhe.id)}
+          prazoMaximoFerias={calcularPrazoMaximoFerias(
+            colaboradorDetalhe.dataAdmissao,
+            periodosAquisitivos,
+            colaboradorDetalhe.id,
+            configFerias?.prazoConcessivoMeses ?? 12,
+          )}
+          prazoConcessivoMeses={configFerias?.prazoConcessivoMeses ?? 12}
           sugestoesFerias={gerarSugestoesFerias(
             colaboradorDetalhe,
             (periodosAquisitivos.find(p => p.colaboradorId === colaboradorDetalhe.id && p.status === 'ativo')?.diasDisponiveis || 0) - 
@@ -1318,7 +1362,12 @@ export default function GestaoPessoas({
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
             {colaboradores.filter(c => c.situacao !== 'Desligado').map(col => {
               const tempo = calcularTempoDeEmpresa(col.dataAdmissao);
-              const prazoFerias = calcularPrazoMaximoFerias(col.dataAdmissao);
+              const prazoFerias = calcularPrazoMaximoFerias(
+                col.dataAdmissao,
+                periodosAquisitivos,
+                col.id,
+                configFerias?.prazoConcessivoMeses ?? 12,
+              );
               const periodoAtivo = periodosAquisitivos.find(p => p.colaboradorId === col.id && p.status === 'ativo');
               const diasFerias = periodoAtivo ? periodoAtivo.diasDisponiveis - periodoAtivo.diasUsados : 0;
               const dayoff = dayOffs.find(d => d.colaboradorId === col.id && d.ano === ANO_ATUAL);
@@ -3584,9 +3633,12 @@ interface ColaboradorDetalheCardProps {
   setor?: Setor;
   cargo?: Cargo;
   periodoAtivo?: PeriodoAquisitivo;
+  todosOsPeriodos: PeriodoAquisitivo[];           // todos os períodos do colaborador
+  feriasDoColaborador: Ferias[];                  // férias já planejadas/confirmadas
   prazoMaximoFerias: { data: string; diasRestantes: number };
   sugestoesFerias: SugestaoFerias[];
   dayoff?: DayOff;
+  prazoConcessivoMeses: number;
   onClose: () => void;
   onPlanejarFerias: () => void;
   onVerCompleto: () => void;
@@ -3597,9 +3649,12 @@ function ColaboradorDetalheCard({
   setor,
   cargo,
   periodoAtivo,
+  todosOsPeriodos,
+  feriasDoColaborador,
   prazoMaximoFerias,
   sugestoesFerias,
   dayoff,
+  prazoConcessivoMeses,
   onClose,
   onPlanejarFerias,
   onVerCompleto,
@@ -3608,6 +3663,30 @@ function ColaboradorDetalheCard({
   const diasDisponiveis = periodoAtivo ? periodoAtivo.diasDisponiveis - periodoAtivo.diasUsados : 0;
   const proximoAniv = calcularProximoAniversario(colaborador.dataNascimento);
   const anivEmpresa = calcularProximoAniversarioEmpresa(colaborador.dataAdmissao);
+
+  // Férias futuras planejadas ou em gozo
+  const hoje = new Date();
+  const feriasFuturas = feriasDoColaborador
+    .filter(f => (f.status === 'planejada' || f.status === 'em_gozo') &&
+      new Date(f.dataFim.includes('T') ? f.dataFim : f.dataFim + 'T12:00:00') >= hoje)
+    .sort((a, b) => new Date(a.dataInicio).getTime() - new Date(b.dataInicio).getTime());
+
+  // Próximo prazo limite real entre todos os períodos com saldo
+  const periodosSaldoOrdenados = todosOsPeriodos
+    .filter(p => p.colaboradorId === colaborador.id && (p.diasDisponiveis - p.diasUsados) > 0)
+    .sort((a, b) => new Date(a.dataFim).getTime() - new Date(b.dataFim).getTime());
+  const proximoPeriodoComSaldo = periodosSaldoOrdenados[0];
+
+  const prazoLimiteReal = proximoPeriodoComSaldo?.dataFim
+    ? (() => {
+        const fim = new Date(proximoPeriodoComSaldo.dataFim.includes('T')
+          ? proximoPeriodoComSaldo.dataFim
+          : proximoPeriodoComSaldo.dataFim + 'T12:00:00');
+        fim.setMonth(fim.getMonth() + prazoConcessivoMeses);
+        const diff = Math.ceil((fim.getTime() - hoje.getTime()) / 86400000);
+        return { data: fim.toLocaleDateString('pt-BR'), diasRestantes: diff };
+      })()
+    : prazoMaximoFerias;
   
   return (
     <div className="bg-white rounded-2xl border border-teal-200 shadow-lg p-6">
@@ -3631,13 +3710,16 @@ function ColaboradorDetalheCard({
           <p className="text-[10px] text-emerald-600 font-semibold uppercase">Férias Disponíveis</p>
           <p className="text-xl font-bold text-emerald-700">{diasDisponiveis} dias</p>
         </div>
-        <div className={`p-3 rounded-xl ${prazoMaximoFerias.diasRestantes < 90 ? 'bg-rose-50' : 'bg-amber-50'}`}>
-          <p className={`text-[10px] font-semibold uppercase ${prazoMaximoFerias.diasRestantes < 90 ? 'text-rose-600' : 'text-amber-600'}`}>
+        <div className={`p-3 rounded-xl ${prazoLimiteReal.diasRestantes < 90 ? 'bg-rose-50' : 'bg-amber-50'}`}>
+          <p className={`text-[10px] font-semibold uppercase ${prazoLimiteReal.diasRestantes < 90 ? 'text-rose-600' : 'text-amber-600'}`}>
             Prazo Limite Férias
           </p>
-          <p className={`text-xl font-bold ${prazoMaximoFerias.diasRestantes < 90 ? 'text-rose-700' : 'text-amber-700'}`}>
-            {prazoMaximoFerias.diasRestantes}d
+          <p className={`text-xl font-bold ${prazoLimiteReal.diasRestantes < 90 ? 'text-rose-700' : 'text-amber-700'}`}>
+            {prazoLimiteReal.diasRestantes > 0 ? `${prazoLimiteReal.diasRestantes}d` : '—'}
           </p>
+          {prazoLimiteReal.data && (
+            <p className="text-[9px] text-slate-400 mt-0.5">{prazoLimiteReal.data}</p>
+          )}
         </div>
         <div className="p-3 bg-pink-50 rounded-xl">
           <p className="text-[10px] text-pink-600 font-semibold uppercase">Próximo Aniversário</p>
@@ -3689,6 +3771,40 @@ function ColaboradorDetalheCard({
         </div>
       </div>
       
+      {/* Férias Planejadas */}
+      {feriasFuturas.length > 0 && (
+        <div className="mb-6">
+          <h4 className="text-sm font-bold text-slate-800 mb-3 flex items-center gap-2">
+            <Palmtree size={16} className="text-teal-500" />
+            Férias Planejadas / Em Gozo
+          </h4>
+          <div className="space-y-2">
+            {feriasFuturas.map((f, idx) => {
+              const ini = new Date(f.dataInicio.includes('T') ? f.dataInicio : f.dataInicio + 'T12:00:00');
+              const fim = new Date(f.dataFim.includes('T') ? f.dataFim : f.dataFim + 'T12:00:00');
+              const retorno = new Date(fim);
+              retorno.setDate(retorno.getDate() + 1);
+              return (
+                <div key={idx} className={`p-3 rounded-xl border ${f.status === 'em_gozo' ? 'border-emerald-300 bg-emerald-50' : 'border-teal-200 bg-teal-50/50'}`}>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-xs font-bold text-teal-800">
+                        {ini.toLocaleDateString('pt-BR')} → {fim.toLocaleDateString('pt-BR')}
+                        <span className="ml-2 text-[10px] font-normal text-teal-600">({f.dias} dias)</span>
+                      </p>
+                      <p className="text-[10px] text-slate-500 mt-0.5">Retorno: {retorno.toLocaleDateString('pt-BR')}</p>
+                    </div>
+                    <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full ${f.status === 'em_gozo' ? 'bg-emerald-500 text-white' : 'bg-teal-100 text-teal-700'}`}>
+                      {f.status === 'em_gozo' ? 'Em Gozo' : 'Planejada'}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Sugestões de Férias Otimizadas */}
       <div className="mb-6">
         <h4 className="text-sm font-bold text-slate-800 mb-3 flex items-center gap-2">

@@ -1,5 +1,6 @@
 // api/lisa.ts — Backend da Lisa, assistente do Gestão360
 // Chama a API Gemini diretamente via HTTP REST (sem biblioteca intermediária).
+import { callGeminiWithRetry, isTransientError } from './_gemini';
 
 const TELAS_VALIDAS = [
   'dashboard', 'colaboradores', 'gestao-pessoas', 'usuarios',
@@ -74,28 +75,31 @@ export default async function handler(req: any, res: any) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
 
   try {
-    const geminiRes = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-goog-api-key': apiKey,
-      },
-      body: JSON.stringify({
-        system_instruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
-        contents,
-        generation_config: { temperature: 0.7, max_output_tokens: 512 },
-      }),
-    });
+    const geminiRes = await callGeminiWithRetry(async () => {
+      const r = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': apiKey,
+        },
+        body: JSON.stringify({
+          system_instruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
+          contents,
+          generation_config: { temperature: 0.7, max_output_tokens: 512 },
+        }),
+      });
+      if (!r.ok) {
+        // Lança um objeto com as propriedades que isTransientError reconhece
+        const d = await r.json().catch(() => ({})) as any;
+        const err: any = new Error(d?.error?.message || `HTTP ${r.status}`);
+        err.status = r.status;
+        err.error = d?.error;
+        throw err;
+      }
+      return r;
+    }, '[api/lisa]');
 
     const data = await geminiRes.json() as any;
-
-    if (!geminiRes.ok) {
-      console.error('[api/lisa] Erro Gemini:', JSON.stringify(data));
-      return res.status(500).json({
-        success: false,
-        message: data?.error?.message || 'Erro ao falar com a Lisa.',
-      });
-    }
 
     const textoResposta: string =
       data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
@@ -113,9 +117,12 @@ export default async function handler(req: any, res: any) {
 
   } catch (error: any) {
     console.error('[api/lisa] Erro:', error);
-    return res.status(500).json({
+    const transitorio = isTransientError(error);
+    return res.status(transitorio ? 503 : 500).json({
       success: false,
-      message: error?.message || 'Erro ao falar com a Lisa. Tente novamente.',
+      message: transitorio
+        ? 'Estou com pico de demanda agora. Tente de novo em alguns segundos! 🙂'
+        : (error?.message || 'Erro ao falar com a Lisa. Tente novamente.'),
     });
   }
 }

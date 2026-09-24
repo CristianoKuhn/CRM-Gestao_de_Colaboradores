@@ -17,6 +17,7 @@ import {
   Programa,
   IndicadorDesenvolvimento,
   Ferias,
+  Lider,
 } from '../types';
 import { DataService } from '../services/DataService';
 import { calcularLembretes180, calcularLembretesExperiencia } from '../utils/lembretesAvaliacao';
@@ -45,6 +46,7 @@ interface DashboardExecutivaProps {
   reconhecimentos: Reconhecimento[];
   alertas: AlertaInteligente[];
   setores: Setor[];
+  lideres: Lider[];
   onNavigateToList: (tab: string, filters?: any) => void;
   onSelectColaborador: (id: string) => void;
   onOpenNewRegistroModal: (colaboradorId?: string) => void;
@@ -71,7 +73,7 @@ function mesesEntre(dataInicio: Date, dataFim: Date): number {
 // zero na tela. Dashboard e Analytics não foram removidos: viram abas
 // internas, até confirmar que nada de uso real depende só delas.
 export default function DashboardExecutiva(props: DashboardExecutivaProps) {
-  const { colaboradores, timeline, tarefas, reconhecimentos, alertas, setores, currentUser } = props;
+  const { colaboradores, timeline, tarefas, reconhecimentos, alertas, setores, lideres, currentUser } = props;
 
   const [aba, setAba] = useState<AbaExecutiva>('visao-geral');
   const [carregando, setCarregando] = useState(true);
@@ -516,7 +518,7 @@ export default function DashboardExecutiva(props: DashboardExecutivaProps) {
       )}
 
       {aba === 'analytics' && (
-        <Analytics colaboradores={colaboradores} timeline={timeline} setores={setores} tarefas={tarefas} />
+        <Analytics colaboradores={colaboradores} timeline={timeline} setores={setores} tarefas={tarefas} lideres={lideres} />
       )}
     </div>
   );

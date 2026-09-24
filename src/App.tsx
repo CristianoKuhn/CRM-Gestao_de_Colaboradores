@@ -1020,7 +1020,25 @@ export default function App() {
   // só continua aparecendo para quem tem acesso global.
   const documentosVisiveis = acessoGlobal
     ? documentos
-    : documentos.filter((doc) => idsColaboradoresVisiveis.has(doc.colaboradorId));
+    : documentos.filter((doc) => {
+        // Documentos de colaboradores visíveis
+        if (idsColaboradoresVisiveis.has(doc.colaboradorId)) return true;
+        // Documentos pessoais do próprio usuário
+        if (doc.colaboradorId === 'pessoal' && doc.uploadedPor === currentUser?.id) return true;
+        // Documentos de departamento: visíveis se o sentinel bate com um setor permitido
+        if (doc.colaboradorId?.startsWith('departamento:')) {
+          const setorDoDoc = doc.colaboradorId.replace('departamento:', '');
+          return setoresPermitidos.includes(setorDoDoc);
+        }
+        // Documentos com pastaId: verificar o tipo da pasta
+        if (doc.pastaId) {
+          const pasta = pastas.find(p => p.id === doc.pastaId);
+          if (pasta?.tipo === 'pessoal') return pasta.donoId === currentUser?.id;
+          if (pasta?.tipo === 'departamento') return pasta.setorId ? setoresPermitidos.includes(pasta.setorId) : false;
+          if (pasta?.tipo === 'colaborador') return idsColaboradoresVisiveis.has(pasta.colaboradorId || '');
+        }
+        return false;
+      });
 
   // Contadores dinâmicos para barra lateral
   const tarefasPendentesCount = tarefasVisiveis.filter((t) => !t.concluida).length;

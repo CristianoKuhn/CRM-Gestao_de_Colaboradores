@@ -12,6 +12,7 @@
 // como uma pessoa atualizando um resumo à mão. Reprocessar tudo do zero a
 // cada clique seria o oposto do pedido ("atualiza só o que entrou depois").
 import { GoogleGenAI, ThinkingLevel, Content } from '@google/genai';
+import { callGeminiWithRetry, isTransientError } from './_gemini';
 
 interface EventoParaResumir {
   data: string;
@@ -82,14 +83,17 @@ Gere o resumo atualizado, seguindo exatamente o formato e a tarefa descritos nas
 
     const contents: Content[] = [{ role: 'user', parts: [{ text: prompt }] }];
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.6-flash',
-      contents,
-      config: {
-        systemInstruction: SYSTEM_INSTRUCTION,
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
-      },
-    });
+    const response = await callGeminiWithRetry(() =>
+      ai.models.generateContent({
+        model: 'gemini-3.6-flash',
+        contents,
+        config: {
+          systemInstruction: SYSTEM_INSTRUCTION,
+          thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+        },
+      }),
+      '[api/resumo-timeline]',
+    );
 
     const resumoAtualizado = response.text || resumoAnterior;
 
@@ -99,9 +103,12 @@ Gere o resumo atualizado, seguindo exatamente o formato e a tarefa descritos nas
     });
   } catch (error: any) {
     console.error('[api/resumo-timeline] Erro:', error);
-    return res.status(500).json({
+    const transitorio = isTransientError(error);
+    return res.status(transitorio ? 503 : 500).json({
       success: false,
-      message: error?.message || 'Erro ao atualizar o resumo. Tente novamente em instantes.',
+      message: transitorio
+        ? 'A IA está com alta demanda no momento. Aguarde alguns segundos e tente novamente.'
+        : (error?.message || 'Erro ao atualizar o resumo. Tente novamente em instantes.'),
     });
   }
 }

@@ -21,6 +21,7 @@ import {
   AlertaInteligente,
   ConfiguracaoAlertas,
   Documento,
+  PastaDocumento,
   ResumoLinhaTempo,
   TipoReconhecimento,
   Reconhecimento,
@@ -467,6 +468,10 @@ export interface IDataService {
   getDocumentos(): Promise<Documento[]>;
   saveDocumento(doc: Documento): Promise<void>;
   deleteDocumento(id: string): Promise<void>;
+  // Pastas de documentos
+  getPastas(): Promise<PastaDocumento[]>;
+  savePasta(pasta: PastaDocumento): Promise<void>;
+  deletePasta(id: string): Promise<void>;
 
   // Resumo da Linha do Tempo (IA, incremental) — ver ResumoLinhaTempo em types.ts
   getResumoLinhaTempo(colaboradorId: string): Promise<ResumoLinhaTempo | undefined>;
@@ -944,6 +949,15 @@ export class LocalDataService implements IDataService {
   }
   async deleteDocumento(id: string): Promise<void> {
     StorageAPI.deleteDocumento(id);
+  }
+  async getPastas(): Promise<PastaDocumento[]> {
+    return StorageAPI.getPastas();
+  }
+  async savePasta(pasta: PastaDocumento): Promise<void> {
+    StorageAPI.savePasta(pasta);
+  }
+  async deletePasta(id: string): Promise<void> {
+    StorageAPI.deletePasta(id);
   }
   async getResumoLinhaTempo(colaboradorId: string): Promise<ResumoLinhaTempo | undefined> {
     return StorageAPI.getResumoLinhaTempo(colaboradorId);
@@ -2784,6 +2798,7 @@ export class GoogleScriptDataService implements IDataService {
         uploadedPor: r.uploaded_por,
         dataUpload: r.data_upload,
         descricao: r.descricao || undefined,
+        pastaId: r.pasta_id || undefined,
       }));
     } catch (e) {
       return this.localFallback.getDocumentos();
@@ -2795,6 +2810,7 @@ export class GoogleScriptDataService implements IDataService {
       const body = {
         id: doc.id,
         colaborador_id: doc.colaboradorId,
+        pasta_id: doc.pastaId || '',
         nome: doc.nome,
         categoria: doc.categoria,
         tipo_arquivo: doc.tipoArquivo,
@@ -2816,6 +2832,54 @@ export class GoogleScriptDataService implements IDataService {
       await this.request('deleteDocumento', { id });
     } catch (e) {
       console.warn('Erro ao excluir documento no GoogleScript:', e);
+    }
+  }
+
+  // Pastas de Documentos — persistidas no GAS (fallback local se GAS indisponível)
+  async getPastas(): Promise<PastaDocumento[]> {
+    try {
+      const raw = await this.request<any[]>('getPastas');
+      return (raw || []).map((r) => ({
+        id: r.id,
+        nome: r.nome,
+        tipo: r.tipo,
+        colaboradorId: r.colaborador_id || undefined,
+        donoId: r.dono_id || undefined,
+        setorId: r.setor_id || undefined,
+        criadaEm: r.criada_em,
+        criadaPor: r.criada_por,
+        cor: r.cor || undefined,
+      }));
+    } catch (e) {
+      return this.localFallback.getPastas();
+    }
+  }
+  async savePasta(pasta: PastaDocumento): Promise<void> {
+    await this.localFallback.savePasta(pasta);
+    try {
+      await this.request('savePasta', {
+        data: {
+          id: pasta.id,
+          nome: pasta.nome,
+          tipo: pasta.tipo,
+          colaborador_id: pasta.colaboradorId || '',
+          dono_id: pasta.donoId || '',
+          setor_id: pasta.setorId || '',
+          criada_em: pasta.criadaEm,
+          criada_por: pasta.criadaPor,
+          cor: pasta.cor || '',
+        },
+      });
+    } catch (e) {
+      console.warn('Erro ao salvar pasta no GoogleScript:', e);
+    }
+  }
+  async deletePasta(id: string): Promise<void> {
+    await this.localFallback.deletePasta(id);
+    try {
+      await this.request('deletePasta', { id });
+    } catch (e) {
+      console.warn('Erro ao excluir pasta no GoogleScript:', e);
     }
   }
 
@@ -5171,6 +5235,15 @@ class DynamicDataService implements IDataService {
   }
   async deleteDocumento(id: string): Promise<void> {
     await this.getService().deleteDocumento(id);
+  }
+  async getPastas(): Promise<PastaDocumento[]> {
+    return this.getService().getPastas();
+  }
+  async savePasta(pasta: PastaDocumento): Promise<void> {
+    await this.getService().savePasta(pasta);
+  }
+  async deletePasta(id: string): Promise<void> {
+    await this.getService().deletePasta(id);
   }
   async getResumoLinhaTempo(colaboradorId: string): Promise<ResumoLinhaTempo | undefined> {
     return this.getService().getResumoLinhaTempo(colaboradorId);

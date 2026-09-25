@@ -2,28 +2,17 @@
  * MensagemDoDia.tsx — Balão flutuante com mensagem diária para líderes
  *
  * Animações:
- *  - Float: onda senoidal suave de 6s via keyframes CSS em wrapper externo
- *  - Entrada do balão: slide + scale da posição bottom
- *  - Troca de mensagem: fade+slide out → espera → fade+slide in (3 fases)
- *  - Mudança de cor: crossfade entre dois gradientes sobrepostos
- *
- * Lógica de dias:
- *  - Índice base = dayOfYear % 365 (determinístico, igual para todos no mesmo dia)
- *  - Navegação manual salva índice no localStorage com data
- *  - No dia seguinte reseta para o índice do novo dia
- *  - Fechar: persiste "fechado hoje" no localStorage; reabre no próximo login
+ *  - Float: onda senoidal orgânica em loop infinito (wrapper externo isolado)
+ *  - Entrada do balão: slide-up + scale suave
+ *  - Troca de mensagem: 3 fases — saindo → troca → entrando (fade+slide vertical)
+ *  - Mudança de cor: paleta rotativa de 10 cores vivas; cada navegação avança 1 cor
+ *    usando CSS transition real (não React state batch) via DOM direto
  */
-
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { X, ChevronRight, ChevronLeft, Sparkles } from 'lucide-react';
 
 // ─── Banco de mensagens ────────────────────────────────────────────────────────
-interface Mensagem {
-  id: number;
-  categoria: string;
-  texto: string;
-}
-
+interface Mensagem { id: number; categoria: string; texto: string; }
 const MENSAGENS: Mensagem[] = 
 [
   { id: 1, categoria: "Prioridade", texto: "Como está sua agenda hoje? Escolha o que realmente precisa da sua liderança e avance." },
@@ -393,24 +382,20 @@ const MENSAGENS: Mensagem[] =
   { id: 365, categoria: "Gatilho de liderança", texto: "Nem todo conflito nasce de má intenção. Às vezes nasce de percepções diferentes." }
 ];
 
-// ─── Paleta de 10 cores vivas por categoria ───────────────────────────────────
-// Cada categoria tem: gradiente principal, brilho interno, cor da sombra, badge, ícone
-const CORES: Record<string, {
-  grad1: string; grad2: string; glow: string; shadow: string;
-  badge: string; badgeText: string; icon: string;
-}> = {
-  'Prioridade':           { grad1: '#7c3aed', grad2: '#4c1d95', glow: 'rgba(124,58,237,0.5)',  shadow: 'rgba(124,58,237,0.4)',  badge: 'rgba(255,255,255,0.18)', badgeText: '#e9d5ff', icon: '🎯' },
-  'Pessoas':              { grad1: '#0d9488', grad2: '#065f46', glow: 'rgba(13,148,136,0.5)',  shadow: 'rgba(13,148,136,0.4)',  badge: 'rgba(255,255,255,0.18)', badgeText: '#99f6e4', icon: '🤝' },
-  'Liderança':            { grad1: '#2563eb', grad2: '#1e3a8a', glow: 'rgba(37,99,235,0.5)',   shadow: 'rgba(37,99,235,0.4)',   badge: 'rgba(255,255,255,0.18)', badgeText: '#bfdbfe', icon: '🧭' },
-  'Reflexão':             { grad1: '#475569', grad2: '#1e293b', glow: 'rgba(71,85,105,0.5)',   shadow: 'rgba(71,85,105,0.4)',   badge: 'rgba(255,255,255,0.18)', badgeText: '#e2e8f0', icon: '💭' },
-  'Comunicação':          { grad1: '#0284c7', grad2: '#075985', glow: 'rgba(2,132,199,0.5)',   shadow: 'rgba(2,132,199,0.4)',   badge: 'rgba(255,255,255,0.18)', badgeText: '#bae6fd', icon: '💬' },
-  'Desenvolvimento':      { grad1: '#16a34a', grad2: '#14532d', glow: 'rgba(22,163,74,0.5)',   shadow: 'rgba(22,163,74,0.4)',   badge: 'rgba(255,255,255,0.18)', badgeText: '#bbf7d0', icon: '📈' },
-  'Resultados':           { grad1: '#d97706', grad2: '#92400e', glow: 'rgba(217,119,6,0.5)',   shadow: 'rgba(217,119,6,0.4)',   badge: 'rgba(255,255,255,0.18)', badgeText: '#fde68a', icon: '🏆' },
-  'Equilíbrio':           { grad1: '#e11d48', grad2: '#9f1239', glow: 'rgba(225,29,72,0.5)',   shadow: 'rgba(225,29,72,0.4)',   badge: 'rgba(255,255,255,0.18)', badgeText: '#fecdd3', icon: '⚖️'  },
-  'Cultura':              { grad1: '#c026d3', grad2: '#701a75', glow: 'rgba(192,38,211,0.5)',  shadow: 'rgba(192,38,211,0.4)',  badge: 'rgba(255,255,255,0.18)', badgeText: '#f5d0fe', icon: '🌱' },
-  'Gatilho de liderança': { grad1: '#ea580c', grad2: '#7c2d12', glow: 'rgba(234,88,12,0.5)',   shadow: 'rgba(234,88,12,0.4)',   badge: 'rgba(255,255,255,0.18)', badgeText: '#fed7aa', icon: '⚡' },
-};
-const COR_FALLBACK = CORES['Liderança'];
+// ─── Paleta rotativa de 10 cores vivas ────────────────────────────────────────
+// Independente da categoria — muda a cada navegação garantindo variedade visual
+const PALETA = [
+  { grad: 'linear-gradient(135deg, #6d28d9, #4c1d95)', sombra: '0 20px 48px -8px rgba(109,40,217,0.55)', icone: '💜' },  // violeta
+  { grad: 'linear-gradient(135deg, #0891b2, #164e63)', sombra: '0 20px 48px -8px rgba(8,145,178,0.55)',  icone: '💙' },  // ciano
+  { grad: 'linear-gradient(135deg, #dc2626, #7f1d1d)', sombra: '0 20px 48px -8px rgba(220,38,38,0.55)',  icone: '❤️'  },  // vermelho
+  { grad: 'linear-gradient(135deg, #059669, #064e3b)', sombra: '0 20px 48px -8px rgba(5,150,105,0.55)',  icone: '💚' },  // verde
+  { grad: 'linear-gradient(135deg, #d97706, #78350f)', sombra: '0 20px 48px -8px rgba(217,119,6,0.55)',  icone: '🧡' },  // âmbar
+  { grad: 'linear-gradient(135deg, #db2777, #831843)', sombra: '0 20px 48px -8px rgba(219,39,119,0.55)', icone: '🩷' },  // rosa
+  { grad: 'linear-gradient(135deg, #2563eb, #1e3a8a)', sombra: '0 20px 48px -8px rgba(37,99,235,0.55)',  icone: '💙' },  // azul
+  { grad: 'linear-gradient(135deg, #0d9488, #134e4a)', sombra: '0 20px 48px -8px rgba(13,148,136,0.55)', icone: '💚' },  // teal
+  { grad: 'linear-gradient(135deg, #9333ea, #581c87)', sombra: '0 20px 48px -8px rgba(147,51,234,0.55)', icone: '💜' },  // roxo
+  { grad: 'linear-gradient(135deg, #ea580c, #7c2d12)', sombra: '0 20px 48px -8px rgba(234,88,12,0.55)',  icone: '🧡' },  // laranja
+];
 
 // ─── Helpers de data ──────────────────────────────────────────────────────────
 function getDayOfYear(date: Date): number {
@@ -422,62 +407,65 @@ function getDataHoje(): string {
   return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
 }
 
-// ─── Chaves do localStorage ───────────────────────────────────────────────────
+// ─── localStorage ─────────────────────────────────────────────────────────────
 const LS_DATA       = 'gestao360_msg_data';
 const LS_IDX_MANUAL = 'gestao360_msg_idx';
+const LS_COR_IDX    = 'gestao360_msg_cor';
 const LS_FECHADO    = 'gestao360_msg_fechado';
 
 function getIndiceBase(): number {
   return getDayOfYear(new Date()) % MENSAGENS.length;
 }
-
-function lerEstado(): { indice: number; fechado: boolean } {
+function lerEstado(): { indice: number; corIdx: number; fechado: boolean } {
   try {
     const dataStorage = localStorage.getItem(LS_DATA);
     const hoje = getDataHoje();
     if (dataStorage !== hoje) {
       localStorage.setItem(LS_DATA, hoje);
       localStorage.removeItem(LS_IDX_MANUAL);
+      localStorage.removeItem(LS_COR_IDX);
       localStorage.removeItem(LS_FECHADO);
-      return { indice: getIndiceBase(), fechado: false };
+      return { indice: getIndiceBase(), corIdx: getIndiceBase() % PALETA.length, fechado: false };
     }
     const idxManual = localStorage.getItem(LS_IDX_MANUAL);
-    const indice = idxManual !== null ? parseInt(idxManual) : getIndiceBase();
-    const fechado = localStorage.getItem(LS_FECHADO) === 'true';
-    return { indice, fechado };
+    const corIdx    = localStorage.getItem(LS_COR_IDX);
+    return {
+      indice:  idxManual ? parseInt(idxManual) : getIndiceBase(),
+      corIdx:  corIdx    ? parseInt(corIdx)    : getIndiceBase() % PALETA.length,
+      fechado: localStorage.getItem(LS_FECHADO) === 'true',
+    };
   } catch {
-    return { indice: getIndiceBase(), fechado: false };
+    return { indice: getIndiceBase(), corIdx: 0, fechado: false };
   }
 }
 
-// Tipo da fase da animação de troca de mensagem
-type FaseTransicao = 'idle' | 'saindo' | 'entrando';
+type Fase = 'idle' | 'saindo' | 'entrando';
 
 // ─── Componente ───────────────────────────────────────────────────────────────
-interface MensagemDoDiaProps {
-  userId?: string;
-}
+interface MensagemDoDiaProps { userId?: string; }
 
 export default function MensagemDoDia({ userId }: MensagemDoDiaProps) {
-  const [aberto, setAberto]     = useState(false);
-  const [visivel, setVisivel]   = useState(false);   // controla opacidade do balão inteiro
-  const [indice, setIndice]     = useState(getIndiceBase);
-  const [fase, setFase]         = useState<FaseTransicao>('idle');
+  const [aberto,  setAberto]  = useState(false);
+  const [visivel, setVisivel] = useState(false);
+  const [indice,  setIndice]  = useState(getIndiceBase);
+  const [corIdx,  setCorIdx]  = useState(() => getIndiceBase() % PALETA.length);
+  const [fase,    setFase]    = useState<Fase>('idle');
 
-  // Crossfade de cor: mantemos a cor atual visível enquanto a nova "entra"
-  const [corAtual, setCorAtual]   = useState(() => CORES[MENSAGENS[getIndiceBase()]?.categoria] ?? COR_FALLBACK);
-  const [corAlvo, setCorAlvo]     = useState(() => CORES[MENSAGENS[getIndiceBase()]?.categoria] ?? COR_FALLBACK);
-  const [corFade, setCorFade]     = useState(0);     // 0 = cor atual, 1 = cor alvo
-
+  // Ref para a div do gradiente — manipulação direta do DOM para o crossfade
+  // (evita o problema do React batching que impede ver a transição opacity 0→1)
+  const gradRefAtual = useRef<HTMLDivElement>(null);
+  const gradRefAlvo  = useRef<HTMLDivElement>(null);
   const navegandoRef = useRef(false);
+  const corIdxRef    = useRef(corIdx); // ref síncrono para usar dentro de callbacks
 
-  // Montagem: restaurar estado
+  useEffect(() => { corIdxRef.current = corIdx; }, [corIdx]);
+
+  // Montagem
   useEffect(() => {
     const estado = lerEstado();
     setIndice(estado.indice);
-    const cor = CORES[MENSAGENS[estado.indice]?.categoria] ?? COR_FALLBACK;
-    setCorAtual(cor);
-    setCorAlvo(cor);
+    setCorIdx(estado.corIdx);
+    corIdxRef.current = estado.corIdx;
     if (!estado.fechado) {
       setTimeout(() => {
         setAberto(true);
@@ -488,6 +476,7 @@ export default function MensagemDoDia({ userId }: MensagemDoDiaProps) {
   }, [userId]);
 
   const mensagem = MENSAGENS[indice] ?? MENSAGENS[0];
+  const cor      = PALETA[corIdx] ?? PALETA[0];
 
   const fechar = useCallback(() => {
     setVisivel(false);
@@ -499,43 +488,61 @@ export default function MensagemDoDia({ userId }: MensagemDoDiaProps) {
     if (navegandoRef.current) return;
     navegandoRef.current = true;
 
-    // Fase 1: SAINDO — texto sai com fade+slide
+    // ── Fase 1: texto SAI (300ms) ──────────────────────────────────────────────
     setFase('saindo');
 
     setTimeout(() => {
-      // Fase 2: atualizar mensagem e iniciar crossfade de cor
+      // ── Fase 2: atualizar índice, categoria e COR ──────────────────────────
       setIndice(prev => {
         const novoIdx = (prev + dir + MENSAGENS.length) % MENSAGENS.length;
         try { localStorage.setItem(LS_IDX_MANUAL, String(novoIdx)); } catch { /* ok */ }
-
-        // Calcular nova cor e iniciar crossfade
-        const novaCor = CORES[MENSAGENS[novoIdx]?.categoria] ?? COR_FALLBACK;
-        setCorAlvo(novaCor);
-        // Animar crossfade: de 0 → 1 em 600ms
-        setCorFade(0);
-        requestAnimationFrame(() => requestAnimationFrame(() => setCorFade(1)));
-
         return novoIdx;
       });
 
-      // Fase 3: ENTRANDO — texto entra com fade+slide
-      setFase('entrando');
+      // Avançar paleta de cor — sempre muda, independente da categoria
+      const novoCorIdx = (corIdxRef.current + 1) % PALETA.length;
+      const novaCor = PALETA[novoCorIdx];
 
+      // Crossfade via DOM direto: setar cor alvo → opacity 0 → rAF → opacity 1
+      // Isso contorna o React batch e garante que o browser veja dois frames distintos
+      if (gradRefAlvo.current) {
+        gradRefAlvo.current.style.background = novaCor.grad;
+        gradRefAlvo.current.style.transition = 'none';
+        gradRefAlvo.current.style.opacity = '0';
+
+        // Dois frames para garantir que o browser registrou opacity:0 antes de animar
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            if (gradRefAlvo.current) {
+              gradRefAlvo.current.style.transition = 'opacity 0.65s cubic-bezier(0.4, 0, 0.2, 1)';
+              gradRefAlvo.current.style.opacity = '1';
+            }
+          });
+        });
+      }
+
+      // Atualizar cor atual (sob o alvo) após o crossfade terminar
+      setTimeout(() => {
+        if (gradRefAtual.current) {
+          gradRefAtual.current.style.background = novaCor.grad;
+        }
+        if (gradRefAlvo.current) {
+          gradRefAlvo.current.style.transition = 'none';
+          gradRefAlvo.current.style.opacity = '0';
+        }
+        setCorIdx(novoCorIdx);
+        corIdxRef.current = novoCorIdx;
+        try { localStorage.setItem(LS_COR_IDX, String(novoCorIdx)); } catch { /* ok */ }
+      }, 700);
+
+      // ── Fase 3: texto ENTRA (450ms) ────────────────────────────────────────
+      setFase('entrando');
       setTimeout(() => {
         setFase('idle');
-        // Após crossfade, tornar cor alvo a cor atual
-        setTimeout(() => {
-          setCorAtual(prev => {
-            setCorFade(0);
-            return CORES[MENSAGENS[
-              // Ler o índice atual do localStorage para pegar o valor mais recente
-              (() => { try { const s = localStorage.getItem(LS_IDX_MANUAL); return s ? parseInt(s) : getIndiceBase(); } catch { return getIndiceBase(); } })()
-            ]?.categoria] ?? COR_FALLBACK;
-          });
-        }, 650);
         navegandoRef.current = false;
-      }, 500);
-    }, 320);
+      }, 480);
+
+    }, 310);
   }, []);
 
   if (!aberto) return null;
@@ -543,192 +550,127 @@ export default function MensagemDoDia({ userId }: MensagemDoDiaProps) {
   return (
     <>
       <style>{`
-        /* ── Float: onda senoidal em 3 eixos para parecer vivo ── */
         @keyframes msgFloat {
-          0%   { transform: translateY(0px) rotate(0deg); }
-          20%  { transform: translateY(-7px) rotate(0.4deg); }
-          45%  { transform: translateY(-12px) rotate(-0.2deg); }
-          65%  { transform: translateY(-6px) rotate(0.3deg); }
-          85%  { transform: translateY(-10px) rotate(-0.3deg); }
-          100% { transform: translateY(0px) rotate(0deg); }
+          0%   { transform: translateY(0px)   rotate(0deg);    }
+          22%  { transform: translateY(-9px)  rotate(0.45deg); }
+          48%  { transform: translateY(-14px) rotate(-0.25deg);}
+          70%  { transform: translateY(-7px)  rotate(0.3deg);  }
+          88%  { transform: translateY(-11px) rotate(-0.3deg); }
+          100% { transform: translateY(0px)   rotate(0deg);    }
         }
-
-        /* ── Entrada do balão completo ── */
-        @keyframes msgBalaoBoot {
-          from { opacity: 0; transform: translateY(32px) scale(0.92); }
-          to   { opacity: 1; transform: translateY(0) scale(1); }
+        @keyframes msgEntrada {
+          from { opacity: 0; transform: translateY(36px) scale(0.91); }
+          to   { opacity: 1; transform: translateY(0)    scale(1);    }
         }
-
-        /* ── Saída do texto (para a direita ou esquerda) ── */
         @keyframes msgTextoSai {
-          from { opacity: 1;  transform: translateY(0) scale(1); }
-          to   { opacity: 0;  transform: translateY(-14px) scale(0.96); }
+          from { opacity: 1; transform: translateY(0)    scale(1);    }
+          to   { opacity: 0; transform: translateY(-16px) scale(0.95);}
         }
-
-        /* ── Entrada do texto (vindo de baixo) ── */
         @keyframes msgTextoEntra {
-          from { opacity: 0;  transform: translateY(14px) scale(0.97); }
-          to   { opacity: 1;  transform: translateY(0) scale(1); }
+          from { opacity: 0; transform: translateY(16px) scale(0.96); }
+          to   { opacity: 1; transform: translateY(0)    scale(1);    }
         }
 
-        .msg-wrapper-float {
-          animation: msgFloat 6s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite;
-          will-change: transform;
-        }
-
-        .msg-balao-entrar {
-          animation: msgBalaoBoot 0.55s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-        }
-
-        .msg-texto-saindo {
-          animation: msgTextoSai 0.3s cubic-bezier(0.4, 0, 1, 1) forwards;
-        }
-
-        .msg-texto-entrando {
-          animation: msgTextoEntra 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-        }
+        .msg-float    { animation: msgFloat   6.5s cubic-bezier(0.37,0,0.63,1) infinite; will-change: transform; }
+        .msg-entrada  { animation: msgEntrada 0.6s  cubic-bezier(0.16,1,0.3,1) forwards; }
+        .msg-sai      { animation: msgTextoSai   0.3s  cubic-bezier(0.4,0,1,1)       forwards; }
+        .msg-entra    { animation: msgTextoEntra 0.5s  cubic-bezier(0.16,1,0.3,1)    forwards; }
       `}</style>
 
-      {/* Wrapper de float — separado do wrapper de entrada para não conflitar */}
-      <div
-        className="msg-wrapper-float fixed bottom-24 right-6 z-40 w-80 select-none"
-      >
-        {/* Wrapper de entrada do balão */}
+      {/* Float wrapper — isolado para não conflitar com entrada */}
+      <div className="msg-float fixed bottom-24 right-6 z-40 w-80 select-none">
+
+        {/* Entrada wrapper */}
         <div
-          className={visivel ? 'msg-balao-entrar' : 'opacity-0'}
-          style={{
-            transition: !visivel ? 'opacity 0.4s ease' : undefined,
-          }}
+          className={visivel ? 'msg-entrada' : 'opacity-0'}
+          style={{ transition: !visivel ? 'opacity 0.4s ease' : undefined }}
         >
-          {/* Sombra colorida com crossfade */}
-          <div
-            style={{
-              position: 'absolute',
-              inset: 0,
-              borderRadius: '1.5rem',
-              boxShadow: `0 24px 48px -8px ${corAtual.shadow}`,
-              transition: 'box-shadow 0.6s ease',
-              pointerEvents: 'none',
-              zIndex: -1,
-            }}
-          />
 
-          {/* Gradiente atual (embaixo) */}
-          <div
-            style={{
-              position: 'absolute',
-              inset: 0,
-              borderRadius: '1.5rem',
-              background: `linear-gradient(135deg, ${corAtual.grad1}, ${corAtual.grad2})`,
-              zIndex: 0,
-            }}
-          />
+          {/* Sombra colorida externa */}
+          <div style={{
+            position: 'absolute', inset: '-2px', borderRadius: '1.6rem',
+            boxShadow: cor.sombra,
+            transition: 'box-shadow 0.7s ease',
+            pointerEvents: 'none', zIndex: 0,
+          }} />
 
-          {/* Gradiente alvo (crossfade por cima) */}
+          {/* Gradiente atual (embaixo — base estável) */}
           <div
+            ref={gradRefAtual}
             style={{
-              position: 'absolute',
-              inset: 0,
-              borderRadius: '1.5rem',
-              background: `linear-gradient(135deg, ${corAlvo.grad1}, ${corAlvo.grad2})`,
-              opacity: corFade,
-              transition: 'opacity 0.6s cubic-bezier(0.4, 0, 0.2, 1)',
+              position: 'absolute', inset: 0, borderRadius: '1.5rem',
+              background: cor.grad,
               zIndex: 1,
             }}
           />
 
-          {/* Conteúdo do balão */}
+          {/* Gradiente alvo (por cima — faz o crossfade) */}
           <div
-            className="relative rounded-3xl overflow-hidden"
+            ref={gradRefAlvo}
             style={{
-              border: `1px solid rgba(255,255,255,0.18)`,
+              position: 'absolute', inset: 0, borderRadius: '1.5rem',
+              background: cor.grad,
+              opacity: 0,
               zIndex: 2,
             }}
-          >
-            {/* Brilho interno no topo */}
-            <div
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                right: 0,
-                height: '1px',
-                background: 'rgba(255,255,255,0.35)',
-              }}
-            />
-            <div
-              style={{
-                position: 'absolute',
-                top: '12px',
-                left: '16px',
-                width: '64px',
-                height: '64px',
-                borderRadius: '50%',
-                background: `radial-gradient(circle, ${corAlvo.glow} 0%, transparent 70%)`,
-                opacity: 0.6,
-                pointerEvents: 'none',
-                transition: 'background 0.6s ease',
-              }}
-            />
+          />
+
+          {/* Conteúdo — acima dos gradientes */}
+          <div className="relative rounded-3xl overflow-hidden" style={{ zIndex: 3, border: '1px solid rgba(255,255,255,0.22)' }}>
+
+            {/* Brilho linha topo */}
+            <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '1px', background: 'rgba(255,255,255,0.4)' }} />
+
+            {/* Brilho circular interno */}
+            <div style={{
+              position: 'absolute', top: '8px', left: '12px',
+              width: '80px', height: '80px', borderRadius: '50%',
+              background: 'radial-gradient(circle, rgba(255,255,255,0.15) 0%, transparent 70%)',
+              pointerEvents: 'none',
+            }} />
 
             {/* Header */}
-            <div className="flex items-center justify-between px-4 pt-4 pb-2">
-              <div
-                className="flex items-center gap-2 px-2.5 py-1 rounded-full"
-                style={{ background: corAlvo.badge, transition: 'background 0.6s ease' }}
-              >
-                <span className="text-sm leading-none">{mensagem.categoria === 'Gatilho de liderança' ? '⚡' : (CORES[mensagem.categoria]?.icon ?? '✨')}</span>
-                <span
-                  className="text-[10px] font-bold uppercase tracking-widest"
-                  style={{ color: corAlvo.badgeText, transition: 'color 0.6s ease' }}
-                >
+            <div className="flex items-center justify-between px-4 pt-4 pb-2.5">
+              <div className="flex items-center gap-2 px-2.5 py-1 rounded-full" style={{ background: 'rgba(255,255,255,0.18)' }}>
+                <span className="text-xs leading-none">{CORES_ICONE[mensagem.categoria] ?? '✨'}</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-white/90">
                   {mensagem.categoria}
                 </span>
               </div>
-              <div className="flex items-center gap-1.5">
-                <Sparkles size={12} className="text-white/40" />
-                <span className="text-[10px] text-white/40 font-mono">
-                  {String(indice + 1).padStart(3, '0')}/365
-                </span>
-                <button
-                  onClick={fechar}
-                  className="ml-1 p-1 rounded-full text-white/60 hover:text-white hover:bg-white/15 transition-colors duration-200"
-                  title="Fechar"
-                >
-                  <X size={14} />
+              <div className="flex items-center gap-1">
+                <Sparkles size={11} className="text-white/35" />
+                <span className="text-[10px] text-white/35 font-mono">{String(indice + 1).padStart(3, '0')}/365</span>
+                <button onClick={fechar} className="ml-1 p-1 rounded-full text-white/55 hover:text-white hover:bg-white/15 transition-colors" title="Fechar">
+                  <X size={13} />
                 </button>
               </div>
             </div>
 
-            {/* Área do texto com animação de fase */}
-            <div className="px-4 pb-3 min-h-[80px] flex items-center overflow-hidden">
-              <p
-                className={`text-sm leading-relaxed font-medium text-white ${
-                  fase === 'saindo'   ? 'msg-texto-saindo'   :
-                  fase === 'entrando' ? 'msg-texto-entrando' : ''
-                }`}
-              >
+            {/* Texto com animação de fase */}
+            <div className="px-4 pb-3 min-h-[76px] flex items-center overflow-hidden">
+              <p className={`text-[13px] leading-relaxed font-medium text-white ${
+                fase === 'saindo'   ? 'msg-sai'   :
+                fase === 'entrando' ? 'msg-entra' : ''
+              }`}>
                 {mensagem.texto}
               </p>
             </div>
 
-            {/* Footer: navegação */}
-            <div className="flex items-center justify-between px-4 pb-4 pt-1">
-              <p className="text-[9px] text-white/30 font-medium">Mensagem do Dia · Gestão360</p>
+            {/* Footer */}
+            <div className="flex items-center justify-between px-4 pb-3.5 pt-0.5">
+              <p className="text-[9px] text-white/30">Mensagem do Dia · Gestão360</p>
               <div className="flex items-center gap-0.5">
                 <button
-                  onClick={() => navegar(-1)}
-                  disabled={fase !== 'idle'}
-                  className="p-1.5 rounded-xl text-white/60 hover:text-white hover:bg-white/15 transition-colors duration-200 disabled:opacity-30"
-                  title="Mensagem anterior"
+                  onClick={() => navegar(-1)} disabled={fase !== 'idle'}
+                  className="p-1.5 rounded-xl text-white/55 hover:text-white hover:bg-white/15 transition-colors disabled:opacity-25"
+                  title="Anterior"
                 >
                   <ChevronLeft size={15} />
                 </button>
                 <button
-                  onClick={() => navegar(1)}
-                  disabled={fase !== 'idle'}
-                  className="p-1.5 rounded-xl text-white/70 hover:text-white hover:bg-white/15 transition-colors duration-200 disabled:opacity-30"
-                  title="Próxima mensagem"
+                  onClick={() => navegar(1)} disabled={fase !== 'idle'}
+                  className="p-1.5 rounded-xl text-white/70 hover:text-white hover:bg-white/15 transition-colors disabled:opacity-25"
+                  title="Próxima"
                 >
                   <ChevronRight size={15} />
                 </button>
@@ -741,3 +683,11 @@ export default function MensagemDoDia({ userId }: MensagemDoDiaProps) {
     </>
   );
 }
+
+// Ícones por categoria (separados do crossfade de cor)
+const CORES_ICONE: Record<string, string> = {
+  'Prioridade': '🎯', 'Pessoas': '🤝', 'Liderança': '🧭',
+  'Reflexão': '💭', 'Comunicação': '💬', 'Desenvolvimento': '📈',
+  'Resultados': '🏆', 'Equilíbrio': '⚖️', 'Cultura': '🌱',
+  'Gatilho de liderança': '⚡',
+};

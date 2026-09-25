@@ -1,16 +1,20 @@
 /**
  * MensagemDoDia.tsx — Balão flutuante com mensagem diária para líderes
  *
- * Comportamento:
- *  - Aparece automaticamente a cada login (não a cada refresh)
- *  - Índice do dia = dayOfYear % 365 (determinístico, igual para todos no mesmo dia)
- *  - Navegação manual (seta →) avança a mensagem e muda a cor, salvo no localStorage
- *  - No dia seguinte, reseta para a mensagem do novo dia
- *  - Fechar guarda o estado "fechado hoje" no localStorage
- *  - Animação CSS de flutuação via keyframes — sem dependência externa
+ * Animações:
+ *  - Float: onda senoidal suave de 6s via keyframes CSS em wrapper externo
+ *  - Entrada do balão: slide + scale da posição bottom
+ *  - Troca de mensagem: fade+slide out → espera → fade+slide in (3 fases)
+ *  - Mudança de cor: crossfade entre dois gradientes sobrepostos
+ *
+ * Lógica de dias:
+ *  - Índice base = dayOfYear % 365 (determinístico, igual para todos no mesmo dia)
+ *  - Navegação manual salva índice no localStorage com data
+ *  - No dia seguinte reseta para o índice do novo dia
+ *  - Fechar: persiste "fechado hoje" no localStorage; reabre no próximo login
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { X, ChevronRight, ChevronLeft, Sparkles } from 'lucide-react';
 
 // ─── Banco de mensagens ────────────────────────────────────────────────────────
@@ -20,7 +24,8 @@ interface Mensagem {
   texto: string;
 }
 
-const MENSAGENS: Mensagem[] = [
+const MENSAGENS: Mensagem[] = 
+[
   { id: 1, categoria: "Prioridade", texto: "Como está sua agenda hoje? Escolha o que realmente precisa da sua liderança e avance." },
   { id: 2, categoria: "Prioridade", texto: "Nem tudo é urgente. Antes de começar, pergunte: o que realmente precisa da minha atenção hoje?" },
   { id: 3, categoria: "Prioridade", texto: "Uma agenda cheia não significa um dia produtivo. Reserve espaço para o que gera resultado." },
@@ -388,221 +393,349 @@ const MENSAGENS: Mensagem[] = [
   { id: 365, categoria: "Gatilho de liderança", texto: "Nem todo conflito nasce de má intenção. Às vezes nasce de percepções diferentes." }
 ];
 
-// ─── Paleta por categoria ─────────────────────────────────────────────────────
-const CORES_CATEGORIA: Record<string, {
-  bg: string; border: string; badge: string; badgeText: string; text: string; icon: string;
+// ─── Paleta de 10 cores vivas por categoria ───────────────────────────────────
+// Cada categoria tem: gradiente principal, brilho interno, cor da sombra, badge, ícone
+const CORES: Record<string, {
+  grad1: string; grad2: string; glow: string; shadow: string;
+  badge: string; badgeText: string; icon: string;
 }> = {
-  'Prioridade':           { bg: 'from-violet-600 to-violet-800',   border: 'border-violet-400/40',  badge: 'bg-violet-200/30', badgeText: 'text-violet-100', text: 'text-white', icon: '🎯' },
-  'Pessoas':              { bg: 'from-teal-500 to-teal-700',       border: 'border-teal-300/40',    badge: 'bg-teal-200/30',   badgeText: 'text-teal-100',   text: 'text-white', icon: '🤝' },
-  'Liderança':            { bg: 'from-indigo-600 to-indigo-800',   border: 'border-indigo-400/40',  badge: 'bg-indigo-200/30', badgeText: 'text-indigo-100', text: 'text-white', icon: '🧭' },
-  'Reflexão':             { bg: 'from-slate-600 to-slate-800',     border: 'border-slate-400/40',   badge: 'bg-slate-200/30',  badgeText: 'text-slate-100',  text: 'text-white', icon: '💭' },
-  'Comunicação':          { bg: 'from-sky-500 to-sky-700',         border: 'border-sky-300/40',     badge: 'bg-sky-200/30',    badgeText: 'text-sky-100',    text: 'text-white', icon: '💬' },
-  'Desenvolvimento':      { bg: 'from-emerald-500 to-emerald-700', border: 'border-emerald-300/40', badge: 'bg-emerald-200/30',badgeText: 'text-emerald-100',text: 'text-white', icon: '📈' },
-  'Resultados':           { bg: 'from-amber-500 to-amber-700',     border: 'border-amber-300/40',   badge: 'bg-amber-200/30',  badgeText: 'text-amber-100',  text: 'text-white', icon: '🏆' },
-  'Equilíbrio':           { bg: 'from-rose-500 to-rose-700',       border: 'border-rose-300/40',    badge: 'bg-rose-200/30',   badgeText: 'text-rose-100',   text: 'text-white', icon: '⚖️'  },
-  'Cultura':              { bg: 'from-fuchsia-500 to-fuchsia-700', border: 'border-fuchsia-300/40', badge: 'bg-fuchsia-200/30',badgeText: 'text-fuchsia-100',text: 'text-white', icon: '🌱' },
-  'Gatilho de liderança': { bg: 'from-orange-500 to-orange-700',   border: 'border-orange-300/40',  badge: 'bg-orange-200/30', badgeText: 'text-orange-100', text: 'text-white', icon: '⚡' },
+  'Prioridade':           { grad1: '#7c3aed', grad2: '#4c1d95', glow: 'rgba(124,58,237,0.5)',  shadow: 'rgba(124,58,237,0.4)',  badge: 'rgba(255,255,255,0.18)', badgeText: '#e9d5ff', icon: '🎯' },
+  'Pessoas':              { grad1: '#0d9488', grad2: '#065f46', glow: 'rgba(13,148,136,0.5)',  shadow: 'rgba(13,148,136,0.4)',  badge: 'rgba(255,255,255,0.18)', badgeText: '#99f6e4', icon: '🤝' },
+  'Liderança':            { grad1: '#2563eb', grad2: '#1e3a8a', glow: 'rgba(37,99,235,0.5)',   shadow: 'rgba(37,99,235,0.4)',   badge: 'rgba(255,255,255,0.18)', badgeText: '#bfdbfe', icon: '🧭' },
+  'Reflexão':             { grad1: '#475569', grad2: '#1e293b', glow: 'rgba(71,85,105,0.5)',   shadow: 'rgba(71,85,105,0.4)',   badge: 'rgba(255,255,255,0.18)', badgeText: '#e2e8f0', icon: '💭' },
+  'Comunicação':          { grad1: '#0284c7', grad2: '#075985', glow: 'rgba(2,132,199,0.5)',   shadow: 'rgba(2,132,199,0.4)',   badge: 'rgba(255,255,255,0.18)', badgeText: '#bae6fd', icon: '💬' },
+  'Desenvolvimento':      { grad1: '#16a34a', grad2: '#14532d', glow: 'rgba(22,163,74,0.5)',   shadow: 'rgba(22,163,74,0.4)',   badge: 'rgba(255,255,255,0.18)', badgeText: '#bbf7d0', icon: '📈' },
+  'Resultados':           { grad1: '#d97706', grad2: '#92400e', glow: 'rgba(217,119,6,0.5)',   shadow: 'rgba(217,119,6,0.4)',   badge: 'rgba(255,255,255,0.18)', badgeText: '#fde68a', icon: '🏆' },
+  'Equilíbrio':           { grad1: '#e11d48', grad2: '#9f1239', glow: 'rgba(225,29,72,0.5)',   shadow: 'rgba(225,29,72,0.4)',   badge: 'rgba(255,255,255,0.18)', badgeText: '#fecdd3', icon: '⚖️'  },
+  'Cultura':              { grad1: '#c026d3', grad2: '#701a75', glow: 'rgba(192,38,211,0.5)',  shadow: 'rgba(192,38,211,0.4)',  badge: 'rgba(255,255,255,0.18)', badgeText: '#f5d0fe', icon: '🌱' },
+  'Gatilho de liderança': { grad1: '#ea580c', grad2: '#7c2d12', glow: 'rgba(234,88,12,0.5)',   shadow: 'rgba(234,88,12,0.4)',   badge: 'rgba(255,255,255,0.18)', badgeText: '#fed7aa', icon: '⚡' },
 };
-const COR_FALLBACK = { bg: 'from-slate-600 to-slate-800', border: 'border-slate-400/40', badge: 'bg-slate-200/30', badgeText: 'text-slate-100', text: 'text-white', icon: '✨' };
+const COR_FALLBACK = CORES['Liderança'];
 
 // ─── Helpers de data ──────────────────────────────────────────────────────────
 function getDayOfYear(date: Date): number {
   const start = new Date(date.getFullYear(), 0, 0);
-  const diff = date.getTime() - start.getTime();
-  return Math.floor(diff / 86_400_000);
+  return Math.floor((date.getTime() - start.getTime()) / 86_400_000);
 }
-
 function getDataHoje(): string {
   const d = new Date();
   return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
 }
 
 // ─── Chaves do localStorage ───────────────────────────────────────────────────
-const LS_DATA        = 'gestao360_msg_data';
-const LS_IDX_MANUAL  = 'gestao360_msg_idx';
-const LS_FECHADO     = 'gestao360_msg_fechado';
-const LS_VISTO_HOJE  = 'gestao360_msg_visto';
+const LS_DATA       = 'gestao360_msg_data';
+const LS_IDX_MANUAL = 'gestao360_msg_idx';
+const LS_FECHADO    = 'gestao360_msg_fechado';
 
 function getIndiceBase(): number {
   return getDayOfYear(new Date()) % MENSAGENS.length;
 }
 
-function lerEstadoLocalStorage(): { indice: number; fechado: boolean; vistoHoje: boolean } {
+function lerEstado(): { indice: number; fechado: boolean } {
   try {
     const dataStorage = localStorage.getItem(LS_DATA);
     const hoje = getDataHoje();
-    // Se a data mudou, zerar o estado manual e o "fechado"
     if (dataStorage !== hoje) {
       localStorage.setItem(LS_DATA, hoje);
       localStorage.removeItem(LS_IDX_MANUAL);
       localStorage.removeItem(LS_FECHADO);
-      localStorage.removeItem(LS_VISTO_HOJE);
-      return { indice: getIndiceBase(), fechado: false, vistoHoje: false };
+      return { indice: getIndiceBase(), fechado: false };
     }
     const idxManual = localStorage.getItem(LS_IDX_MANUAL);
     const indice = idxManual !== null ? parseInt(idxManual) : getIndiceBase();
     const fechado = localStorage.getItem(LS_FECHADO) === 'true';
-    const vistoHoje = localStorage.getItem(LS_VISTO_HOJE) === 'true';
-    return { indice, fechado, vistoHoje };
+    return { indice, fechado };
   } catch {
-    return { indice: getIndiceBase(), fechado: false, vistoHoje: false };
+    return { indice: getIndiceBase(), fechado: false };
   }
 }
 
+// Tipo da fase da animação de troca de mensagem
+type FaseTransicao = 'idle' | 'saindo' | 'entrando';
+
 // ─── Componente ───────────────────────────────────────────────────────────────
 interface MensagemDoDiaProps {
-  userId?: string; // para diferenciar estado por usuário se necessário
+  userId?: string;
 }
 
 export default function MensagemDoDia({ userId }: MensagemDoDiaProps) {
-  const [aberto, setAberto] = useState(false);
-  const [indice, setIndice] = useState(getIndiceBase);
-  const [entrando, setEntrando] = useState(false);
-  const [animDir, setAnimDir] = useState<'left' | 'right' | null>(null);
+  const [aberto, setAberto]     = useState(false);
+  const [visivel, setVisivel]   = useState(false);   // controla opacidade do balão inteiro
+  const [indice, setIndice]     = useState(getIndiceBase);
+  const [fase, setFase]         = useState<FaseTransicao>('idle');
 
-  // Na montagem: restaurar estado do dia
+  // Crossfade de cor: mantemos a cor atual visível enquanto a nova "entra"
+  const [corAtual, setCorAtual]   = useState(() => CORES[MENSAGENS[getIndiceBase()]?.categoria] ?? COR_FALLBACK);
+  const [corAlvo, setCorAlvo]     = useState(() => CORES[MENSAGENS[getIndiceBase()]?.categoria] ?? COR_FALLBACK);
+  const [corFade, setCorFade]     = useState(0);     // 0 = cor atual, 1 = cor alvo
+
+  const navegandoRef = useRef(false);
+
+  // Montagem: restaurar estado
   useEffect(() => {
-    const estado = lerEstadoLocalStorage();
+    const estado = lerEstado();
     setIndice(estado.indice);
-    // Abrir automaticamente se não foi fechado hoje
+    const cor = CORES[MENSAGENS[estado.indice]?.categoria] ?? COR_FALLBACK;
+    setCorAtual(cor);
+    setCorAlvo(cor);
     if (!estado.fechado) {
-      // Pequeno delay para a UI carregar primeiro
-      const t = setTimeout(() => {
-        setEntrando(true);
+      setTimeout(() => {
         setAberto(true);
-        // Marcar que já exibiu hoje (para reloads não abrirem de novo mas logins abrirão)
-        try { localStorage.setItem(LS_VISTO_HOJE, 'true'); } catch { /* ok */ }
-      }, 800);
-      return () => clearTimeout(t);
+        requestAnimationFrame(() => requestAnimationFrame(() => setVisivel(true)));
+      }, 700);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
   const mensagem = MENSAGENS[indice] ?? MENSAGENS[0];
-  const cores = CORES_CATEGORIA[mensagem.categoria] ?? COR_FALLBACK;
 
   const fechar = useCallback(() => {
-    setAberto(false);
+    setVisivel(false);
+    setTimeout(() => setAberto(false), 500);
     try { localStorage.setItem(LS_FECHADO, 'true'); } catch { /* ok */ }
   }, []);
 
   const navegar = useCallback((dir: 1 | -1) => {
-    setAnimDir(dir === 1 ? 'right' : 'left');
+    if (navegandoRef.current) return;
+    navegandoRef.current = true;
+
+    // Fase 1: SAINDO — texto sai com fade+slide
+    setFase('saindo');
+
     setTimeout(() => {
+      // Fase 2: atualizar mensagem e iniciar crossfade de cor
       setIndice(prev => {
         const novoIdx = (prev + dir + MENSAGENS.length) % MENSAGENS.length;
         try { localStorage.setItem(LS_IDX_MANUAL, String(novoIdx)); } catch { /* ok */ }
+
+        // Calcular nova cor e iniciar crossfade
+        const novaCor = CORES[MENSAGENS[novoIdx]?.categoria] ?? COR_FALLBACK;
+        setCorAlvo(novaCor);
+        // Animar crossfade: de 0 → 1 em 600ms
+        setCorFade(0);
+        requestAnimationFrame(() => requestAnimationFrame(() => setCorFade(1)));
+
         return novoIdx;
       });
-      setAnimDir(null);
-    }, 180);
+
+      // Fase 3: ENTRANDO — texto entra com fade+slide
+      setFase('entrando');
+
+      setTimeout(() => {
+        setFase('idle');
+        // Após crossfade, tornar cor alvo a cor atual
+        setTimeout(() => {
+          setCorAtual(prev => {
+            setCorFade(0);
+            return CORES[MENSAGENS[
+              // Ler o índice atual do localStorage para pegar o valor mais recente
+              (() => { try { const s = localStorage.getItem(LS_IDX_MANUAL); return s ? parseInt(s) : getIndiceBase(); } catch { return getIndiceBase(); } })()
+            ]?.categoria] ?? COR_FALLBACK;
+          });
+        }, 650);
+        navegandoRef.current = false;
+      }, 500);
+    }, 320);
   }, []);
 
   if (!aberto) return null;
 
   return (
     <>
-      {/* Keyframes CSS embutidos */}
       <style>{`
+        /* ── Float: onda senoidal em 3 eixos para parecer vivo ── */
         @keyframes msgFloat {
-          0%   { transform: translateY(0px) rotate(-0.3deg); }
-          33%  { transform: translateY(-8px) rotate(0.2deg); }
-          66%  { transform: translateY(-4px) rotate(-0.15deg); }
-          100% { transform: translateY(0px) rotate(-0.3deg); }
+          0%   { transform: translateY(0px) rotate(0deg); }
+          20%  { transform: translateY(-7px) rotate(0.4deg); }
+          45%  { transform: translateY(-12px) rotate(-0.2deg); }
+          65%  { transform: translateY(-6px) rotate(0.3deg); }
+          85%  { transform: translateY(-10px) rotate(-0.3deg); }
+          100% { transform: translateY(0px) rotate(0deg); }
         }
-        @keyframes msgEntrar {
-          from { opacity: 0; transform: translateY(40px) scale(0.94); }
+
+        /* ── Entrada do balão completo ── */
+        @keyframes msgBalaoBoot {
+          from { opacity: 0; transform: translateY(32px) scale(0.92); }
           to   { opacity: 1; transform: translateY(0) scale(1); }
         }
-        @keyframes msgSair {
-          from { opacity: 1; transform: translateX(0); }
-          to   { opacity: 0; transform: translateX(12px); }
+
+        /* ── Saída do texto (para a direita ou esquerda) ── */
+        @keyframes msgTextoSai {
+          from { opacity: 1;  transform: translateY(0) scale(1); }
+          to   { opacity: 0;  transform: translateY(-14px) scale(0.96); }
         }
-        @keyframes msgChegar {
-          from { opacity: 0; transform: translateX(-12px); }
-          to   { opacity: 1; transform: translateX(0); }
+
+        /* ── Entrada do texto (vindo de baixo) ── */
+        @keyframes msgTextoEntra {
+          from { opacity: 0;  transform: translateY(14px) scale(0.97); }
+          to   { opacity: 1;  transform: translateY(0) scale(1); }
         }
-        .msg-float {
-          animation: msgFloat 5s ease-in-out infinite;
+
+        .msg-wrapper-float {
+          animation: msgFloat 6s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite;
+          will-change: transform;
         }
-        .msg-entrar {
-          animation: msgEntrar 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+
+        .msg-balao-entrar {
+          animation: msgBalaoBoot 0.55s cubic-bezier(0.16, 1, 0.3, 1) forwards;
         }
-        .msg-texto-sair {
-          animation: msgSair 0.18s ease-in forwards;
+
+        .msg-texto-saindo {
+          animation: msgTextoSai 0.3s cubic-bezier(0.4, 0, 1, 1) forwards;
         }
-        .msg-texto-chegar {
-          animation: msgChegar 0.22s ease-out forwards;
+
+        .msg-texto-entrando {
+          animation: msgTextoEntra 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
         }
       `}</style>
 
-      {/* Balão flutuante */}
+      {/* Wrapper de float — separado do wrapper de entrada para não conflitar */}
       <div
-        className={`fixed bottom-24 right-6 z-40 w-80 select-none msg-float ${entrando ? 'msg-entrar' : ''}`}
-        style={{ filter: 'drop-shadow(0 20px 40px rgba(0,0,0,0.25))' }}
+        className="msg-wrapper-float fixed bottom-24 right-6 z-40 w-80 select-none"
       >
-        <div className={`relative rounded-3xl border ${cores.border} bg-gradient-to-br ${cores.bg} overflow-hidden`}>
+        {/* Wrapper de entrada do balão */}
+        <div
+          className={visivel ? 'msg-balao-entrar' : 'opacity-0'}
+          style={{
+            transition: !visivel ? 'opacity 0.4s ease' : undefined,
+          }}
+        >
+          {/* Sombra colorida com crossfade */}
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              borderRadius: '1.5rem',
+              boxShadow: `0 24px 48px -8px ${corAtual.shadow}`,
+              transition: 'box-shadow 0.6s ease',
+              pointerEvents: 'none',
+              zIndex: -1,
+            }}
+          />
 
-          {/* Brilho sutil no topo */}
-          <div className="absolute inset-x-0 top-0 h-px bg-white/20" />
-          <div className="absolute top-3 left-4 w-16 h-16 rounded-full bg-white/5 blur-xl pointer-events-none" />
+          {/* Gradiente atual (embaixo) */}
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              borderRadius: '1.5rem',
+              background: `linear-gradient(135deg, ${corAtual.grad1}, ${corAtual.grad2})`,
+              zIndex: 0,
+            }}
+          />
 
-          {/* Header */}
-          <div className="flex items-center justify-between px-4 pt-4 pb-2">
-            <div className={`flex items-center gap-2 px-2.5 py-1 rounded-full ${cores.badge}`}>
-              <span className="text-sm leading-none">{cores.icon}</span>
-              <span className={`text-[10px] font-bold uppercase tracking-widest ${cores.badgeText}`}>
-                {mensagem.categoria}
-              </span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <Sparkles size={12} className="text-white/40" />
-              <span className="text-[10px] text-white/40 font-mono">
-                {String(indice + 1).padStart(3, '0')}/365
-              </span>
-              <button
-                onClick={fechar}
-                className="ml-1 p-1 rounded-full hover:bg-white/15 transition text-white/60 hover:text-white"
-                title="Fechar"
+          {/* Gradiente alvo (crossfade por cima) */}
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              borderRadius: '1.5rem',
+              background: `linear-gradient(135deg, ${corAlvo.grad1}, ${corAlvo.grad2})`,
+              opacity: corFade,
+              transition: 'opacity 0.6s cubic-bezier(0.4, 0, 0.2, 1)',
+              zIndex: 1,
+            }}
+          />
+
+          {/* Conteúdo do balão */}
+          <div
+            className="relative rounded-3xl overflow-hidden"
+            style={{
+              border: `1px solid rgba(255,255,255,0.18)`,
+              zIndex: 2,
+            }}
+          >
+            {/* Brilho interno no topo */}
+            <div
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                height: '1px',
+                background: 'rgba(255,255,255,0.35)',
+              }}
+            />
+            <div
+              style={{
+                position: 'absolute',
+                top: '12px',
+                left: '16px',
+                width: '64px',
+                height: '64px',
+                borderRadius: '50%',
+                background: `radial-gradient(circle, ${corAlvo.glow} 0%, transparent 70%)`,
+                opacity: 0.6,
+                pointerEvents: 'none',
+                transition: 'background 0.6s ease',
+              }}
+            />
+
+            {/* Header */}
+            <div className="flex items-center justify-between px-4 pt-4 pb-2">
+              <div
+                className="flex items-center gap-2 px-2.5 py-1 rounded-full"
+                style={{ background: corAlvo.badge, transition: 'background 0.6s ease' }}
               >
-                <X size={14} />
-              </button>
+                <span className="text-sm leading-none">{mensagem.categoria === 'Gatilho de liderança' ? '⚡' : (CORES[mensagem.categoria]?.icon ?? '✨')}</span>
+                <span
+                  className="text-[10px] font-bold uppercase tracking-widest"
+                  style={{ color: corAlvo.badgeText, transition: 'color 0.6s ease' }}
+                >
+                  {mensagem.categoria}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Sparkles size={12} className="text-white/40" />
+                <span className="text-[10px] text-white/40 font-mono">
+                  {String(indice + 1).padStart(3, '0')}/365
+                </span>
+                <button
+                  onClick={fechar}
+                  className="ml-1 p-1 rounded-full text-white/60 hover:text-white hover:bg-white/15 transition-colors duration-200"
+                  title="Fechar"
+                >
+                  <X size={14} />
+                </button>
+              </div>
             </div>
-          </div>
 
-          {/* Texto da mensagem */}
-          <div className="px-4 pb-3 min-h-[72px] flex items-center">
-            <p
-              className={`text-sm leading-relaxed font-medium ${cores.text} ${
-                animDir === 'right' ? 'msg-texto-sair' :
-                animDir === null && indice !== getIndiceBase() ? '' : ''
-              }`}
-            >
-              {mensagem.texto}
-            </p>
-          </div>
-
-          {/* Footer: navegação */}
-          <div className="flex items-center justify-between px-4 pb-4 pt-1">
-            <p className="text-[9px] text-white/30 font-medium">Mensagem do Dia · Gestão360</p>
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => navegar(-1)}
-                className="p-1.5 rounded-xl hover:bg-white/15 transition text-white/60 hover:text-white"
-                title="Mensagem anterior"
+            {/* Área do texto com animação de fase */}
+            <div className="px-4 pb-3 min-h-[80px] flex items-center overflow-hidden">
+              <p
+                className={`text-sm leading-relaxed font-medium text-white ${
+                  fase === 'saindo'   ? 'msg-texto-saindo'   :
+                  fase === 'entrando' ? 'msg-texto-entrando' : ''
+                }`}
               >
-                <ChevronLeft size={15} />
-              </button>
-              <button
-                onClick={() => navegar(1)}
-                className="p-1.5 rounded-xl hover:bg-white/15 transition text-white/70 hover:text-white"
-                title="Próxima mensagem"
-              >
-                <ChevronRight size={15} />
-              </button>
+                {mensagem.texto}
+              </p>
             </div>
-          </div>
 
+            {/* Footer: navegação */}
+            <div className="flex items-center justify-between px-4 pb-4 pt-1">
+              <p className="text-[9px] text-white/30 font-medium">Mensagem do Dia · Gestão360</p>
+              <div className="flex items-center gap-0.5">
+                <button
+                  onClick={() => navegar(-1)}
+                  disabled={fase !== 'idle'}
+                  className="p-1.5 rounded-xl text-white/60 hover:text-white hover:bg-white/15 transition-colors duration-200 disabled:opacity-30"
+                  title="Mensagem anterior"
+                >
+                  <ChevronLeft size={15} />
+                </button>
+                <button
+                  onClick={() => navegar(1)}
+                  disabled={fase !== 'idle'}
+                  className="p-1.5 rounded-xl text-white/70 hover:text-white hover:bg-white/15 transition-colors duration-200 disabled:opacity-30"
+                  title="Próxima mensagem"
+                >
+                  <ChevronRight size={15} />
+                </button>
+              </div>
+            </div>
+
+          </div>
         </div>
       </div>
     </>

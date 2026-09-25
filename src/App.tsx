@@ -47,6 +47,7 @@ import Colaboradores from './components/Colaboradores';
 import ColaboradorProfile from './components/ColaboradorProfile';
 import Tarefas from './components/Tarefas';
 import Analytics from './components/Analytics';
+import MensagemDoDia from './components/MensagemDoDia';
 import Config from './components/Config';
 import Usuarios from './components/Usuarios';
 import Login from './components/Login';
@@ -1525,6 +1526,7 @@ export default function App() {
 
       {/* PWA: banner de instalação e atualizações — flutuante, não bloqueia nada */}
       <PWAInstallPrompt />
+      {currentUser && <MensagemDoDia userId={currentUser.id} />}
 
       {/* Guia de Usabilidade — modal global */}
       {showGuia && <GuiaUsabilidade onFechar={() => setShowGuia(false)} />}
